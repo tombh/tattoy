@@ -9,14 +9,13 @@ use termwiz::terminal::Terminal as TermwizTerminal;
 use wezterm_term::color::ColorPalette;
 use wezterm_term::{Terminal, TerminalConfiguration, TerminalSize};
 
-use std::io::Result;
+use std::io::{Read, Result};
 use std::sync::Arc;
 
 use rand::Rng;
-
 use tokio::sync::mpsc;
 
-use crate::pty::PTY;
+use crate::pty::{StreamBytes, PTY};
 
 enum SurfaceType {
     BGSurface,
@@ -59,9 +58,11 @@ pub async fn run() -> Result<()> {
         .init();
     tracing::info!("Starting Schlam");
 
+    let (pty_output_tx, mut pty_output_rx) = mpsc::unbounded_channel::<StreamBytes>();
+    let (pty_input_tx, mut pty_input_rx) = mpsc::unbounded_channel::<StreamBytes>();
+
     // Make sure the buffer size isn't too big, because `terminal.advance_bytes()` even reads
     // the empty bytes.
-    let (pty_output_tx, mut pty_output_rx) = mpsc::unbounded_channel::<[u8; 128]>();
     let (bg_screen_tx, mut screen_rx) = mpsc::unbounded_channel();
     let pty_screen_tx = bg_screen_tx.clone();
 
@@ -90,7 +91,23 @@ pub async fn run() -> Result<()> {
         Box::new(Vec::new()),
     );
 
+    let mut pty = PTY::new(height as u16, width as u16, vec![shell.into()]).unwrap();
+
     let pty_output_worker = std::thread::spawn(move || {
+        tracing::debug!("Starting to listen on STDIN");
+
+        let mut buffer: StreamBytes = [0; 128];
+
+        loop {
+            let n = std::io::stdin().lock().read(&mut buffer[..]).unwrap();
+            if n > 0 {
+                tracing::debug!("Sending {n} bytes of STDIN");
+                pty_input_tx.send(buffer).unwrap();
+            }
+        }
+    });
+
+    let pty_to_termwiz_worker = std::thread::spawn(move || {
         let mut parser = Parser::new();
 
         loop {
@@ -114,7 +131,6 @@ pub async fn run() -> Result<()> {
                     });
                 }
                 None => (),
-                // Err(_e) => (),
             }
 
             let mut block = Surface::new(width, height);
@@ -207,8 +223,6 @@ pub async fn run() -> Result<()> {
     });
 
     let render_worker = std::thread::spawn(move || {
-        // let mut parser = Parser::new();
-
         let mut background = Surface::new(width, height);
         let mut pty = Surface::new(width, height);
         let mut frame = Surface::new(width, height);
@@ -257,10 +271,7 @@ pub async fn run() -> Result<()> {
         }
     });
 
-    let pty = PTY::new(height as u16, width as u16, shell.to_owned(), pty_output_tx);
-    if let Err(err) = pty.run() {
-        tracing::error!("PTY error: {err}");
-        std::process::exit(1);
-    };
+    pty.run(pty_input_rx, pty_output_tx);
+
     Ok(())
 }

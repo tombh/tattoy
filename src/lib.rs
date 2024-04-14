@@ -59,9 +59,10 @@
     clippy::std_instead_of_core,
 
     clippy::question_mark_used,
-    clippy::missing_errors_doc,
     clippy::missing_inline_in_public_items,
-    clippy::single_call_fn
+    clippy::missing_errors_doc,
+    clippy::single_call_fn,
+    clippy::absolute_paths
 )]
 
 pub mod pty;
