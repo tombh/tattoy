@@ -14,6 +14,6 @@ use tattoy::run;
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    run::run().await?;
+    run::run()?;
     Ok(())
 }

@@ -1,4 +1,5 @@
-/// Create a PTY and send and recieve bytes over channels
+//! Create a PTY and send and recieve bytes over channels
+
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -147,6 +148,21 @@ impl PTY {
                 }
                 pty_stream.flush()?;
             };
+        }
+    }
+
+    /// Redirect the main application's STDIN to the PTY process
+    pub fn consume_stdin(input: &mpsc::UnboundedSender<StreamBytes>) -> Result<()> {
+        tracing::debug!("Starting to listen on STDIN");
+
+        let mut buffer: StreamBytes = [0; 128];
+
+        loop {
+            let n = std::io::stdin().lock().read(&mut buffer[..])?;
+            if n > 0 {
+                tracing::debug!("Sending {n} bytes of STDIN");
+                input.send(buffer)?;
+            }
         }
     }
 }

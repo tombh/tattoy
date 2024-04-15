@@ -66,4 +66,7 @@
 )]
 
 pub mod pty;
+pub mod renderer;
 pub mod run;
+pub mod shadow_tty;
+pub mod tattoys;
