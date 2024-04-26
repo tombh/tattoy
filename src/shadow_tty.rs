@@ -90,6 +90,8 @@ impl ShadowTTY {
     }
 
     /// Parse PTY bytes
+    /// Just logging for now. But we could do some Tattoy-specific things with this. Like a Tattoy
+    /// keyboard shortcut that switches the active tattoy.
     fn parse_bytes(&mut self, bytes: StreamBytes) {
         #[allow(clippy::wildcard_enum_match_arm)]
         self.parser.parse(&bytes, |action| match action {

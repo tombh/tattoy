@@ -27,7 +27,7 @@
     // > clippy::pedantic lints which are rather strict or might have false positives
     clippy::pedantic,
 
-    // > new lints that are still under development"
+    // > new lints that are still under development
     // (so "nursery" doesn't mean "Rust newbies")
     clippy::nursery,
 
@@ -51,7 +51,8 @@
     // This is idiomatic Rust
     clippy::implicit_return,
 
-    // Multiple deps are currently pinning `hermit-abi` — December 2022
+    // Multiple dependencies using the same dependency but distinct versions.
+    // Are there even projects that don't suffer this?
     clippy::multiple_crate_versions,
 
     // We're not interested in becoming no-std compatible
@@ -62,11 +63,18 @@
     clippy::missing_inline_in_public_items,
     clippy::missing_errors_doc,
     clippy::single_call_fn,
-    clippy::absolute_paths
+    clippy::absolute_paths,
+    clippy::separated_literal_suffix
 )]
 
+pub mod loader;
 pub mod pty;
 pub mod renderer;
 pub mod run;
 pub mod shadow_tty;
-pub mod tattoys;
+pub mod surface;
+
+/// This is where all the various tattoys are kept
+pub mod tattoys {
+    pub mod random_walker;
+}

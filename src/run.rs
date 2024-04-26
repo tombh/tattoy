@@ -5,10 +5,10 @@ use std::process::exit;
 use color_eyre::eyre::Result;
 use tokio::sync::mpsc;
 
+use crate::loader::Loader;
 use crate::pty::{StreamBytes, PTY};
 use crate::renderer::Renderer;
 use crate::shadow_tty::ShadowTTY;
-use crate::tattoys::Tattoys;
 
 /// There a are 2 "screens" or "surfaces" to manage in Tattoy. The fancy special affects screen
 /// and the traditional PTY.
@@ -74,9 +74,9 @@ pub fn run() -> Result<()> {
         }
     });
 
-    // Use a thread because it's likely more CPU bound
+    // Use a thread because it's likely to be more CPU bound
     std::thread::spawn(move || {
-        let tattoys = Tattoys::new(renderer.width, renderer.height);
+        let mut tattoys = Loader::new(renderer.width, renderer.height);
         #[allow(clippy::print_stderr)]
         #[allow(clippy::exit)]
         if let Err(err) = tattoys.run(&bg_screen_tx) {
@@ -85,6 +85,7 @@ pub fn run() -> Result<()> {
         }
     });
 
+    // TODO: detect application close in order to drop `renderer.terminal` and thus exit the TTY raw mode
     std::thread::spawn(move || {
         #[allow(clippy::print_stderr)]
         #[allow(clippy::exit)]
@@ -95,6 +96,5 @@ pub fn run() -> Result<()> {
     });
 
     pty.run(pty_input_rx, pty_output_tx)?;
-
     Ok(())
 }
