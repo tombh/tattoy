@@ -4,7 +4,7 @@ use color_eyre::eyre::Result;
 
 use tokio::sync::mpsc;
 
-use crate::run::TattoySurface;
+use crate::run::{Protocol, TattoySurface};
 use crate::tattoys::random_walker::RandomWalker;
 
 /// The number of microseonds in a second
@@ -27,7 +27,11 @@ impl Loader {
     }
 
     /// Run the tattoy(s)
-    pub fn run(&mut self, tattoy_output: &mpsc::UnboundedSender<TattoySurface>) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        tattoy_output: &mpsc::UnboundedSender<TattoySurface>,
+        mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
+    ) -> Result<()> {
         let target_frame_rate = 30;
 
         #[allow(clippy::integer_division)]
@@ -39,14 +43,26 @@ impl Loader {
         loop {
             let frame_time = std::time::Instant::now();
 
+            if let Ok(message) = protocol.try_recv() {
+                match message {
+                    Protocol::END => {
+                        break;
+                    }
+                };
+            }
+
             tattoy_output.send(TattoySurface {
                 kind: crate::run::SurfaceType::BGSurface,
                 surface: tattoy.tick()?,
             })?;
 
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
             if let Some(i) = target_frame_rate_micro.checked_sub(frame_time.elapsed()) {
-                std::thread::sleep(i);
+                tokio::time::sleep(i).await;
             }
         }
+
+        tracing::debug!("Tattoy loop finished");
+        Ok(())
     }
 }

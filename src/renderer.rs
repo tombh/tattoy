@@ -7,7 +7,7 @@ use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::Terminal as TermwizTerminal;
 use tokio::sync::mpsc;
 
-use crate::run::{SurfaceType, TattoySurface};
+use crate::run::{Protocol, SurfaceType, TattoySurface};
 
 ///
 #[allow(clippy::exhaustive_structs)]
@@ -41,7 +41,11 @@ impl Renderer {
     }
 
     /// Handle updates from the PTY and tattoys
-    pub fn run(&mut self, mut surfaces: mpsc::UnboundedReceiver<TattoySurface>) -> Result<()> {
+    pub async fn run(
+        &mut self,
+        mut surfaces: mpsc::UnboundedReceiver<TattoySurface>,
+        mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
+    ) -> Result<()> {
         let caps = termwiz::caps::Capabilities::new_from_env()?;
         let mut terminal = termwiz::terminal::new_terminal(caps)?;
         terminal.set_raw_mode()?;
@@ -52,7 +56,8 @@ impl Renderer {
         let mut pty = TermwizSurface::new(self.width, self.height);
         let mut frame = TermwizSurface::new(self.width, self.height);
 
-        while let Some(update) = surfaces.blocking_recv() {
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        while let Some(update) = surfaces.recv().await {
             match update.kind {
                 SurfaceType::BGSurface => background = update.surface,
                 SurfaceType::PTYSurface => pty = update.surface,
@@ -93,7 +98,17 @@ impl Renderer {
             });
 
             output.flush()?;
+
+            if let Ok(message) = protocol.try_recv() {
+                match message {
+                    Protocol::END => {
+                        break;
+                    }
+                };
+            }
         }
+
+        tracing::debug!("Renderer loop finished");
         Ok(())
     }
 }

@@ -10,6 +10,7 @@ use termwiz::surface::Position as TermwizPosition;
 use tokio::sync::mpsc;
 
 use crate::pty::StreamBytes;
+use crate::run::Protocol;
 use crate::run::SurfaceType;
 use crate::run::TattoySurface;
 
@@ -74,6 +75,7 @@ impl ShadowTTY {
         &mut self,
         mut pty_output: mpsc::UnboundedReceiver<StreamBytes>,
         shadow_output: &mpsc::UnboundedSender<TattoySurface>,
+        mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         loop {
             #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -82,11 +84,22 @@ impl ShadowTTY {
                 self.parse_bytes(bytes);
             };
 
+            if let Ok(message) = protocol.try_recv() {
+                match message {
+                    Protocol::END => {
+                        break;
+                    }
+                };
+            }
+
             shadow_output.send(TattoySurface {
                 kind: SurfaceType::PTYSurface,
                 surface: self.build_current_surface(),
             })?;
         }
+
+        tracing::debug!("ShadowTTY loop finished");
+        Ok(())
     }
 
     /// Parse PTY bytes

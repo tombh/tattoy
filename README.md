@@ -2,7 +2,12 @@
 
 Currently running with:
 ```
-reset && RUST_LOG="none,tattoy=trace" COLORTERM=truecolor cargo run && reset
+RUST_LOG="none,tattoy=trace" COLORTERM=truecolor cargo run
+```
+
+Testing with:
+```
+RUST_LOG="none,tattoy=trace" COLORTERM=truecolor cargo test -- --nocapture
 ```
 
 
