@@ -198,12 +198,12 @@ impl PTY {
     ) -> Result<()> {
         tracing::debug!("Starting to listen on STDIN");
 
-        let mut buffer: StreamBytes = [0; 128];
         let stdin = tokio::io::stdin();
         let mut reader = tokio::io::BufReader::new(stdin);
 
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
+            let mut buffer: StreamBytes = [0; 128];
             tokio::select! {
                 message = protocol.recv() => {
                     match message {
@@ -219,7 +219,7 @@ impl PTY {
                 byte_count = reader.read(&mut buffer[..]) => {
                     match byte_count {
                         Ok(n) => {
-                           if n >  0 {
+                            if n > 0 {
                                 input.send(buffer)?;
                             }
                         }
@@ -239,7 +239,6 @@ impl PTY {
 #[cfg(test)]
 #[allow(clippy::multiple_unsafe_ops_per_block)]
 mod tests {
-
     use super::*;
 
     fn run(
