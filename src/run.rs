@@ -43,6 +43,13 @@ pub enum Protocol {
 #[allow(clippy::use_debug, clippy::print_stderr, clippy::exit)]
 #[allow(clippy::multiple_unsafe_ops_per_block)]
 pub async fn run() -> Result<()> {
+    // Assuming true colour makes Tattoy simpler.
+    // * I think it's safe to assume that the vast majority of people using Tattoy will have a
+    //   true color terminal anyway.
+    // * Even if a user doesn't have a true colour terminal, we should be able to internally
+    //   render as true color and then downgrade later when Tattoy does its final output.
+    std::env::set_var("COLORTERM", "truecolor");
+
     setup_logging()?;
     tracing::info!("Starting Tattoy");
 
