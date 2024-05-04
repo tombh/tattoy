@@ -2,12 +2,12 @@
 
 Currently running with:
 ```
-RUST_LOG="none,tattoy=trace" COLORTERM=truecolor cargo run
+RUST_LOG="none,tattoy=trace" cargo run
 ```
 
 Testing with:
 ```
-RUST_LOG="none,tattoy=trace" COLORTERM=truecolor cargo test -- --nocapture
+RUST_LOG="none,tattoy=trace" cargo test -- --nocapture
 ```
 
 

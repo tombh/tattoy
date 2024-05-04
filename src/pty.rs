@@ -21,7 +21,7 @@ pub struct PTY {
     pub height: u16,
     /// PTY width
     pub width: u16,
-    /// PTY statrting command
+    /// PTY starting command
     pub command: Vec<OsString>,
 }
 
@@ -62,7 +62,8 @@ impl PTY {
         };
 
         tracing::debug!("Launching `{:?}` on PTY", self.command);
-        let cmd = portable_pty::CommandBuilder::from_argv(self.command.clone());
+        let mut cmd = portable_pty::CommandBuilder::from_argv(self.command.clone());
+        cmd.cwd(std::env::current_dir()?);
         match pair.slave.spawn_command(cmd) {
             Ok(pty_ok) => pty_ok,
             Err(pty_error) => {
