@@ -1,42 +1,81 @@
 //! Render the output of the PTY and tattoys
 
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
-use termwiz::surface::Surface as TermwizSurface;
-use termwiz::surface::{Change, Position};
-use termwiz::terminal::buffered::BufferedTerminal;
-use termwiz::terminal::Terminal as TermwizTerminal;
 use tokio::sync::mpsc;
 
+use termwiz::surface::Surface as TermwizSurface;
+use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
+use termwiz::terminal::buffered::BufferedTerminal;
+use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
+
 use crate::run::{Protocol, SurfaceType, TattoySurface};
+use crate::shared_state::SharedState;
 
 ///
 #[allow(clippy::exhaustive_structs)]
 pub struct Renderer {
+    /// Shared app state
+    pub state: Arc<SharedState>,
     /// The terminal's width
     pub width: usize,
     /// The terminal's height
     pub height: usize,
+    /// Merged tattoy surfaces
+    pub background: TermwizSurface,
+    /// A shadow version of the user's conventional terminal
+    pub pty: TermwizSurface,
+    /// The merged version of the tattoys and the PTY
+    pub frame: TermwizSurface,
 }
 
 impl Renderer {
     /// Create a renderer to render to a user's terminal
-    pub fn new() -> Result<Self> {
+    pub fn new(state: Arc<SharedState>) -> Result<Self> {
         let mut renderer = Self {
-            width: 0,
-            height: 0,
+            state,
+            width: Default::default(),
+            height: Default::default(),
+            background: TermwizSurface::default(),
+            pty: TermwizSurface::default(),
+            frame: TermwizSurface::default(),
         };
+
         renderer.update_terminal_size()?;
         Ok(renderer)
     }
 
-    /// Get the user's current terminal size
-    /// TODO: Do we have to create a new Termwiz terminal every time?
-    pub fn update_terminal_size(&mut self) -> Result<termwiz::terminal::ScreenSize> {
+    /// We need this just because I can't figure out how to pass `Box<dyn Terminal>` to
+    /// `BufferedTerminal::new()`
+    fn get_termwiz_terminal() -> Result<impl TermwizTerminal> {
         let capabilities = termwiz::caps::Capabilities::new_from_env()?;
-        let mut terminal = termwiz::terminal::new_terminal(capabilities)?;
+        Ok(termwiz::terminal::new_terminal(capabilities)?)
+    }
+
+    /// Just for initialisation
+    pub fn get_users_tty_size() -> Result<ScreenSize> {
+        let mut terminal = Self::get_termwiz_terminal()?;
+        Ok(terminal.get_screen_size()?)
+    }
+
+    /// Get the user's current terminal size and propogate it
+    pub fn update_terminal_size(&mut self) -> Result<termwiz::terminal::ScreenSize> {
+        let mut terminal = Self::get_termwiz_terminal()?;
         let size = terminal.get_screen_size()?;
         self.width = size.cols;
         self.height = size.rows;
+        let mut tty_size = self
+            .state
+            .tty_size
+            .write()
+            .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
+        tty_size.0 = self.width;
+        tty_size.1 = self.height;
+        drop(tty_size);
+        self.background.resize(self.width, self.height);
+        self.pty.resize(self.width, self.height);
+        self.frame.resize(self.width, self.height);
         Ok(size)
     }
 
@@ -46,59 +85,15 @@ impl Renderer {
         mut surfaces: mpsc::UnboundedReceiver<TattoySurface>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
-        let caps = termwiz::caps::Capabilities::new_from_env()?;
-        let mut terminal = termwiz::terminal::new_terminal(caps)?;
+        let mut terminal = Self::get_termwiz_terminal()?;
         terminal.set_raw_mode()?;
         let mut output = BufferedTerminal::new(terminal)?;
-        self.update_terminal_size()?;
-
-        let mut background = TermwizSurface::new(self.width, self.height);
-        let mut pty = TermwizSurface::new(self.width, self.height);
-        let mut frame = TermwizSurface::new(self.width, self.height);
 
         #[allow(clippy::multiple_unsafe_ops_per_block)]
         while let Some(update) = surfaces.recv().await {
-            match update.kind {
-                SurfaceType::BGSurface => background = update.surface,
-                SurfaceType::PTYSurface => pty = update.surface,
-            }
+            self.render(update, &mut output)?;
 
-            frame.draw_from_screen(&background, 0, 0);
-            let cells = pty.screen_cells();
-            for (y, line) in cells.iter().enumerate() {
-                for (x, cell) in line.iter().enumerate() {
-                    let attrs = cell.attrs();
-                    frame.add_change(Change::CursorPosition {
-                        x: Position::Absolute(x),
-                        y: Position::Absolute(y),
-                    });
-                    frame.add_changes(vec![
-                        Change::Attribute(termwiz::cell::AttributeChange::Foreground(
-                            attrs.foreground(),
-                        )),
-                        Change::Attribute(termwiz::cell::AttributeChange::Background(
-                            attrs.background(),
-                        )),
-                    ]);
-
-                    let character = cell.str();
-                    if character != " " {
-                        frame.add_change(character);
-                    }
-                }
-            }
-
-            let minimum_changes = output.diff_screens(&frame);
-            output.add_changes(minimum_changes);
-
-            let (x, y) = pty.cursor_position();
-            output.add_change(Change::CursorPosition {
-                x: Position::Absolute(x),
-                y: Position::Absolute(y),
-            });
-
-            output.flush()?;
-
+            // TODO: should this be oneshot?
             if let Ok(message) = protocol.try_recv() {
                 match message {
                     Protocol::END => {
@@ -109,6 +104,56 @@ impl Renderer {
         }
 
         tracing::debug!("Renderer loop finished");
+        Ok(())
+    }
+
+    /// Do a single render to the user's actual terminal. It uses a diffing algorithm to make
+    /// the minimum number of changes.
+    fn render(
+        &mut self,
+        update: TattoySurface,
+        output: &mut BufferedTerminal<impl TermwizTerminal>,
+    ) -> Result<()> {
+        match update.kind {
+            SurfaceType::Tattoy => self.background = update.surface,
+            SurfaceType::PTYSurface => self.pty = update.surface,
+        }
+
+        self.frame.draw_from_screen(&self.background, 0, 0);
+        let cells = self.pty.screen_cells();
+        for (y, line) in cells.iter().enumerate() {
+            for (x, cell) in line.iter().enumerate() {
+                let attrs = cell.attrs();
+                self.frame.add_change(TermwizChange::CursorPosition {
+                    x: TermwizPosition::Absolute(x),
+                    y: TermwizPosition::Absolute(y),
+                });
+                self.frame.add_changes(vec![
+                    TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
+                        attrs.foreground(),
+                    )),
+                    TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
+                        attrs.background(),
+                    )),
+                ]);
+
+                let character = cell.str();
+                if character != " " {
+                    self.frame.add_change(character);
+                }
+            }
+        }
+
+        let minimum_changes = output.diff_screens(&self.frame);
+        output.add_changes(minimum_changes);
+
+        let (x, y) = self.pty.cursor_position();
+        output.add_change(TermwizChange::CursorPosition {
+            x: TermwizPosition::Absolute(x),
+            y: TermwizPosition::Absolute(y),
+        });
+
+        output.flush()?;
         Ok(())
     }
 }

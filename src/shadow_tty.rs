@@ -1,5 +1,6 @@
 //! An in-memory TTY renderer. It takes a stream of bytes and maintains the visual
 //! appearance of the terminal without actually physically rendering it.
+
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
@@ -13,6 +14,7 @@ use crate::pty::StreamBytes;
 use crate::run::Protocol;
 use crate::run::SurfaceType;
 use crate::run::TattoySurface;
+use crate::shared_state::SharedState;
 
 /// Wezterm's internal configuration
 #[derive(Debug)]
@@ -38,36 +40,34 @@ pub struct ShadowTTY {
     terminal: wezterm_term::Terminal,
     /// Parser that detects all the weird and wonderful TTY conventions
     parser: TermwizParser,
-    /// The terminal's height
-    height: usize,
-    /// The terminal's width
-    width: usize,
+    /// Shared app state
+    state: Arc<SharedState>,
 }
 
 impl ShadowTTY {
     /// Create a new Shadow TTY
-    #[must_use]
-    pub fn new(height: usize, width: usize) -> Self {
+    pub fn new(state: Arc<SharedState>) -> Result<Self> {
+        let tty_size = state.get_tty_size()?;
+
         let terminal = wezterm_term::Terminal::new(
             wezterm_term::TerminalSize {
-                rows: height,
-                cols: width,
+                cols: tty_size.0,
+                rows: tty_size.1,
                 pixel_width: 0,
                 pixel_height: 0,
                 dpi: 0,
             },
-            Arc::new(WeztermConfig { scrollback: 100 }),
+            std::sync::Arc::new(WeztermConfig { scrollback: 100 }),
             "Tattoy",
             "O_o",
             Box::<Vec<u8>>::default(),
         );
 
-        Self {
+        Ok(Self {
             terminal,
             parser: TermwizParser::new(),
-            height,
-            width,
-        }
+            state,
+        })
     }
 
     /// Start listening to a stream of PTY bytes and render them to a shadow TTY surface
@@ -75,7 +75,7 @@ impl ShadowTTY {
         &mut self,
         mut pty_output: mpsc::UnboundedReceiver<StreamBytes>,
         shadow_output: &mpsc::UnboundedSender<TattoySurface>,
-        mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
+        mut protocol_receive: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         loop {
             #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -84,7 +84,8 @@ impl ShadowTTY {
                 self.parse_bytes(bytes);
             };
 
-            if let Ok(message) = protocol.try_recv() {
+            // TODO: should this be oneshot?
+            if let Ok(message) = protocol_receive.try_recv() {
                 match message {
                     Protocol::END => {
                         break;
@@ -92,9 +93,18 @@ impl ShadowTTY {
                 };
             }
 
+            let (surface, surface_copy) = self.build_current_surface()?;
+            let mut shadow_tty = self
+                .state
+                .shadow_tty
+                .write()
+                .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
+            *shadow_tty = surface;
+            drop(shadow_tty);
+
             shadow_output.send(TattoySurface {
                 kind: SurfaceType::PTYSurface,
-                surface: self.build_current_surface(),
+                surface: surface_copy,
             })?;
         }
 
@@ -131,37 +141,53 @@ impl ShadowTTY {
     #[allow(clippy::cast_possible_truncation)]
     #[allow(clippy::cast_sign_loss)]
     #[allow(clippy::as_conversions)]
-    fn build_current_surface(&mut self) -> termwiz::surface::Surface {
-        let mut surface = termwiz::surface::Surface::new(self.width, self.height);
+    fn build_current_surface(
+        &mut self,
+    ) -> Result<(termwiz::surface::Surface, termwiz::surface::Surface)> {
+        let tty_size = self.state.get_tty_size()?;
+        let width = tty_size.0;
+        let height = tty_size.1;
+        let mut surface1 = termwiz::surface::Surface::new(width, height);
+        let mut surface2 = termwiz::surface::Surface::new(width, height);
 
         let screen = self.terminal.screen_mut();
-        for row in 0..=self.height {
-            for column in 0..=self.width {
+        for row in 0..=height {
+            for column in 0..=width {
                 if let Some(cell) = screen.get_cell(column, row as i64) {
                     let attrs = cell.attrs();
-                    surface.add_change(TermwizChange::CursorPosition {
+                    let cursor = TermwizChange::CursorPosition {
                         x: TermwizPosition::Absolute(column),
                         y: TermwizPosition::Absolute(row),
-                    });
-                    surface.add_changes(vec![
+                    };
+                    surface1.add_change(cursor.clone());
+                    surface2.add_change(cursor);
+
+                    let colours = vec![
                         TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
                             attrs.foreground(),
                         )),
                         TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
                             attrs.background(),
                         )),
-                    ]);
-                    surface.add_change(cell.str());
+                    ];
+                    surface1.add_changes(colours.clone());
+                    surface2.add_changes(colours);
+
+                    let contents = cell.str();
+                    surface1.add_change(contents);
+                    surface2.add_change(contents);
                 }
             }
         }
 
-        let cursor = self.terminal.cursor_pos();
-        surface.add_change(TermwizChange::CursorPosition {
-            x: TermwizPosition::Absolute(cursor.x),
-            y: TermwizPosition::Absolute(cursor.y as usize),
-        });
+        let users_cursor = self.terminal.cursor_pos();
+        let cursor = TermwizChange::CursorPosition {
+            x: TermwizPosition::Absolute(users_cursor.x),
+            y: TermwizPosition::Absolute(users_cursor.y as usize),
+        };
+        surface1.add_change(cursor.clone());
+        surface2.add_change(cursor);
 
-        surface
+        Ok((surface1, surface2))
     }
 }

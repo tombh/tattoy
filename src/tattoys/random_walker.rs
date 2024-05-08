@@ -1,9 +1,16 @@
-//! Docs
+//! Randomly move a pixel over the screen. It randomly but smoothly changes colour
+
+use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 use rand::Rng;
 
-/// Randomly move a pixel over the screen. It randomly but smoothly changes colour
+use crate::shared_state::SharedState;
+
+use super::index::Tattoyer;
+
+///
+#[derive(Default)]
 pub struct RandomWalker {
     /// TTY width
     width: usize,
@@ -23,10 +30,13 @@ type Colour = (f32, f32, f32);
 /// The rate at which the colour changes
 const COLOUR_CHANGE_RATE: f32 = 0.3;
 
-impl RandomWalker {
-    /// Docs
+impl Tattoyer for RandomWalker {
+    ///
     #[allow(clippy::arithmetic_side_effects)]
-    pub fn new(width: usize, height: usize) -> Result<Self> {
+    fn new(state: Arc<SharedState>) -> Result<Self> {
+        let tty_size = state.get_tty_size()?;
+        let width = tty_size.0;
+        let height = tty_size.1;
         let width_i32 = i32::try_from(width)?;
         let height_i32 = i32::try_from(height)?;
         let position: Position = (
@@ -46,10 +56,10 @@ impl RandomWalker {
         })
     }
 
-    /// Docs
+    ///
     #[allow(clippy::arithmetic_side_effects)]
     #[allow(clippy::float_arithmetic)]
-    pub fn tick(&mut self) -> Result<termwiz::surface::Surface> {
+    fn tick(&mut self) -> Result<termwiz::surface::Surface> {
         let width_i32 = i32::try_from(self.width)?;
         let height_i32 = i32::try_from(self.height)?;
 

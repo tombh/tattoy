@@ -11,13 +11,12 @@ categories = ["shell"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
 portable-pty = "0.8.1"
 rand = "0.8.5"
-termios = "0.3.3"
 termwiz = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
 tokio = { version = "1.35.1", features = ["full"]}
-trace = "0.1.7"
 tracing = "0.1.40"
 tracing-subscriber = {version = "0.3.18", features=["env-filter"]}
 wezterm-term = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }

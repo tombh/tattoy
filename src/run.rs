@@ -1,21 +1,25 @@
 //! Docs
 
 use std::process::exit;
+use std::sync::Arc;
 
+use clap::Parser;
 use color_eyre::eyre::Result;
 use tokio::sync::mpsc;
 
+use crate::cli_args::CliArgs;
 use crate::loader::Loader;
 use crate::pty::{StreamBytes, PTY};
 use crate::renderer::Renderer;
 use crate::shadow_tty::ShadowTTY;
+use crate::shared_state::SharedState;
 
 /// There a are 2 "screens" or "surfaces" to manage in Tattoy. The fancy special affects screen
 /// and the traditional PTY.
 #[non_exhaustive]
 pub enum SurfaceType {
-    /// A frame of tattoy screen
-    BGSurface,
+    /// A frame of a tattoy screen
+    Tattoy,
     /// A frame of a PTY terminal
     PTYSurface,
 }
@@ -43,6 +47,8 @@ pub enum Protocol {
 #[allow(clippy::use_debug, clippy::print_stderr, clippy::exit)]
 #[allow(clippy::multiple_unsafe_ops_per_block)]
 pub async fn run() -> Result<()> {
+    let mut enabled_tattoys: Vec<String> = vec![];
+
     // Assuming true colour makes Tattoy simpler.
     // * I think it's safe to assume that the vast majority of people using Tattoy will have a
     //   true color terminal anyway.
@@ -52,6 +58,16 @@ pub async fn run() -> Result<()> {
 
     setup_logging()?;
     tracing::info!("Starting Tattoy");
+
+    let cli = CliArgs::parse();
+    if let Some(tattoys) = cli.enabled_tattoys {
+        enabled_tattoys.push(tattoys);
+    } else {
+        eprintln!("Please provide at least one tattoy with the `--use` argument");
+        exit(1);
+    }
+
+    let state_arc = SharedState::init()?;
 
     let (pty_output_tx, pty_output_rx) = mpsc::unbounded_channel::<StreamBytes>();
     let (pty_input_tx, pty_input_rx) = mpsc::unbounded_channel::<StreamBytes>();
@@ -66,13 +82,10 @@ pub async fn run() -> Result<()> {
     let protocol_runner_rx = protocol_tx.subscribe();
     let protocol_renderer_rx = protocol_tx.subscribe();
 
-    let mut renderer = Renderer::new()?;
-
     #[allow(clippy::cast_possible_truncation)]
     #[allow(clippy::as_conversions)]
     let pty = PTY::new(
-        renderer.height as u16,
-        renderer.width as u16,
+        &Arc::clone(&state_arc),
         vec![std::env::var("SHELL")?.into()],
     )?;
 
@@ -83,9 +96,17 @@ pub async fn run() -> Result<()> {
         };
     });
 
+    let shadow_state = Arc::clone(&state_arc);
     tokio::spawn(async move {
-        let mut shadow = ShadowTTY::new(renderer.height, renderer.width);
-        if let Err(err) = shadow
+        let mut shadow_tty = match ShadowTTY::new(shadow_state) {
+            Ok(ok) => ok,
+            Err(err) => {
+                eprintln!("Shadow TTY error: {err}");
+                exit(1);
+            }
+        };
+
+        if let Err(err) = shadow_tty
             .run(pty_output_rx, &pty_screen_tx, protocol_shadow_rx)
             .await
         {
@@ -94,19 +115,37 @@ pub async fn run() -> Result<()> {
         }
     });
 
+    let render_state = Arc::clone(&state_arc);
     let render_task = tokio::spawn(async move {
-        let mut tattoys = Loader::new(renderer.width, renderer.height);
-        if let Err(err) = tattoys.run(&bg_screen_tx, protocol_runner_rx).await {
-            eprintln!("Tattoy runner error: {err}");
-            exit(1);
+        let maybe_tattoys = Loader::new(&render_state, enabled_tattoys);
+        match maybe_tattoys {
+            Ok(mut tattoys) => {
+                if let Err(err) = tattoys.run(&bg_screen_tx, protocol_runner_rx).await {
+                    eprintln!("Tattoy runner error: {err}");
+                    exit(1);
+                }
+            }
+            Err(err) => {
+                eprintln!("Tattoys Loader error: {err}");
+                exit(1);
+            }
         }
     });
 
-    // Only probably quite CPU bound
+    let loader_state = Arc::clone(&state_arc);
     let loader_task = tokio::spawn(async move {
-        if let Err(err) = renderer.run(screen_rx, protocol_renderer_rx).await {
-            eprintln!("Renderer error: {err}");
-            exit(1);
+        let maybe_renderer = Renderer::new(loader_state);
+        match maybe_renderer {
+            Ok(mut renderer) => {
+                if let Err(err) = renderer.run(screen_rx, protocol_renderer_rx).await {
+                    eprintln!("Renderer error: {err}");
+                    exit(1);
+                };
+            }
+            Err(err) => {
+                eprintln!("Tattoys Loader error: {err}");
+                exit(1);
+            }
         };
     });
 

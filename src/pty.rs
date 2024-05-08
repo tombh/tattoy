@@ -10,6 +10,7 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 
 use crate::run::Protocol;
+use crate::shared_state::SharedState;
 
 /// A single read/write from the PTY output stream
 pub type StreamBytes = [u8; 128];
@@ -27,10 +28,13 @@ pub struct PTY {
 
 impl PTY {
     /// Docs
-    pub fn new(height: u16, width: u16, command: Vec<OsString>) -> Result<Self> {
+    pub fn new(state: &Arc<SharedState>, command: Vec<OsString>) -> Result<Self> {
+        let tty_size = state.get_tty_size()?;
+
+        #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
         let pty = Self {
-            height,
-            width,
+            width: tty_size.0 as u16,
+            height: tty_size.1 as u16,
             command,
         };
         Ok(pty)
@@ -163,6 +167,7 @@ impl PTY {
             tokio::select! {
                 message = protocol.recv() => {
                     match message {
+                        // TODO: should this be oneshot?
                         Ok(Protocol::END) => {
                             tracing::trace!("STDIN forwarder task received {message:?}");
                             break;
@@ -206,6 +211,7 @@ impl PTY {
             let mut buffer: StreamBytes = [0; 128];
             tokio::select! {
                 message = protocol.recv() => {
+                    // TODO: should this be oneshot?
                     match message {
                         Ok(Protocol::END) => {
                             tracing::trace!("STDIN task received {message:?}");
@@ -268,7 +274,8 @@ mod tests {
 
         tokio::spawn(async move {
             tracing::debug!("TEST: PTY.run() starting...");
-            let pty = PTY::new(100, 100, command).unwrap();
+            let state = Arc::new(SharedState::default());
+            let pty = PTY::new(&state, command).unwrap();
             pty.run(pty_input_rx, pty_output_tx, protocol_rx).unwrap();
             protocol_tx.send(Protocol::END).unwrap();
             tracing::debug!("Test PTY.run() done");

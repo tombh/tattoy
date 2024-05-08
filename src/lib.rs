@@ -64,17 +64,22 @@
     clippy::missing_errors_doc,
     clippy::single_call_fn,
     clippy::absolute_paths,
-    clippy::separated_literal_suffix
+    clippy::separated_literal_suffix,
+    clippy::option_if_let_else
 )]
 
+pub mod cli_args;
 pub mod loader;
 pub mod pty;
 pub mod renderer;
 pub mod run;
 pub mod shadow_tty;
+pub mod shared_state;
 pub mod surface;
 
 /// This is where all the various tattoys are kept
 pub mod tattoys {
+    pub mod index;
     pub mod random_walker;
+    pub mod smokey_cursor;
 }
