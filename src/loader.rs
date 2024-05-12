@@ -37,7 +37,7 @@ impl Loader {
     /// Run the tattoy(s)
     pub async fn run(
         &mut self,
-        tattoy_output: &mpsc::UnboundedSender<TattoySurface>,
+        tattoy_output: &mpsc::Sender<TattoySurface>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         let target_frame_rate = 30;
@@ -46,6 +46,7 @@ impl Loader {
         let target_frame_rate_micro =
             std::time::Duration::from_micros(ONE_MICROSECOND / target_frame_rate);
 
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
             let frame_time = std::time::Instant::now();
 
@@ -59,13 +60,14 @@ impl Loader {
             }
 
             for tattoy in &mut self.tattoys {
-                tattoy_output.send(TattoySurface {
-                    kind: crate::run::SurfaceType::Tattoy,
-                    surface: tattoy.tick()?,
-                })?;
+                tattoy_output
+                    .send(TattoySurface {
+                        kind: crate::run::SurfaceType::Tattoy,
+                        surface: tattoy.tick()?,
+                    })
+                    .await?;
             }
 
-            #[allow(clippy::multiple_unsafe_ops_per_block)]
             if let Some(i) = target_frame_rate_micro.checked_sub(frame_time.elapsed()) {
                 tokio::time::sleep(i).await;
             }

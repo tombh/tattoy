@@ -81,5 +81,12 @@ pub mod surface;
 pub mod tattoys {
     pub mod index;
     pub mod random_walker;
-    pub mod smokey_cursor;
+    pub mod utils;
+
+    ///
+    pub mod smokey_cursor {
+        pub mod main;
+        pub mod particle;
+        pub mod simulation;
+    }
 }

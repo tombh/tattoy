@@ -73,12 +73,12 @@ impl ShadowTTY {
     /// Start listening to a stream of PTY bytes and render them to a shadow TTY surface
     pub async fn run(
         &mut self,
-        mut pty_output: mpsc::UnboundedReceiver<StreamBytes>,
-        shadow_output: &mpsc::UnboundedSender<TattoySurface>,
+        mut pty_output: mpsc::Receiver<StreamBytes>,
+        shadow_output: &mpsc::Sender<TattoySurface>,
         mut protocol_receive: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
-            #[allow(clippy::multiple_unsafe_ops_per_block)]
             if let Some(bytes) = pty_output.recv().await {
                 self.terminal.advance_bytes(bytes);
                 self.parse_bytes(bytes);
@@ -94,21 +94,31 @@ impl ShadowTTY {
             }
 
             let (surface, surface_copy) = self.build_current_surface()?;
-            let mut shadow_tty = self
-                .state
-                .shadow_tty
-                .write()
-                .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
-            *shadow_tty = surface;
-            drop(shadow_tty);
+            self.update_state_surface(surface)?;
 
-            shadow_output.send(TattoySurface {
-                kind: SurfaceType::PTYSurface,
-                surface: surface_copy,
-            })?;
+            shadow_output
+                .send(TattoySurface {
+                    kind: SurfaceType::PTYSurface,
+                    surface: surface_copy,
+                })
+                .await?;
         }
 
         tracing::debug!("ShadowTTY loop finished");
+        Ok(())
+    }
+
+    /// Send the current PTY surface to the shared state.
+    /// Needs to be in its own non-async function like this because of the error:
+    ///   'future created by async block is not `Send`'
+    fn update_state_surface(&self, surface: termwiz::surface::Surface) -> Result<()> {
+        let mut shadow_tty = self
+            .state
+            .shadow_tty
+            .write()
+            .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
+        *shadow_tty = surface;
+        drop(shadow_tty);
         Ok(())
     }
 

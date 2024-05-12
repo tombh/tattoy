@@ -26,8 +26,6 @@ pub struct Renderer {
     pub background: TermwizSurface,
     /// A shadow version of the user's conventional terminal
     pub pty: TermwizSurface,
-    /// The merged version of the tattoys and the PTY
-    pub frame: TermwizSurface,
 }
 
 impl Renderer {
@@ -39,7 +37,6 @@ impl Renderer {
             height: Default::default(),
             background: TermwizSurface::default(),
             pty: TermwizSurface::default(),
-            frame: TermwizSurface::default(),
         };
 
         renderer.update_terminal_size()?;
@@ -75,14 +72,13 @@ impl Renderer {
         drop(tty_size);
         self.background.resize(self.width, self.height);
         self.pty.resize(self.width, self.height);
-        self.frame.resize(self.width, self.height);
         Ok(size)
     }
 
     /// Handle updates from the PTY and tattoys
     pub async fn run(
         &mut self,
-        mut surfaces: mpsc::UnboundedReceiver<TattoySurface>,
+        mut surfaces: mpsc::Receiver<TattoySurface>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         let mut terminal = Self::get_termwiz_terminal()?;
@@ -119,16 +115,17 @@ impl Renderer {
             SurfaceType::PTYSurface => self.pty = update.surface,
         }
 
-        self.frame.draw_from_screen(&self.background, 0, 0);
+        let mut frame = TermwizSurface::new(self.width, self.height);
+        frame.draw_from_screen(&self.background, 0, 0);
         let cells = self.pty.screen_cells();
         for (y, line) in cells.iter().enumerate() {
             for (x, cell) in line.iter().enumerate() {
                 let attrs = cell.attrs();
-                self.frame.add_change(TermwizChange::CursorPosition {
+                frame.add_change(TermwizChange::CursorPosition {
                     x: TermwizPosition::Absolute(x),
                     y: TermwizPosition::Absolute(y),
                 });
-                self.frame.add_changes(vec![
+                frame.add_changes(vec![
                     TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
                         attrs.foreground(),
                     )),
@@ -139,12 +136,12 @@ impl Renderer {
 
                 let character = cell.str();
                 if character != " " {
-                    self.frame.add_change(character);
+                    frame.add_change(character);
                 }
             }
         }
 
-        let minimum_changes = output.diff_screens(&self.frame);
+        let minimum_changes = output.diff_screens(&frame);
         output.add_changes(minimum_changes);
 
         let (x, y) = self.pty.cursor_position();

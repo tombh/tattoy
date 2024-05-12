@@ -88,7 +88,7 @@ impl Tattoyer for RandomWalker {
             self.colour.0,
             self.colour.1,
             self.colour.2,
-        );
+        )?;
         Ok(surface.surface)
     }
 }

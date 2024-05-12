@@ -6,7 +6,7 @@ use color_eyre::eyre::Result;
 
 use crate::shared_state::SharedState;
 
-use super::{random_walker::RandomWalker, smokey_cursor::SmokeyCursor};
+use super::{random_walker::RandomWalker, smokey_cursor::main::SmokeyCursor};
 
 /// The trait that all tattoys must follow
 // #[enum_dispatch::enum_dispatch]

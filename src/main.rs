@@ -6,7 +6,11 @@
 use color_eyre::eyre::Result;
 use tattoy::run;
 
-#[tokio::main]
+#[tokio::main(
+    // I wanted this to maybe be able to put the tattoy work in their own threads, but it doesn't
+    // seem make any new threads.
+    flavor = "multi_thread"
+)]
 async fn main() -> Result<()> {
     color_eyre::install()?;
     run::run().await?;

@@ -94,10 +94,10 @@ impl PTY {
     }
 
     /// Start the PTY
-    pub fn run(
+    pub async fn run(
         &self,
-        user_input: mpsc::UnboundedReceiver<StreamBytes>,
-        pty_output: mpsc::UnboundedSender<StreamBytes>,
+        user_input: mpsc::Receiver<StreamBytes>,
+        pty_output: mpsc::Sender<StreamBytes>,
         protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         let (pty_stream, pty_pair) = self.setup_pty()?;
@@ -117,10 +117,10 @@ impl PTY {
         });
 
         tracing::debug!("Starting PTY reader loop");
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
             let mut buffer: StreamBytes = [0; 128];
 
-            #[allow(clippy::multiple_unsafe_ops_per_block)]
             let chunk_size = pty_stream_reader.read(&mut buffer[..]);
             match chunk_size {
                 Ok(0) => {
@@ -131,7 +131,7 @@ impl PTY {
                     let output = String::from_utf8_lossy(&buffer);
                     tracing::trace!("PTY output: \"{output:?}\"");
 
-                    if let Err(err) = pty_output.send(buffer) {
+                    if let Err(err) = pty_output.send(buffer).await {
                         tracing::error!("Sending bytes on PTY output channel: {err}");
                     };
                 }
@@ -157,7 +157,7 @@ impl PTY {
 
     /// Forward channel bytes from the user's STDIN to the virtual PTY
     async fn forward_input(
-        mut user_input: mpsc::UnboundedReceiver<StreamBytes>,
+        mut user_input: mpsc::Receiver<StreamBytes>,
         mut pty_stream: Arc<std::fs::File>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
@@ -198,7 +198,7 @@ impl PTY {
 
     /// Redirect the main application's STDIN to the PTY process
     pub async fn consume_stdin(
-        input: &mpsc::UnboundedSender<StreamBytes>,
+        input: &mpsc::Sender<StreamBytes>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         tracing::debug!("Starting to listen on STDIN");
@@ -226,7 +226,7 @@ impl PTY {
                     match byte_count {
                         Ok(n) => {
                             if n > 0 {
-                                input.send(buffer)?;
+                                input.send(buffer).await?;
                             }
                         }
                         Err(err) => {
@@ -251,13 +251,13 @@ mod tests {
         command: Vec<OsString>,
     ) -> (
         tokio::task::JoinHandle<std::string::String>,
-        mpsc::UnboundedSender<StreamBytes>,
+        mpsc::Sender<StreamBytes>,
     ) {
         // TODO: Think about a convenient way to enable this whenever only a single test is ran
         // setup_logging().unwrap();
 
-        let (pty_output_tx, mut pty_output_rx) = mpsc::unbounded_channel::<StreamBytes>();
-        let (pty_input_tx, pty_input_rx) = mpsc::unbounded_channel::<StreamBytes>();
+        let (pty_output_tx, mut pty_output_rx) = mpsc::channel::<StreamBytes>(1);
+        let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytes>(1);
         let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
         let protocol_rx = protocol_tx.subscribe();
 
@@ -276,7 +276,9 @@ mod tests {
             tracing::debug!("TEST: PTY.run() starting...");
             let state = Arc::new(SharedState::default());
             let pty = PTY::new(&state, command).unwrap();
-            pty.run(pty_input_rx, pty_output_tx, protocol_rx).unwrap();
+            pty.run(pty_input_rx, pty_output_tx, protocol_rx)
+                .await
+                .unwrap();
             protocol_tx.send(Protocol::END).unwrap();
             tracing::debug!("Test PTY.run() done");
         });
@@ -308,6 +310,7 @@ mod tests {
         let (output_task, input_channel) = run(vec!["bash".into()]);
         input_channel
             .send(stdin_bytes("echo Hello && exit\n"))
+            .await
             .unwrap();
         let result = output_task.await.unwrap();
         assert!(result.contains("Hello"));

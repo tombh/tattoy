@@ -69,10 +69,10 @@ pub async fn run() -> Result<()> {
 
     let state_arc = SharedState::init()?;
 
-    let (pty_output_tx, pty_output_rx) = mpsc::unbounded_channel::<StreamBytes>();
-    let (pty_input_tx, pty_input_rx) = mpsc::unbounded_channel::<StreamBytes>();
+    let (pty_output_tx, pty_output_rx) = mpsc::channel::<StreamBytes>(1);
+    let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytes>(1);
 
-    let (bg_screen_tx, screen_rx) = mpsc::unbounded_channel();
+    let (bg_screen_tx, screen_rx) = mpsc::channel(16);
     let pty_screen_tx = bg_screen_tx.clone();
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
@@ -149,7 +149,8 @@ pub async fn run() -> Result<()> {
         };
     });
 
-    pty.run(pty_input_rx, pty_output_tx, protocol_pty_rx)?;
+    pty.run(pty_input_rx, pty_output_tx, protocol_pty_rx)
+        .await?;
     protocol_tx.send(Protocol::END)?;
 
     if let Err(err) = render_task.await {
