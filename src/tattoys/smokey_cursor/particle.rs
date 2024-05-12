@@ -127,21 +127,22 @@ impl Particle {
 
     /// Keep the particles in the container
     pub fn boundaries(&mut self, width: f32, height: f32) {
-        if self.position.x - BOUNDARY < 0.0 {
+        if self.position.x < 0.0 {
             self.velocity.x *= BOUND_DAMPING;
-            self.position.x = BOUNDARY;
+            self.position.x = 0.0;
         }
-        if self.position.x + BOUNDARY > width {
+        if self.position.x > width - 1.0 {
             self.velocity.x *= BOUND_DAMPING;
-            self.position.x = width - BOUNDARY;
+            self.position.x = width - 1.0;
         }
-        if self.position.y - BOUNDARY < 0.0 {
+        // BUG: for some reason the app panics when the BOUNDARY is 0.0 here 🤔
+        if self.position.y < BOUNDARY {
             self.velocity.y *= BOUND_DAMPING;
             self.position.y = BOUNDARY;
         }
-        if self.position.y + BOUNDARY > height {
+        if self.position.y > height - 1.0 {
             self.velocity.y *= BOUND_DAMPING;
-            self.position.y = height - BOUNDARY;
+            self.position.y = height - 1.0;
         }
     }
 }
