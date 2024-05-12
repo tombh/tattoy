@@ -115,12 +115,12 @@ pub async fn run() -> Result<()> {
         }
     });
 
-    let render_state = Arc::clone(&state_arc);
-    let render_task = tokio::spawn(async move {
-        let maybe_tattoys = Loader::new(&render_state, enabled_tattoys);
+    let loader_state = Arc::clone(&state_arc);
+    let loader_thread = std::thread::spawn(move || {
+        let maybe_tattoys = Loader::new(&loader_state, enabled_tattoys);
         match maybe_tattoys {
             Ok(mut tattoys) => {
-                if let Err(err) = tattoys.run(&bg_screen_tx, protocol_runner_rx).await {
+                if let Err(err) = tattoys.run(&bg_screen_tx, protocol_runner_rx) {
                     eprintln!("Tattoy runner error: {err}");
                     exit(1);
                 }
@@ -132,9 +132,9 @@ pub async fn run() -> Result<()> {
         }
     });
 
-    let loader_state = Arc::clone(&state_arc);
-    let loader_task = tokio::spawn(async move {
-        let maybe_renderer = Renderer::new(loader_state);
+    let render_state = Arc::clone(&state_arc);
+    let render_task = tokio::spawn(async move {
+        let maybe_renderer = Renderer::new(render_state);
         match maybe_renderer {
             Ok(mut renderer) => {
                 if let Err(err) = renderer.run(screen_rx, protocol_renderer_rx).await {
@@ -153,13 +153,13 @@ pub async fn run() -> Result<()> {
         .await?;
     protocol_tx.send(Protocol::END)?;
 
-    if let Err(err) = render_task.await {
-        eprintln!("Couldn't join renderer thread: {err:?}");
+    if let Err(err) = loader_thread.join() {
+        eprintln!("Couldn't join loader thread: {err:?}");
         exit(1);
     };
 
-    if let Err(err) = loader_task.await {
-        eprintln!("Couldn't join loader thread: {err:?}");
+    if let Err(err) = render_task.await {
+        eprintln!("Couldn't join render task: {err:?}");
         exit(1);
     };
 

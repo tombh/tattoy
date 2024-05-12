@@ -35,7 +35,7 @@ impl Loader {
     }
 
     /// Run the tattoy(s)
-    pub async fn run(
+    pub fn run(
         &mut self,
         tattoy_output: &mpsc::Sender<TattoySurface>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
@@ -60,16 +60,14 @@ impl Loader {
             }
 
             for tattoy in &mut self.tattoys {
-                tattoy_output
-                    .send(TattoySurface {
-                        kind: crate::run::SurfaceType::Tattoy,
-                        surface: tattoy.tick()?,
-                    })
-                    .await?;
+                tattoy_output.try_send(TattoySurface {
+                    kind: crate::run::SurfaceType::Tattoy,
+                    surface: tattoy.tick()?,
+                })?;
             }
 
             if let Some(i) = target_frame_rate_micro.checked_sub(frame_time.elapsed()) {
-                tokio::time::sleep(i).await;
+                std::thread::sleep(i);
             }
         }
 
