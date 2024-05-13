@@ -71,12 +71,15 @@ impl Simulation {
         x *= SCALE;
         y *= SCALE;
 
+        let ish_range = 0.01;
+        let colour_ish = rand::thread_rng().gen_range(-ish_range..ish_range);
+
         if let Some((x_safe, y_safe)) = self.find_safe_place(x, y) {
             let particle = Particle {
                 created_at: std::time::Instant::now(),
                 position: Vec2::new(x_safe, y_safe),
                 density: 1.0,
-                colour: (0.2, 0.2, 0.2),
+                colour: (0.15 + colour_ish, 0.15 + colour_ish, 0.15 + colour_ish),
                 velocity: Vec2::new(0.01, -0.1),
                 force: Vec2::ZERO,
                 pressure: 0.0,

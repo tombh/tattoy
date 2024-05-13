@@ -43,7 +43,7 @@ pub enum Protocol {
     END,
 }
 
-/// Docs
+///
 #[allow(clippy::use_debug, clippy::print_stderr, clippy::exit)]
 #[allow(clippy::multiple_unsafe_ops_per_block)]
 pub async fn run() -> Result<()> {
@@ -121,6 +121,7 @@ pub async fn run() -> Result<()> {
         match maybe_tattoys {
             Ok(mut tattoys) => {
                 if let Err(err) = tattoys.run(&bg_screen_tx, protocol_runner_rx) {
+                    // Note: I've seen `no available capacity`
                     eprintln!("Tattoy runner error: {err}");
                     exit(1);
                 }

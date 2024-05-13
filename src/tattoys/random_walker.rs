@@ -82,13 +82,7 @@ impl Tattoyer for RandomWalker {
         let mut surface = crate::surface::Surface::new(self.width, self.height);
         let x_usize = usize::try_from(self.position.0)?;
         let y_usize = usize::try_from(self.position.1)?;
-        surface.add_pixel(
-            x_usize,
-            y_usize,
-            self.colour.0,
-            self.colour.1,
-            self.colour.2,
-        )?;
+        surface.add_pixel(x_usize, y_usize, self.colour)?;
         Ok(surface.surface)
     }
 }

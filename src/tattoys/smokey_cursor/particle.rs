@@ -22,8 +22,6 @@ const VISCOSITY: f32 = 50.0; // Liquid default was 200.0
 
 /// Timestep, therefore how detailed to make the simulation
 const TIMESTEP: f32 = 0.0007;
-/// Size of the container's edge
-const BOUNDARY: f32 = PARTICLE_SIZE;
 /// How quickly to bring a particle's velocity back into bounds
 const BOUND_DAMPING: f32 = -0.5;
 
@@ -135,10 +133,9 @@ impl Particle {
             self.velocity.x *= BOUND_DAMPING;
             self.position.x = width - 1.0;
         }
-        // BUG: for some reason the app panics when the BOUNDARY is 0.0 here 🤔
-        if self.position.y < BOUNDARY {
+        if self.position.y < 0.0 {
             self.velocity.y *= BOUND_DAMPING;
-            self.position.y = BOUNDARY;
+            self.position.y = 0.0;
         }
         if self.position.y > height - 1.0 {
             self.velocity.y *= BOUND_DAMPING;

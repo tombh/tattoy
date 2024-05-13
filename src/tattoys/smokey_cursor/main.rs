@@ -58,9 +58,7 @@ impl Tattoyer for SmokeyCursor {
             surface.add_pixel(
                 (particle.position.x / SCALE) as usize,
                 (particle.position.y / SCALE) as usize,
-                particle.colour.0,
-                particle.colour.1,
-                particle.colour.2,
+                particle.colour,
             )?;
         }
         Ok(surface.surface)
