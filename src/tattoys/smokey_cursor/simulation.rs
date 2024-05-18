@@ -6,7 +6,7 @@ use rand::Rng;
 
 use super::{
     config::Config,
-    particle::{Particle, PARTICLE_SIZE},
+    particle::{Particle, PARTICLE_SIZE, PARTICLE_SIZE_SQUARED},
 };
 use crate::tattoys::utils::is_random_trigger;
 
@@ -27,6 +27,8 @@ pub struct Simulation {
     pub height: f32,
     /// All the particles
     pub particles: Vec<Particle>,
+    /// All the particles as spatially-optimised neighbours
+    pub neighbours: rstar::RTree<Particle>,
     /// The configurable settings for the simulation
     pub config: Config,
 }
@@ -50,6 +52,7 @@ impl Simulation {
             width: width as f32 * config.scale,
             height: height as f32 * config.scale,
             particles: Vec::default(),
+            neighbours: rstar::RTree::new(),
             config,
         }
     }
@@ -57,6 +60,7 @@ impl Simulation {
     /// A tick of a graphical frame render
     pub fn tick(&mut self, cursor: (usize, usize)) {
         if is_random_trigger(1) {
+            tracing::trace!("cursor: {cursor:?}");
             self.add_particle(cursor.0 as f32, (cursor.1 * 2) as f32);
         }
 
@@ -70,7 +74,13 @@ impl Simulation {
     /// Remove particles over a certain age
     pub fn remove_old_particles(&mut self) {
         self.particles.retain(|particle| {
-            particle.created_at.elapsed() < std::time::Duration::from_secs(MAX_AGE_OF_PARTICLE)
+            let is_expired =
+                particle.created_at.elapsed() > std::time::Duration::from_secs(MAX_AGE_OF_PARTICLE);
+            if is_expired {
+                self.neighbours.remove(particle);
+                return false;
+            }
+            true
         });
     }
 
@@ -93,13 +103,20 @@ impl Simulation {
                 force: Vec2::ZERO,
                 pressure: 0.0,
             };
+            tracing::trace!("Adding particle at: {particle:?}");
+            let neighbour = particle.clone();
             self.particles.push(particle);
+            self.neighbours.insert(neighbour);
         }
     }
 
     /// Based on the requested location of the new particle find a position near it, but also a
     /// safe distance from other particles, so as not to create unrealistic "explosive" responses.
     fn find_safe_place(&self, mut x: f32, mut y: f32) -> Option<(f32, f32)> {
+        if self.particles.is_empty() {
+            return Some((x, y));
+        }
+
         let mut too_close;
         for _ in 0_usize..ATTEMPTS_TO_FIND_SAFE_PLACE {
             too_close = false;
@@ -113,6 +130,7 @@ impl Simulation {
                     break;
                 }
             }
+
             if !too_close {
                 return Some((x, y));
             }
@@ -131,45 +149,55 @@ impl Simulation {
     /// Calculate the next position of the particles
     fn integrate(&mut self) {
         for particle in &mut self.particles {
+            self.neighbours
+                .remove_at_point(&[particle.position.x, particle.position.y]);
             particle.integrate();
             particle.boundaries(self.width, self.height);
+            self.neighbours.insert(particle.clone());
         }
     }
 
     /// Calculate the density and pressure affecting the particles
     fn compute_density_pressure(&mut self) {
-        for i in 0..self.particles.len() {
-            let mut particle = self.particles[i].clone();
+        for particle in &mut self.particles {
             particle.density = 0.0;
-            for other in &self.particles {
-                particle.accumulate_density(other);
-            }
+
+            // TODO: cache?
+            let neighbours = self.neighbours.locate_within_distance(
+                [particle.position.x, particle.position.y],
+                PARTICLE_SIZE_SQUARED,
+            );
+
+            neighbours.for_each(|neighbour| {
+                particle.accumulate_density(neighbour);
+            });
             particle.update_pressure();
-            self.particles[i] = particle;
         }
     }
 
     /// Compute forces on the particles, from density, pressure and gravity
     fn compute_forces(&mut self) {
-        for i in 0..self.particles.len() {
-            let mut particle = self.particles[i].clone();
-            let mut force_from_pressure = Vec2::ZERO;
-            let mut force_from_viscosity = Vec2::ZERO;
+        for particle in &mut self.particles {
+            particle.force = Vec2::ZERO;
 
-            for other in &self.particles {
-                if particle.position == other.position {
-                    continue;
-                }
-                if let Some(forces) = particle.calculate_forces(other) {
-                    force_from_pressure += forces.0;
-                    force_from_viscosity += forces.1;
-                }
-            }
-            particle.force = force_from_pressure
-                + force_from_viscosity
-                + particle.force_from_gravity(self.config.gravity);
+            // TODO: cache?
+            let neighbours = self.neighbours.locate_within_distance(
+                [particle.position.x, particle.position.y],
+                PARTICLE_SIZE_SQUARED,
+            );
 
-            self.particles[i] = particle;
+            neighbours.for_each(|neighbour| {
+                if particle.position == neighbour.position {
+                    return;
+                }
+
+                if let Some(density_and_pressure) = particle.calculate_forces(neighbour) {
+                    particle.force += density_and_pressure;
+                }
+            });
+
+            let gravity = particle.force_from_gravity(self.config.gravity);
+            particle.force += gravity;
         }
     }
 }
@@ -203,6 +231,8 @@ mod tests {
             sim.tick((50, 50));
         }
         assert!(sim.particles.len() > 5);
+        assert!(sim.neighbours.size() > 5);
+        assert_eq!(sim.neighbours.size(), sim.particles.len());
     }
 
     #[test]

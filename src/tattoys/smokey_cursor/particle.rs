@@ -4,11 +4,11 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 
-/// "Size", or "area of influence" of a particle
+/// "Size", or more appro"area of influence" of a particle
 pub const PARTICLE_SIZE: f32 = 16.0;
 
-/// The radius around a particle within which its density is calculated
-const DENSITY_RADIUS: f32 = PARTICLE_SIZE * PARTICLE_SIZE;
+/// Just a cache for a frequently used calculation
+pub const PARTICLE_SIZE_SQUARED: f32 = PARTICLE_SIZE * PARTICLE_SIZE;
 /// Mass of the particle
 const MASS: f32 = 2.5;
 /// ?
@@ -16,7 +16,7 @@ const GAS_CONST: f32 = 2000.0;
 /// ?
 const REST_DENSITY: f32 = 300.0;
 /// Viscosity of the gas/liquid
-const VISCOSITY: f32 = 50.0; // Liquid default was 200.0
+const VISCOSITY: f32 = 200.0;
 
 /// Timestep, therefore how detailed to make the simulation
 const TIMESTEP: f32 = 0.0007;
@@ -46,7 +46,7 @@ static VISC_LAP: f32 =
 type Colour = (f32, f32, f32);
 
 /// A single particle of gas
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 #[non_exhaustive]
 pub struct Particle {
     /// Position of a particle
@@ -79,32 +79,34 @@ impl Particle {
     pub fn accumulate_density(&mut self, other: &Self) {
         let delta = other.position - self.position;
         let distance_squared = delta.length_squared();
-        if distance_squared >= DENSITY_RADIUS {
-            return;
-        }
-
-        self.density += MASS * POLY6 * f32::powf(DENSITY_RADIUS - distance_squared, 3.0);
+        self.density += MASS * POLY6 * f32::powf(PARTICLE_SIZE_SQUARED - distance_squared, 3.0);
     }
 
     /// Calculate forces on the particle
-    pub fn calculate_forces(&mut self, other: &Self) -> Option<(Vec2, Vec2)> {
+    pub fn calculate_forces(&mut self, other: &Self) -> Option<Vec2> {
         let delta = other.position - self.position;
         let distance = delta.length();
-        if distance >= PARTICLE_SIZE {
-            return None;
-        }
 
-        let force_from_pressure = -delta.normalize() * MASS * (self.pressure + other.pressure)
+        let mut force_from_pressure = -delta.normalize() * MASS * (self.pressure + other.pressure)
             / (2.0 * other.density)
             * SPIKY_GRAD
             * f32::powf(PARTICLE_SIZE - distance, 3.0);
+        if force_from_pressure.is_nan() {
+            tracing::error!("Force from pressure is NaN");
+            force_from_pressure = Vec2::ZERO;
+        }
 
-        let force_from_viscosity = VISCOSITY * MASS * (other.velocity - self.velocity)
+        let mut force_from_viscosity = VISCOSITY * MASS * (other.velocity - self.velocity)
             / other.density
             * VISC_LAP
             * (PARTICLE_SIZE - distance);
+        if force_from_viscosity.is_nan() {
+            tracing::error!("Force from viscosity is NaN");
+            force_from_viscosity = Vec2::ZERO;
+        }
 
-        Some((force_from_pressure, force_from_viscosity))
+        let force = force_from_pressure + force_from_viscosity;
+        Some(force)
     }
 
     /// Given the acummulated density of a particle and its neighbours, calculate its presssure
@@ -114,12 +116,22 @@ impl Particle {
 
     /// The force from gravity
     pub fn force_from_gravity(&mut self, gravity: Vec2) -> Vec2 {
-        gravity * MASS / self.density
+        let mut force = gravity * MASS / self.density;
+        if force.is_nan() {
+            tracing::error!("Force from gravity is NaN");
+            force = Vec2::ZERO;
+        }
+        force
     }
 
     /// Apply the forces to the velocity and then actually move the particle
     pub fn integrate(&mut self) {
-        self.velocity += TIMESTEP * self.force / self.density;
+        let velocity = TIMESTEP * self.force / self.density;
+        if velocity.is_nan() {
+            tracing::error!("Velocity is NaN");
+            return;
+        }
+        self.velocity += velocity;
         self.position += TIMESTEP * self.velocity;
     }
 
@@ -162,5 +174,21 @@ impl Default for Particle {
             force: Vec2::ZERO,
             pressure: 0.0,
         }
+    }
+}
+
+impl rstar::RTreeObject for Particle {
+    type Envelope = rstar::AABB<[f32; 2]>;
+
+    fn envelope(&self) -> Self::Envelope {
+        rstar::AABB::from_point([self.position.x, self.position.y])
+    }
+}
+
+#[allow(clippy::missing_trait_methods)]
+impl rstar::PointDistance for Particle {
+    fn distance_2(&self, point: &[f32; 2]) -> f32 {
+        let other = Vec2::new(point[0], point[1]);
+        self.position.distance_squared(other)
     }
 }
