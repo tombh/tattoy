@@ -11,9 +11,8 @@ use termwiz::surface::Position as TermwizPosition;
 use tokio::sync::mpsc;
 
 use crate::pty::StreamBytes;
+use crate::run::FrameUpdate;
 use crate::run::Protocol;
-use crate::run::SurfaceType;
-use crate::run::TattoySurface;
 use crate::shared_state::SharedState;
 
 /// Wezterm's internal configuration
@@ -74,7 +73,7 @@ impl ShadowTTY {
     pub async fn run(
         &mut self,
         mut pty_output: mpsc::Receiver<StreamBytes>,
-        shadow_output: &mpsc::Sender<TattoySurface>,
+        shadow_output: &mpsc::Sender<FrameUpdate>,
         mut protocol_receive: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -97,10 +96,7 @@ impl ShadowTTY {
             self.update_state_surface(surface)?;
 
             shadow_output
-                .send(TattoySurface {
-                    kind: SurfaceType::PTYSurface,
-                    surface: surface_copy,
-                })
+                .send(FrameUpdate::PTYSurface(surface_copy))
                 .await?;
         }
 

@@ -10,7 +10,7 @@ use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
 use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
 
-use crate::run::{Protocol, SurfaceType, TattoySurface};
+use crate::run::{FrameUpdate, Protocol};
 use crate::shared_state::SharedState;
 
 ///
@@ -78,7 +78,7 @@ impl Renderer {
     /// Handle updates from the PTY and tattoys
     pub async fn run(
         &mut self,
-        mut surfaces: mpsc::Receiver<TattoySurface>,
+        mut surfaces: mpsc::Receiver<FrameUpdate>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         let mut terminal = Self::get_termwiz_terminal()?;
@@ -107,25 +107,28 @@ impl Renderer {
     /// the minimum number of changes.
     fn render(
         &mut self,
-        update: TattoySurface,
+        update: FrameUpdate,
         output: &mut BufferedTerminal<impl TermwizTerminal>,
     ) -> Result<()> {
-        match update.kind {
-            SurfaceType::Tattoy => self.background = update.surface,
-            SurfaceType::PTYSurface => self.pty = update.surface,
+        let mut frame = TermwizSurface::new(self.width, self.height);
+
+        match update {
+            FrameUpdate::TattoySurface(surface) => self.background = surface,
+            FrameUpdate::TattoyPixels(_) => (),
+            FrameUpdate::PTYSurface(surface) => self.pty = surface,
         }
 
-        let mut frame = TermwizSurface::new(self.width, self.height);
         frame.draw_from_screen(&self.background, 0, 0);
+
         let cells = self.pty.screen_cells();
         for (y, line) in cells.iter().enumerate() {
             for (x, cell) in line.iter().enumerate() {
                 let attrs = cell.attrs();
-                frame.add_change(TermwizChange::CursorPosition {
-                    x: TermwizPosition::Absolute(x),
-                    y: TermwizPosition::Absolute(y),
-                });
                 frame.add_changes(vec![
+                    TermwizChange::CursorPosition {
+                        x: TermwizPosition::Absolute(x),
+                        y: TermwizPosition::Absolute(y),
+                    },
                     TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
                         attrs.foreground(),
                     )),
@@ -141,8 +144,7 @@ impl Renderer {
             }
         }
 
-        let minimum_changes = output.diff_screens(&frame);
-        output.add_changes(minimum_changes);
+        output.draw_from_screen(&frame, 0, 0);
 
         let (x, y) = self.pty.cursor_position();
         output.add_change(TermwizChange::CursorPosition {

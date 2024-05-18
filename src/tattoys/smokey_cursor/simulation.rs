@@ -1,8 +1,10 @@
 //! All the maths to do a smoke simulation
 //! Heavily inspired by [mueller-sph-rs](https://github.com/lucas-schuermann/mueller-sph-rs)
 
-use glam::Vec2;
 use rand::Rng;
+use std::collections::VecDeque;
+
+use glam::Vec2;
 
 use super::{
     config::Config,
@@ -11,11 +13,9 @@ use super::{
 use crate::tattoys::utils::is_random_trigger;
 
 /// The number of attempts allowed to try to find a safe place to add a new particle
-const ATTEMPTS_TO_FIND_SAFE_PLACE: usize = 30;
+const ATTEMPTS_TO_FIND_SAFE_PLACE: usize = 100;
 /// Number of times to iterate the simulation per graphical frame
 const NUMBER_OF_SIMULATION_STEPS_PER_TICK: usize = 10;
-/// The number of seconds a particle can live before being removed
-const MAX_AGE_OF_PARTICLE: u64 = 60;
 
 ///
 #[derive(Default)]
@@ -26,7 +26,7 @@ pub struct Simulation {
     /// Height of the simulation (double the rows of the TTY)
     pub height: f32,
     /// All the particles
-    pub particles: Vec<Particle>,
+    pub particles: VecDeque<Particle>,
     /// All the particles as spatially-optimised neighbours
     pub neighbours: rstar::RTree<Particle>,
     /// The configurable settings for the simulation
@@ -51,7 +51,7 @@ impl Simulation {
         Self {
             width: width as f32 * config.scale,
             height: height as f32 * config.scale,
-            particles: Vec::default(),
+            particles: VecDeque::default(),
             neighbours: rstar::RTree::new(),
             config,
         }
@@ -73,15 +73,11 @@ impl Simulation {
 
     /// Remove particles over a certain age
     pub fn remove_old_particles(&mut self) {
-        self.particles.retain(|particle| {
-            let is_expired =
-                particle.created_at.elapsed() > std::time::Duration::from_secs(MAX_AGE_OF_PARTICLE);
-            if is_expired {
-                self.neighbours.remove(particle);
-                return false;
+        if self.particles.len() > self.config.max_particles {
+            if let Some(particle) = self.particles.pop_back() {
+                self.neighbours.remove(&particle);
             }
-            true
-        });
+        }
     }
 
     /// Safely add a particle without creating "explosions"
@@ -105,7 +101,7 @@ impl Simulation {
             };
             tracing::trace!("Adding particle at: {particle:?}");
             let neighbour = particle.clone();
-            self.particles.push(particle);
+            self.particles.push_front(particle);
             self.neighbours.insert(neighbour);
         }
     }
@@ -171,6 +167,7 @@ impl Simulation {
             neighbours.for_each(|neighbour| {
                 particle.accumulate_density(neighbour);
             });
+
             particle.update_pressure();
         }
     }
@@ -221,7 +218,7 @@ mod tests {
             position,
             ..Default::default()
         };
-        sim.particles.push(particle);
+        sim.particles.push_front(particle);
     }
 
     #[test]
@@ -243,8 +240,8 @@ mod tests {
         for _ in 0_usize..100 {
             sim.evolve();
         }
-        assert_eq!(sim.particles[0].position, Vec2::new(0.0, 0.0));
-        assert_eq!(sim.particles[1].position_unscaled(), Vec2::new(99.0, 99.0));
+        assert_eq!(sim.particles[1].position, Vec2::new(0.0, 0.0));
+        assert_eq!(sim.particles[0].position_unscaled(), Vec2::new(99.0, 99.0));
     }
 
     #[test]

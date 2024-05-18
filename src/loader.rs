@@ -6,7 +6,7 @@ use color_eyre::eyre::Result;
 
 use tokio::sync::mpsc;
 
-use crate::run::{Protocol, TattoySurface};
+use crate::run::{FrameUpdate, Protocol};
 use crate::shared_state::SharedState;
 use crate::tattoys::index::{create_instance, Tattoyer};
 
@@ -37,7 +37,7 @@ impl Loader {
     /// Run the tattoy(s)
     pub fn run(
         &mut self,
-        tattoy_output: &mpsc::Sender<TattoySurface>,
+        tattoy_output: &mpsc::Sender<FrameUpdate>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         let target_frame_rate = 30;
@@ -60,10 +60,7 @@ impl Loader {
             }
 
             for tattoy in &mut self.tattoys {
-                tattoy_output.try_send(TattoySurface {
-                    kind: crate::run::SurfaceType::Tattoy,
-                    surface: tattoy.tick()?,
-                })?;
+                tattoy_output.try_send(FrameUpdate::TattoySurface(tattoy.tick()?))?;
             }
 
             if let Some(i) = target_frame_rate_micro.checked_sub(frame_time.elapsed()) {

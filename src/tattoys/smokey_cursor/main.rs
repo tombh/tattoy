@@ -1,12 +1,11 @@
 //! The cursor gives off a gas that floats up and interacts with the history
 
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use color_eyre::eyre::Result;
 
-use crate::{shared_state::SharedState, tattoys::index::Tattoyer};
-
 use super::simulation::Simulation;
+use crate::{shared_state::SharedState, tattoys::index::Tattoyer};
 
 ///
 #[derive(Default)]
@@ -19,6 +18,8 @@ pub struct SmokeyCursor {
     state: Arc<SharedState>,
     /// All the particles of gas
     simulation: Simulation,
+    /// Timestamp of last tick
+    durations: VecDeque<f64>,
 }
 
 impl Tattoyer for SmokeyCursor {
@@ -32,12 +33,21 @@ impl Tattoyer for SmokeyCursor {
             state,
             #[allow(clippy::arithmetic_side_effects)]
             simulation: Simulation::new(tty_size.0, tty_size.1 * 2),
+            durations: VecDeque::default(),
         })
     }
 
     /// One frame of the tattoy
-    #[allow(clippy::float_arithmetic)]
+    #[allow(
+        clippy::float_arithmetic,
+        clippy::arithmetic_side_effects,
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        clippy::default_numeric_fallback
+    )]
     fn tick(&mut self) -> Result<termwiz::surface::Surface> {
+        let start = std::time::Instant::now();
+
         let mut surface = crate::surface::Surface::new(self.width, self.height);
         let pty = self
             .state
@@ -56,11 +66,20 @@ impl Tattoyer for SmokeyCursor {
         )]
         for particle in &mut self.simulation.particles {
             let position = particle.position_unscaled();
-            surface.add_pixel(
-                (position.x) as usize,
-                (position.y) as usize,
-                particle.colour,
-            )?;
+            surface.add_pixel(position.x as usize, position.y as usize, particle.colour)?;
+        }
+
+        let text_coloumn = self.width - 20;
+        let count = self.simulation.particles.len();
+        surface.add_text(text_coloumn, 0, format!("Particles: {count}"));
+
+        let average_tick = self.durations.iter().sum::<f64>() / self.durations.len() as f64;
+        let fps = 1.0 / average_tick;
+        surface.add_text(text_coloumn, 1, format!("FPS: {fps:.3}"));
+
+        self.durations.push_front(start.elapsed().as_secs_f64());
+        if self.durations.len() > 30 {
+            self.durations.pop_back();
         }
         Ok(surface.surface)
     }

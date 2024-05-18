@@ -13,26 +13,18 @@ use crate::pty::{StreamBytes, PTY};
 use crate::renderer::Renderer;
 use crate::shadow_tty::ShadowTTY;
 use crate::shared_state::SharedState;
+use crate::tattoys::smokey_cursor::particle::Particle;
 
 /// There a are 2 "screens" or "surfaces" to manage in Tattoy. The fancy special affects screen
 /// and the traditional PTY.
 #[non_exhaustive]
-pub enum SurfaceType {
-    /// A frame of a tattoy screen
-    Tattoy,
+pub enum FrameUpdate {
+    /// A frame of a tattoy TTY screen
+    TattoySurface(termwiz::surface::Surface),
+    /// A frame of a tattoy TTY screen
+    TattoyPixels(Vec<Particle>),
     /// A frame of a PTY terminal
-    PTYSurface,
-}
-
-/// The message type of the output channel. We want to be able to react immediately to either
-/// new PTY data or new fancy Tattoy data.
-#[non_exhaustive]
-pub struct TattoySurface {
-    /// The type of the surface
-    pub kind: SurfaceType,
-    /// The surface data itself. It's lots of "cells", each with colour
-    /// attributes and a character.
-    pub surface: termwiz::surface::Surface,
+    PTYSurface(termwiz::surface::Surface),
 }
 
 /// Commands to control the various tasks/threads

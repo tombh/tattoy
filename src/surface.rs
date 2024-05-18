@@ -66,6 +66,19 @@ impl Surface {
         Ok(())
     }
 
+    /// Overlay white text at a given coord
+    pub fn add_text(&mut self, x: usize, y: usize, text: String) {
+        self.surface.add_changes(vec![
+            TermwizChange::CursorPosition {
+                x: TermwizPosition::Absolute(x),
+                y: TermwizPosition::Absolute(y),
+            },
+            Self::make_default_bg_colour(),
+            Self::make_fg_colour((1.0, 1.0, 1.0)),
+        ]);
+        self.surface.add_change(text);
+    }
+
     /// Make a Termwiz colour attribute
     #[must_use]
     pub const fn make_colour_attribute(colour: Colour) -> termwiz::color::ColorAttribute {
