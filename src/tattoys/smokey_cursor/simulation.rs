@@ -144,13 +144,13 @@ impl Simulation {
 
     /// Calculate the next position of the particles
     fn integrate(&mut self) {
+        let mut neighbours: Vec<Particle> = Vec::new();
         for particle in &mut self.particles {
-            self.neighbours
-                .remove_at_point(&[particle.position.x, particle.position.y]);
             particle.integrate();
             particle.boundaries(self.width, self.height);
-            self.neighbours.insert(particle.clone());
+            neighbours.push(particle.clone());
         }
+        self.neighbours = rstar::RTree::bulk_load(neighbours);
     }
 
     /// Calculate the density and pressure affecting the particles
