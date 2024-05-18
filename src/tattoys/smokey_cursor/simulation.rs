@@ -4,7 +4,10 @@
 use glam::Vec2;
 use rand::Rng;
 
-use super::particle::{Particle, PARTICLE_SIZE};
+use super::{
+    config::Config,
+    particle::{Particle, PARTICLE_SIZE},
+};
 use crate::tattoys::utils::is_random_trigger;
 
 /// The number of attempts allowed to try to find a safe place to add a new particle
@@ -13,8 +16,6 @@ const ATTEMPTS_TO_FIND_SAFE_PLACE: usize = 30;
 const NUMBER_OF_SIMULATION_STEPS_PER_TICK: usize = 10;
 /// The number of seconds a particle can live before being removed
 const MAX_AGE_OF_PARTICLE: u64 = 60;
-/// How much bigger a partical is compared to a rendered pixel
-pub const SCALE: f32 = PARTICLE_SIZE * 0.75;
 
 ///
 #[derive(Default)]
@@ -26,6 +27,8 @@ pub struct Simulation {
     pub height: f32,
     /// All the particles
     pub particles: Vec<Particle>,
+    /// The configurable settings for the simulation
+    pub config: Config,
 }
 
 #[allow(
@@ -39,10 +42,15 @@ impl Simulation {
     /// Initialise a new simulation
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
+        let config = Config {
+            initial_velocity: Vec2::new(0.01, -0.1),
+            ..Default::default()
+        };
         Self {
-            width: width as f32 * SCALE,
-            height: height as f32 * SCALE,
+            width: width as f32 * config.scale,
+            height: height as f32 * config.scale,
             particles: Vec::default(),
+            config,
         }
     }
 
@@ -66,10 +74,10 @@ impl Simulation {
         });
     }
 
-    /// Safely add a particle without creeating "explosions"
+    /// Safely add a particle without creating "explosions"
     pub fn add_particle(&mut self, mut x: f32, mut y: f32) {
-        x *= SCALE;
-        y *= SCALE;
+        x *= self.config.scale;
+        y *= self.config.scale;
 
         let ish_range = 0.01;
         let colour_ish = rand::thread_rng().gen_range(-ish_range..ish_range);
@@ -77,10 +85,11 @@ impl Simulation {
         if let Some((x_safe, y_safe)) = self.find_safe_place(x, y) {
             let particle = Particle {
                 created_at: std::time::Instant::now(),
+                scale: self.config.scale,
                 position: Vec2::new(x_safe, y_safe),
                 density: 1.0,
                 colour: (0.15 + colour_ish, 0.15 + colour_ish, 0.15 + colour_ish),
-                velocity: Vec2::new(0.01, -0.1),
+                velocity: self.config.initial_velocity,
                 force: Vec2::ZERO,
                 pressure: 0.0,
             };
@@ -156,8 +165,9 @@ impl Simulation {
                     force_from_viscosity += forces.1;
                 }
             }
-            particle.force =
-                force_from_pressure + force_from_viscosity + particle.force_from_gravity();
+            particle.force = force_from_pressure
+                + force_from_viscosity
+                + particle.force_from_gravity(self.config.gravity);
 
             self.particles[i] = particle;
         }
@@ -165,8 +175,26 @@ impl Simulation {
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
+
+    fn make_sim() -> Simulation {
+        let mut sim = Simulation::new(100, 100);
+        sim.config.gravity = Vec2::ZERO;
+        sim.config.initial_velocity = Vec2::ZERO;
+        sim.config.scale = 1.0; // So we don't have to scale/unscale
+        sim
+    }
+
+    fn add_particle(sim: &mut Simulation, position: Vec2) {
+        let particle = Particle {
+            position,
+            ..Default::default()
+        };
+        sim.particles.push(particle);
+    }
 
     #[test]
     fn basic() {
@@ -175,5 +203,56 @@ mod tests {
             sim.tick((50, 50));
         }
         assert!(sim.particles.len() > 5);
+    }
+
+    #[test]
+    fn distant_particles_dont_interact() {
+        let mut sim = make_sim();
+        add_particle(&mut sim, Vec2::new(0.0, 0.0));
+        add_particle(&mut sim, Vec2::new(99.0, 99.0));
+        for _ in 0_usize..100 {
+            sim.evolve();
+        }
+        assert_eq!(sim.particles[0].position, Vec2::new(0.0, 0.0));
+        assert_eq!(sim.particles[1].position_unscaled(), Vec2::new(99.0, 99.0));
+    }
+
+    #[test]
+    fn extremely_close_particles_repel() {
+        let mut sim = make_sim();
+        add_particle(&mut sim, Vec2::new(50.0, 50.0));
+        add_particle(&mut sim, Vec2::new(55.0, 55.0));
+
+        let distance_before = sim.particles[0]
+            .position
+            .distance(sim.particles[1].position);
+        for _ in 0_usize..100 {
+            sim.evolve();
+        }
+        let distance_after = sim.particles[0]
+            .position
+            .distance(sim.particles[1].position);
+
+        assert!(
+            distance_before < distance_after,
+            "before/after: {distance_before:?}/{distance_after:?}"
+        );
+    }
+
+    #[test]
+    fn gravity_moves_particle() {
+        let mut sim = make_sim();
+        sim.config.gravity = Vec2::new(0.0, -1.0);
+        add_particle(&mut sim, Vec2::new(50.0, 50.0));
+
+        for _ in 0_usize..10 {
+            sim.evolve();
+        }
+
+        let x = sim.particles[0].position.x;
+        let y = sim.particles[0].position.y;
+        assert!(y < 50.0, "y: {y}");
+        assert!(y > 40.0, "y: {y}");
+        assert_eq!(x, 50.0);
     }
 }

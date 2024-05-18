@@ -6,8 +6,6 @@ use glam::Vec2;
 
 /// "Size", or "area of influence" of a particle
 pub const PARTICLE_SIZE: f32 = 16.0;
-/// The grvitational constant
-const GRAVITY: Vec2 = Vec2::from_array([0.0, -9.81]);
 
 /// The radius around a particle within which its density is calculated
 const DENSITY_RADIUS: f32 = PARTICLE_SIZE * PARTICLE_SIZE;
@@ -53,6 +51,8 @@ type Colour = (f32, f32, f32);
 pub struct Particle {
     /// Position of a particle
     pub created_at: std::time::Instant,
+    /// Scale of the simulation
+    pub scale: f32,
     /// Position of a particle
     pub position: Vec2,
     /// Velocity of a  particle
@@ -113,8 +113,8 @@ impl Particle {
     }
 
     /// The force from gravity
-    pub fn force_from_gravity(&mut self) -> Vec2 {
-        GRAVITY * MASS / self.density
+    pub fn force_from_gravity(&mut self, gravity: Vec2) -> Vec2 {
+        gravity * MASS / self.density
     }
 
     /// Apply the forces to the velocity and then actually move the particle
@@ -140,6 +140,27 @@ impl Particle {
         if self.position.y > height - 1.0 {
             self.velocity.y *= BOUND_DAMPING;
             self.position.y = height - 1.0;
+        }
+    }
+
+    /// The position of the particle in the same scale as they were added
+    #[must_use]
+    pub fn position_unscaled(&self) -> Vec2 {
+        self.position / self.scale
+    }
+}
+
+impl Default for Particle {
+    fn default() -> Self {
+        Self {
+            created_at: std::time::Instant::now(),
+            scale: 1.0,
+            position: Vec2::ZERO,
+            density: 1.0,
+            colour: Colour::default(),
+            velocity: Vec2::ZERO,
+            force: Vec2::ZERO,
+            pressure: 0.0,
         }
     }
 }

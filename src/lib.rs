@@ -85,6 +85,7 @@ pub mod tattoys {
 
     ///
     pub mod smokey_cursor {
+        pub mod config;
         pub mod main;
         pub mod particle;
         pub mod simulation;

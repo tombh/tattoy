@@ -6,7 +6,7 @@ use color_eyre::eyre::Result;
 
 use crate::{shared_state::SharedState, tattoys::index::Tattoyer};
 
-use super::simulation::{Simulation, SCALE};
+use super::simulation::Simulation;
 
 ///
 #[derive(Default)]
@@ -35,7 +35,7 @@ impl Tattoyer for SmokeyCursor {
         })
     }
 
-    ///
+    /// One frame of the tattoy
     #[allow(clippy::float_arithmetic)]
     fn tick(&mut self) -> Result<termwiz::surface::Surface> {
         let mut surface = crate::surface::Surface::new(self.width, self.height);
@@ -55,9 +55,10 @@ impl Tattoyer for SmokeyCursor {
             clippy::as_conversions
         )]
         for particle in &mut self.simulation.particles {
+            let position = particle.position_unscaled();
             surface.add_pixel(
-                (particle.position.x / SCALE) as usize,
-                (particle.position.y / SCALE) as usize,
+                (position.x) as usize,
+                (position.y) as usize,
                 particle.colour,
             )?;
         }
