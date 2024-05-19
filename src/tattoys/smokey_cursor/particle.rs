@@ -6,7 +6,6 @@ use glam::Vec2;
 
 /// "Size", or more appro"area of influence" of a particle
 pub const PARTICLE_SIZE: f32 = 16.0;
-
 /// Just a cache for a frequently used calculation
 pub const PARTICLE_SIZE_SQUARED: f32 = PARTICLE_SIZE * PARTICLE_SIZE;
 /// Mass of the particle
@@ -83,27 +82,20 @@ impl Particle {
     }
 
     /// Calculate forces on the particle
+    #[must_use]
     pub fn calculate_forces(&self, other: &Self) -> Option<Vec2> {
         let delta = other.position - self.position;
         let distance = delta.length();
 
-        let mut force_from_pressure = -delta.normalize() * MASS * (self.pressure + other.pressure)
+        let force_from_pressure = -delta.normalize() * MASS * (self.pressure + other.pressure)
             / (2.0 * other.density)
             * SPIKY_GRAD
             * f32::powf(PARTICLE_SIZE - distance, 3.0);
-        if force_from_pressure.is_nan() {
-            tracing::error!("Force from pressure is NaN");
-            force_from_pressure = Vec2::ZERO;
-        }
 
-        let mut force_from_viscosity = VISCOSITY * MASS * (other.velocity - self.velocity)
+        let force_from_viscosity = VISCOSITY * MASS * (other.velocity - self.velocity)
             / other.density
             * VISC_LAP
             * (PARTICLE_SIZE - distance);
-        if force_from_viscosity.is_nan() {
-            tracing::error!("Force from viscosity is NaN");
-            force_from_viscosity = Vec2::ZERO;
-        }
 
         let force = force_from_pressure + force_from_viscosity;
         Some(force)
@@ -115,13 +107,9 @@ impl Particle {
     }
 
     /// The force from gravity
+    #[must_use]
     pub fn force_from_gravity(&self, gravity: Vec2) -> Vec2 {
-        let mut force = gravity * MASS / self.density;
-        if force.is_nan() {
-            tracing::error!("Force from gravity is NaN");
-            force = Vec2::ZERO;
-        }
-        force
+        gravity * MASS / self.density
     }
 
     /// Apply the forces to the velocity and then actually move the particle

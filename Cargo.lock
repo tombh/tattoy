@@ -1560,6 +1560,7 @@ dependencies = [
  "glam",
  "portable-pty",
  "rand",
+ "rayon",
  "rstar",
  "termwiz",
  "tokio",

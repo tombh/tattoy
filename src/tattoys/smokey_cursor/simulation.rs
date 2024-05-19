@@ -2,6 +2,7 @@
 //! Heavily inspired by [mueller-sph-rs](https://github.com/lucas-schuermann/mueller-sph-rs)
 
 use rand::Rng;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::VecDeque;
 
 use glam::Vec2;
@@ -155,7 +156,7 @@ impl Simulation {
 
     /// Calculate the density and pressure affecting the particles
     fn compute_density_pressure(&mut self) {
-        for particle in &mut self.particles {
+        self.particles.par_iter_mut().for_each(|particle| {
             particle.density = 0.0;
 
             // TODO: cache?
@@ -169,12 +170,12 @@ impl Simulation {
             });
 
             particle.update_pressure();
-        }
+        });
     }
 
     /// Compute forces on the particles, from density, pressure and gravity
     fn compute_forces(&mut self) {
-        for particle in &mut self.particles {
+        self.particles.par_iter_mut().for_each(|particle| {
             particle.force = Vec2::ZERO;
 
             // TODO: cache?
@@ -195,7 +196,7 @@ impl Simulation {
 
             let gravity = particle.force_from_gravity(self.config.gravity);
             particle.force += gravity;
-        }
+        });
     }
 }
 
