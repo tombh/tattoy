@@ -76,7 +76,6 @@ impl ShadowTTY {
         shadow_output: &mpsc::Sender<FrameUpdate>,
         mut protocol_receive: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
             if let Some(bytes) = pty_output.recv().await {
                 self.terminal.advance_bytes(bytes);

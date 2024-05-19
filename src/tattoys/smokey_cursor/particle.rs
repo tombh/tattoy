@@ -83,7 +83,7 @@ impl Particle {
     }
 
     /// Calculate forces on the particle
-    pub fn calculate_forces(&mut self, other: &Self) -> Option<Vec2> {
+    pub fn calculate_forces(&self, other: &Self) -> Option<Vec2> {
         let delta = other.position - self.position;
         let distance = delta.length();
 
@@ -115,7 +115,7 @@ impl Particle {
     }
 
     /// The force from gravity
-    pub fn force_from_gravity(&mut self, gravity: Vec2) -> Vec2 {
+    pub fn force_from_gravity(&self, gravity: Vec2) -> Vec2 {
         let mut force = gravity * MASS / self.density;
         if force.is_nan() {
             tracing::error!("Force from gravity is NaN");

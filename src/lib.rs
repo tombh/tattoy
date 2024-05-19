@@ -62,6 +62,7 @@
     clippy::question_mark_used,
     clippy::missing_inline_in_public_items,
     clippy::missing_errors_doc,
+    clippy::empty_docs,
     clippy::single_call_fn,
     clippy::absolute_paths,
     clippy::separated_literal_suffix,

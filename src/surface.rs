@@ -38,7 +38,7 @@ impl Surface {
             x: TermwizPosition::Absolute(col),
             y: TermwizPosition::Absolute(row),
         });
-        let block = match y % 2 {
+        let block = match y.rem_euclid(2) {
             0 => "▀", // even
             _ => "▄", // odd
         };
@@ -57,7 +57,7 @@ impl Surface {
             }
             _ => {
                 self.surface.add_changes(vec![bg_default, fg]);
-                content = block.to_owned();
+                block.clone_into(&mut content);
             }
         }
 
@@ -148,7 +148,7 @@ mod tests {
         let cells = surface.surface.screen_cells();
         for (i, line) in cells.iter().enumerate() {
             cells_copy.push(Vec::default());
-            for (_, cell) in line.iter().enumerate() {
+            for cell in line.iter() {
                 cells_copy[i].push(cell.clone());
             }
         }

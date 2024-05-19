@@ -42,11 +42,10 @@ impl Loader {
     ) -> Result<()> {
         let target_frame_rate = 30;
 
-        #[allow(clippy::integer_division)]
-        let target_frame_rate_micro =
-            std::time::Duration::from_micros(ONE_MICROSECOND / target_frame_rate);
+        #[allow(clippy::arithmetic_side_effects)]
+        let target = ONE_MICROSECOND.wrapping_div(target_frame_rate);
+        let target_frame_rate_micro = std::time::Duration::from_micros(target);
 
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
             let frame_time = std::time::Instant::now();
 

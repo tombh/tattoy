@@ -37,7 +37,6 @@ pub enum Protocol {
 
 ///
 #[allow(clippy::use_debug, clippy::print_stderr, clippy::exit)]
-#[allow(clippy::multiple_unsafe_ops_per_block)]
 pub async fn run() -> Result<()> {
     let mut enabled_tattoys: Vec<String> = vec![];
 

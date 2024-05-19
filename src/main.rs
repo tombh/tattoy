@@ -1,4 +1,4 @@
-//! Just main(). Keep as small as possible.
+//! Just `main()`. Keep as small as possible.
 #![allow(clippy::cargo)]
 #![allow(clippy::blanket_clippy_restriction_lints)]
 #![allow(clippy::restriction)]

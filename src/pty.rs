@@ -110,14 +110,12 @@ impl PTY {
         drop(pty_pair.slave);
 
         tokio::spawn(async move {
-            #[allow(clippy::multiple_unsafe_ops_per_block)]
             if let Err(err) = Self::forward_input(user_input, pty_stream_writer, protocol).await {
                 tracing::error!("Writing to PTY stream: {err}");
             }
         });
 
         tracing::debug!("Starting PTY reader loop");
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
         loop {
             let mut buffer: StreamBytes = [0; 128];
 
@@ -162,7 +160,8 @@ impl PTY {
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         tracing::debug!("Starting `forward_input` loop");
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
+
+        #[allow(clippy::integer_division_remainder_used)]
         loop {
             tokio::select! {
                 message = protocol.recv() => {
@@ -206,7 +205,7 @@ impl PTY {
         let stdin = tokio::io::stdin();
         let mut reader = tokio::io::BufReader::new(stdin);
 
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        #[allow(clippy::integer_division_remainder_used)]
         loop {
             let mut buffer: StreamBytes = [0; 128];
             tokio::select! {
@@ -243,7 +242,6 @@ impl PTY {
 }
 
 #[cfg(test)]
-#[allow(clippy::multiple_unsafe_ops_per_block)]
 mod tests {
     use super::*;
 

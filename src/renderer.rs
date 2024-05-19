@@ -85,7 +85,6 @@ impl Renderer {
         terminal.set_raw_mode()?;
         let mut output = BufferedTerminal::new(terminal)?;
 
-        #[allow(clippy::multiple_unsafe_ops_per_block)]
         while let Some(update) = surfaces.recv().await {
             self.render(update, &mut output)?;
 
