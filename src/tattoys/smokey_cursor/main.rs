@@ -49,15 +49,16 @@ impl Tattoyer for SmokeyCursor {
         let start = std::time::Instant::now();
 
         let mut surface = crate::surface::Surface::new(self.width, self.height);
-        let pty = self
+        let mut pty = self
             .state
             .shadow_tty
-            .read()
+            .write()
             .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
         let cursor = pty.cursor_position();
-        drop(pty);
+        let cells = pty.screen_cells();
 
-        self.simulation.tick(cursor);
+        self.simulation.tick(cursor, &cells);
+        drop(pty);
 
         #[allow(
             clippy::cast_sign_loss,

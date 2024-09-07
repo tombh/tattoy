@@ -9,6 +9,7 @@ use termwiz::surface::Surface as TermwizSurface;
 use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
 use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
+use wezterm_term::Cell;
 
 use crate::run::{FrameUpdate, Protocol};
 use crate::shared_state::SharedState;
@@ -117,41 +118,52 @@ impl Renderer {
             FrameUpdate::PTYSurface(surface) => self.pty = surface,
         }
 
-        frame.draw_from_screen(&self.background, 0, 0);
+        let (cursor_x, cursor_y) = self.pty.cursor_position();
 
-        let cells = self.pty.screen_cells();
-        for (y, line) in cells.iter().enumerate() {
-            for (x, cell) in line.iter().enumerate() {
-                let attrs = cell.attrs();
-                frame.add_changes(vec![
-                    TermwizChange::CursorPosition {
-                        x: TermwizPosition::Absolute(x),
-                        y: TermwizPosition::Absolute(y),
-                    },
-                    TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
-                        attrs.foreground(),
-                    )),
-                    TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
-                        attrs.background(),
-                    )),
-                ]);
-
-                let character = cell.str();
-                if character != " " {
-                    frame.add_change(character);
+        let pty_cells = self.pty.screen_cells();
+        let bg_cells = self.background.screen_cells();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if x == cursor_x && y == cursor_y {
+                    continue;
                 }
+
+                Self::build_cell(&mut frame, &bg_cells, x, y);
+                Self::build_cell(&mut frame, &pty_cells, x, y);
             }
         }
 
         output.draw_from_screen(&frame, 0, 0);
-
-        let (x, y) = self.pty.cursor_position();
         output.add_change(TermwizChange::CursorPosition {
-            x: TermwizPosition::Absolute(x),
-            y: TermwizPosition::Absolute(y),
+            x: TermwizPosition::Absolute(cursor_x),
+            y: TermwizPosition::Absolute(cursor_y),
         });
-
         output.flush()?;
+
         Ok(())
+    }
+
+    /// Add a single cell to the frame
+    fn build_cell(frame: &mut TermwizSurface, cells: &[&mut [Cell]], x: usize, y: usize) {
+        #[allow(clippy::indexing_slicing)]
+        let cell = &cells[y][x];
+        let character = cell.str();
+        if character == " " {
+            return;
+        }
+
+        frame.add_changes(vec![
+            TermwizChange::CursorPosition {
+                x: TermwizPosition::Absolute(x),
+                y: TermwizPosition::Absolute(y),
+            },
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
+                cell.attrs().foreground(),
+            )),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
+                cell.attrs().background(),
+            )),
+        ]);
+        frame.add_change(character);
     }
 }

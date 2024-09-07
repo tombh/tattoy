@@ -13,7 +13,7 @@ categories = ["shell"]
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
-glam = { version = "0.27.0" }
+glam = { git = "https://github.com/bitshifter/glam-rs", rev = "aacb9c5f", features = [ "fast-math"] }
 portable-pty = "0.8.1"
 rand = "0.8.5"
 rayon = "1.10.0"

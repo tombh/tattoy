@@ -51,6 +51,9 @@
     // This is idiomatic Rust
     clippy::implicit_return,
 
+    // Helps with large implentations, better to split them up over multiple files
+    clippy::multiple_inherent_impl,
+
     // Multiple dependencies using the same dependency but distinct versions.
     // Are there even projects that don't suffer this?
     clippy::multiple_crate_versions,
@@ -89,6 +92,7 @@ pub mod tattoys {
         pub mod config;
         pub mod main;
         pub mod particle;
+        pub mod particles;
         pub mod simulation;
     }
 }

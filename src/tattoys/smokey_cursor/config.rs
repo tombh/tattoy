@@ -24,7 +24,7 @@ impl Default for Config {
             gravity: Vec2::new(0.0, -9.81),
             initial_velocity: Vec2::ZERO,
             scale: PARTICLE_SIZE * 0.75,
-            max_particles: 10000,
+            max_particles: 3000,
         }
     }
 }

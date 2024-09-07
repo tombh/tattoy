@@ -11,7 +11,5 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
     run::run().await?;
     tracing::debug!("Tattoy is exiting 🙇");
-    // TODO: something is still running in the background that prevents the app from exiting
-    // by itself.
-    std::process::exit(0);
+    Ok(())
 }

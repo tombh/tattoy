@@ -3,6 +3,7 @@
 use std::f32::consts::PI;
 
 use glam::Vec2;
+use rand::Rng;
 
 /// "Size", or more appro"area of influence" of a particle
 pub const PARTICLE_SIZE: f32 = 16.0;
@@ -64,6 +65,9 @@ pub struct Particle {
     pub pressure: f32,
     /// Colour of a gas particle
     pub colour: Colour,
+    /// Whether this particle is locked in place. It still contributes its denisty, pressure, etc
+    /// to the rest of the simulation, but it doesn't change its own position.
+    pub is_immovable: bool,
 }
 
 #[allow(
@@ -114,6 +118,9 @@ impl Particle {
 
     /// Apply the forces to the velocity and then actually move the particle
     pub fn integrate(&mut self) {
+        if self.is_immovable {
+            return;
+        }
         let velocity = TIMESTEP * self.force / self.density;
         if velocity.is_nan() {
             tracing::error!("Velocity is NaN");
@@ -148,6 +155,41 @@ impl Particle {
     pub fn position_unscaled(&self) -> Vec2 {
         self.position / self.scale
     }
+
+    /// A particle that can move
+    #[must_use]
+    pub fn default_movable(scale: f32, velocity: Vec2, x: f32, y: f32) -> Self {
+        let ish_range = 0.01;
+        let colour_ish = rand::thread_rng().gen_range(-ish_range..ish_range);
+        let colour = (0.15 + colour_ish, 0.15 + colour_ish, 0.15 + colour_ish);
+        Self {
+            created_at: std::time::Instant::now(),
+            scale,
+            position: Vec2::new(x * scale, y * scale),
+            density: 1.0,
+            colour,
+            velocity,
+            force: Vec2::ZERO,
+            pressure: 0.0,
+            is_immovable: false,
+        }
+    }
+
+    /// A particle that can't move
+    #[must_use]
+    pub fn default_immovable(scale: f32, x: f32, y: f32) -> Self {
+        Self {
+            created_at: std::time::Instant::now(),
+            scale,
+            position: Vec2::new(x * scale, y * scale),
+            density: 1.0,
+            colour: (1.0, 1.0, 1.0),
+            velocity: Vec2::ZERO,
+            force: Vec2::ZERO,
+            pressure: 0.0,
+            is_immovable: true,
+        }
+    }
 }
 
 impl Default for Particle {
@@ -161,6 +203,7 @@ impl Default for Particle {
             velocity: Vec2::ZERO,
             force: Vec2::ZERO,
             pressure: 0.0,
+            is_immovable: false,
         }
     }
 }
