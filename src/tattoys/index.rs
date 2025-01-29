@@ -9,9 +9,8 @@ use crate::shared_state::SharedState;
 use super::{random_walker::RandomWalker, smokey_cursor::main::SmokeyCursor};
 
 /// The trait that all tattoys must follow
-// #[enum_dispatch::enum_dispatch]
-pub trait Tattoyer {
-    ///
+pub(crate) trait Tattoyer {
+    /// Instantiate
     fn new(state: Arc<SharedState>) -> Result<Self>
     where
         Self: Sized;
@@ -21,7 +20,10 @@ pub trait Tattoyer {
 }
 
 /// How to map from a CLI arg to a tattoy implementation
-pub fn create_instance(tattoy: &str, state: &Arc<SharedState>) -> Result<Box<dyn Tattoyer + Send>> {
+pub(crate) fn create_instance(
+    tattoy: &str,
+    state: &Arc<SharedState>,
+) -> Result<Box<dyn Tattoyer + Send>> {
     let state_clone = Arc::clone(state);
     match tattoy {
         "random_walker" => Ok(Box::new(RandomWalker::new(state_clone)?)),

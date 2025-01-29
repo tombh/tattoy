@@ -7,9 +7,9 @@ use color_eyre::eyre::Result;
 use super::simulation::Simulation;
 use crate::{shared_state::SharedState, tattoys::index::Tattoyer};
 
-///
+/// `SmokeyCursor`
 #[derive(Default)]
-pub struct SmokeyCursor {
+pub(crate) struct SmokeyCursor {
     /// TTY width
     width: usize,
     /// TTY height
@@ -23,7 +23,7 @@ pub struct SmokeyCursor {
 }
 
 impl Tattoyer for SmokeyCursor {
-    ///
+    /// Instantiate
     fn new(state: Arc<SharedState>) -> Result<Self> {
         let tty_size = state.get_tty_size()?;
 
@@ -31,20 +31,12 @@ impl Tattoyer for SmokeyCursor {
             width: tty_size.0,
             height: tty_size.1,
             state,
-            #[allow(clippy::arithmetic_side_effects)]
             simulation: Simulation::new(tty_size.0, tty_size.1 * 2),
             durations: VecDeque::default(),
         })
     }
 
     /// One frame of the tattoy
-    #[allow(
-        clippy::float_arithmetic,
-        clippy::arithmetic_side_effects,
-        clippy::as_conversions,
-        clippy::cast_precision_loss,
-        clippy::default_numeric_fallback
-    )]
     fn tick(&mut self) -> Result<termwiz::surface::Surface> {
         let start = std::time::Instant::now();
 
@@ -60,13 +52,15 @@ impl Tattoyer for SmokeyCursor {
         self.simulation.tick(cursor, &cells);
         drop(pty);
 
-        #[allow(
-            clippy::cast_sign_loss,
-            clippy::cast_possible_truncation,
-            clippy::as_conversions
-        )]
         for particle in &mut self.simulation.particles {
             let position = particle.position_unscaled();
+
+            #[expect(
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                clippy::as_conversions,
+                reason = "We're just rendering to a terminal grid"
+            )]
             surface.add_pixel(position.x as usize, position.y as usize, particle.colour)?;
         }
 
@@ -74,9 +68,17 @@ impl Tattoyer for SmokeyCursor {
         let count = self.simulation.particles.len();
         surface.add_text(text_coloumn, 0, format!("Particles: {count}"));
 
-        let average_tick = self.durations.iter().sum::<f64>() / self.durations.len() as f64;
-        let fps = 1.0 / average_tick;
-        surface.add_text(text_coloumn, 1, format!("FPS: {fps:.3}"));
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_precision_loss,
+            clippy::default_numeric_fallback,
+            reason = "This is just debugging output"
+        )]
+        {
+            let average_tick = self.durations.iter().sum::<f64>() / self.durations.len() as f64;
+            let fps = 1.0 / average_tick;
+            surface.add_text(text_coloumn, 1, format!("FPS: {fps:.3}"));
+        };
 
         self.durations.push_front(start.elapsed().as_secs_f64());
         if self.durations.len() > 30 {

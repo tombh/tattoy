@@ -1,6 +1,7 @@
 //! Add pixels and or characters to a tattoy surface
 
 use color_eyre::eyre::bail;
+use color_eyre::eyre::ContextCompat as _;
 use color_eyre::eyre::Result;
 use termwiz::surface::Change as TermwizChange;
 use termwiz::surface::Position as TermwizPosition;
@@ -8,9 +9,8 @@ use termwiz::surface::Position as TermwizPosition;
 /// An RGB colour
 type Colour = (f32, f32, f32);
 
-/// "Compositor" or "Tattoys"?
-#[allow(clippy::exhaustive_structs)]
-pub struct Surface {
+/// `Surface`
+pub(crate) struct Surface {
     /// The terminal's width
     pub width: usize,
     /// The terminal's height
@@ -31,7 +31,6 @@ impl Surface {
     }
 
     /// Add a pixel ("▀", "▄") to a tattoy surface
-    #[allow(clippy::non_ascii_literal)]
     pub fn add_pixel(&mut self, x: usize, y: usize, colour: Colour) -> Result<()> {
         let (col, row) = self.coords_to_tty(x, y)?;
         self.surface.add_change(TermwizChange::CursorPosition {
@@ -46,7 +45,7 @@ impl Surface {
         let bg = Self::make_bg_colour(colour);
         let fg = Self::make_fg_colour(colour);
 
-        let existing = self.get_existing_cell_string(col, row);
+        let existing = self.get_existing_cell_string(col, row)?;
         let mut content = existing.clone();
         match (existing.as_str(), block) {
             ("▄", "▀") | ("▀", "▄") => {
@@ -111,7 +110,6 @@ impl Surface {
     }
 
     /// Safely convert pixel coordinates to TTY col/row
-    #[allow(clippy::arithmetic_side_effects)]
     fn coords_to_tty(&self, x: usize, y: usize) -> Result<(usize, usize)> {
         let col = x;
         let row = (y + 1).div_ceil(2) - 1;
@@ -125,16 +123,19 @@ impl Surface {
     }
 
     /// Get the string contents of the existing TTY cell where we want to put the new pixel
-    fn get_existing_cell_string(&mut self, col: usize, row: usize) -> String {
+    fn get_existing_cell_string(&mut self, col: usize, row: usize) -> Result<String> {
         let cells = self.surface.screen_cells();
-        #[allow(clippy::indexing_slicing)]
-        let cell = &cells[row][col];
-        cell.str().to_owned()
+        let cell = &cells
+            .get(row)
+            .context("No cell row")?
+            .get(col)
+            .context("No cell column")?;
+        Ok(cell.str().to_owned())
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing, clippy::non_ascii_literal)]
+#[expect(clippy::indexing_slicing, reason = "Tests aren't so strict")]
 mod tests {
     use super::*;
 

@@ -1,9 +1,9 @@
-//! Docs
+//! Main entrypoint for running Tattoy
 
 use std::process::exit;
 use std::sync::Arc;
 
-use clap::Parser;
+use clap::Parser as _;
 use color_eyre::eyre::Result;
 use tokio::sync::mpsc;
 
@@ -35,9 +35,14 @@ pub enum Protocol {
     END,
 }
 
-///
-#[allow(clippy::use_debug, clippy::print_stderr, clippy::exit)]
-pub async fn run() -> Result<()> {
+/// Main entrypoint
+#[expect(
+    clippy::use_debug,
+    clippy::print_stderr,
+    clippy::exit,
+    reason = "The central place where errors are handled"
+)]
+pub(crate) async fn run() -> Result<()> {
     let mut enabled_tattoys: Vec<String> = vec![];
 
     // Assuming true colour makes Tattoy simpler.
@@ -63,7 +68,9 @@ pub async fn run() -> Result<()> {
     let (pty_output_tx, pty_output_rx) = mpsc::channel::<StreamBytes>(1);
     let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytes>(1);
 
-    let (bg_screen_tx, screen_rx) = mpsc::channel(16);
+    // TODO: Channel size of 16 caused `no available capacity` error. Think about what is an actual
+    // reasonable size, or handle the error more gracefully.
+    let (bg_screen_tx, screen_rx) = mpsc::channel(100);
     let pty_screen_tx = bg_screen_tx.clone();
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
@@ -73,8 +80,6 @@ pub async fn run() -> Result<()> {
     let protocol_runner_rx = protocol_tx.subscribe();
     let protocol_renderer_rx = protocol_tx.subscribe();
 
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::as_conversions)]
     let pty = PTY::new(
         &Arc::clone(&state_arc),
         vec![std::env::var("SHELL")?.into()],
@@ -159,7 +164,7 @@ pub async fn run() -> Result<()> {
 }
 
 /// Setup logging
-pub fn setup_logging() -> Result<()> {
+pub(crate) fn setup_logging() -> Result<()> {
     let log_file = "tattoy.log";
     let file = std::fs::File::create(log_file)?;
     tracing_subscriber::fmt()

@@ -10,10 +10,10 @@ use crate::renderer::Renderer;
 /// The size of the user's terminal
 type TTYSize = (usize, usize);
 
-/// All the shared data the the app uses
+/// All the shared data the app uses
 #[derive(Default)]
 #[non_exhaustive]
-pub struct SharedState {
+pub(crate) struct SharedState {
     /// Just the size of the user's terminal. All the tattoys and shadow TTY should follow this
     pub tty_size: std::sync::RwLock<TTYSize>,
     /// This is the user's conventional terminal just maintained in a virtual, "shadow" terminal

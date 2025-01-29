@@ -18,7 +18,6 @@ pub struct Config {
 }
 
 impl Default for Config {
-    #[allow(clippy::float_arithmetic)]
     fn default() -> Self {
         Self {
             gravity: Vec2::new(0.0, -9.81),

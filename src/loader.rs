@@ -13,9 +13,8 @@ use crate::tattoys::index::{create_instance, Tattoyer};
 /// The number of microseonds in a second
 const ONE_MICROSECOND: u64 = 1_000_000;
 
-/// "Compositor" or "Tattoys"?
-#[allow(clippy::exhaustive_structs)]
-pub struct Loader {
+/// Rename to "Compositor" or "Tattoys"?
+pub(crate) struct Loader {
     /// All the enabled tattoys that will be run
     tattoys: Vec<Box<dyn Tattoyer + Send>>,
 }
@@ -42,7 +41,6 @@ impl Loader {
     ) -> Result<()> {
         let target_frame_rate = 30;
 
-        #[allow(clippy::arithmetic_side_effects)]
         let target = ONE_MICROSECOND.wrapping_div(target_frame_rate);
         let target_frame_rate_micro = std::time::Duration::from_micros(target);
 

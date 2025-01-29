@@ -1,7 +1,7 @@
 //! All the maths to do a smoke simulation
 //! Heavily inspired by [mueller-sph-rs](https://github.com/lucas-schuermann/mueller-sph-rs)
 
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefMutIterator as _, ParallelIterator as _};
 use std::collections::VecDeque;
 
 use glam::Vec2;
@@ -15,7 +15,7 @@ use crate::tattoys::utils::is_random_trigger;
 /// Number of times to iterate the simulation per graphical frame
 const NUMBER_OF_SIMULATION_STEPS_PER_TICK: usize = 5;
 
-///
+/// The main code for the simulation, manages the `tick` etc
 #[derive(Default)]
 #[non_exhaustive]
 pub struct Simulation {
@@ -31,11 +31,12 @@ pub struct Simulation {
     pub config: Config,
 }
 
-#[allow(
+#[expect(
     clippy::cast_precision_loss,
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
-    clippy::float_arithmetic
+    clippy::float_arithmetic,
+    reason = "This is a prototype"
 )]
 impl Simulation {
     /// Initialise a new simulation
@@ -145,8 +146,11 @@ impl Simulation {
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing)]
-#[allow(clippy::float_cmp)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::float_cmp,
+    reason = "Tests aren't so strict"
+)]
 mod tests {
     use super::*;
 
@@ -170,7 +174,7 @@ mod tests {
     fn basic() {
         let mut sim = Simulation::new(100, 100);
         let mut surface = termwiz::surface::Surface::new(100, 100);
-        for _ in 0_usize..10 {
+        for _ in 0usize..10 {
             sim.tick((50, 50), &surface.screen_cells());
         }
         assert!(sim.particles.len() > 5);
@@ -182,7 +186,7 @@ mod tests {
         let mut sim = make_sim();
         add_particle(&mut sim, Vec2::new(0.0, 0.0));
         add_particle(&mut sim, Vec2::new(99.0, 99.0));
-        for _ in 0_usize..100 {
+        for _ in 0usize..100 {
             sim.evolve();
         }
         assert_eq!(sim.particles[1].position, Vec2::new(0.0, 0.0));
@@ -198,7 +202,7 @@ mod tests {
         let distance_before = sim.particles[0]
             .position
             .distance(sim.particles[1].position);
-        for _ in 0_usize..100 {
+        for _ in 0usize..100 {
             sim.evolve();
         }
         let distance_after = sim.particles[0]
@@ -217,7 +221,7 @@ mod tests {
         sim.config.gravity = Vec2::new(0.0, -1.0);
         add_particle(&mut sim, Vec2::new(50.0, 50.0));
 
-        for _ in 0_usize..10 {
+        for _ in 0usize..10 {
             sim.evolve();
         }
 

@@ -23,3 +23,71 @@ tokio = { version = "1.35.1", features = ["full"]}
 tracing = "0.1.40"
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 wezterm-term = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
+
+
+# Canonical lints for whole crate
+#
+# Official docs:
+#   https://doc.rust-lang.org/nightly/clippy/lints.html
+# Useful app to lookup full details of individual lints:
+#   https://rust-lang.github.io/rust-clippy/master/index.html
+# 
+# We set base lints to give the fullest, most pedantic feedback possible.
+# Though we prefer that they are just warnings during development so that build-denial
+# is only enforced in CI.
+[lints.rust]
+# It's always good to write as much documentation as possible
+missing_docs = "warn"
+
+[lints.clippy]
+# `clippy::all` is already on by default. It implies the following:
+#   * clippy::correctness code that is outright wrong or useless
+#   * clippy::suspicious code that is most likely wrong or useless
+#   * clippy::complexity code that does something simple but in a complex way
+#   * clippy::perf code that can be written to run faster
+#   * clippy::style code that should be written in a more idiomatic way
+all = { level = "warn", priority = -1 }
+# > clippy::pedantic lints which are rather strict or might have false positives
+pedantic = { level = "warn", priority = -1 }
+# > new lints that are still under development
+# (so "nursery" doesn't mean "Rust newbies")
+nursery = { level = "warn", priority = -1 }
+# > The clippy::cargo group gives you suggestions on how to improve your Cargo.toml file.
+# > This might be especially interesting if you want to publish your crate and are not sure
+# > if you have all useful information in your Cargo.toml.
+cargo = { level = "warn", priority = -1 }
+# > The clippy::restriction group will restrict you in some way.
+# > If you enable a restriction lint for your crate it is recommended to also fix code that
+# > this lint triggers on. However, those lints are really strict by design and you might want
+# > to #[allow] them in some special cases, with a comment justifying that.
+restriction = { level = "warn", priority = -1 }
+blanket_clippy_restriction_lints = "allow"
+
+# Individually blanket-allow single lints relevant to this whole crate
+arithmetic_side_effects = "allow"
+absolute_paths = "allow"
+cargo_common_metadata = "allow"
+implicit_return = "allow"
+single_call_fn = "allow"
+question_mark_used = "allow"
+multiple_crate_versions = "allow"
+pub_with_shorthand = "allow"
+partial_pub_fields = "allow"
+pattern_type_mismatch = "allow"
+arbitrary_source_item_ordering = "allow"
+missing_trait_methods = "allow"
+unseparated_literal_suffix = "allow"
+multiple_inherent_impl = "allow"
+upper_case_acronyms = "allow"
+struct_field_names = "allow"
+
+# > Yeah, we know, the 90’s called and wanted their charset back. Even so, there still are editors
+# > and other programs out there that don’t work well with Unicode. So if the code is meant to be
+# > used internationally, on multiple operating systems, or has other portability requirements,
+# > activating this lint could be useful.
+non_ascii_literal = "allow"
+
+# We're not targetting embedded deviuces, so floating point maths is okay
+std_instead_of_alloc = "allow"
+std_instead_of_core = "allow"
+float_arithmetic = "allow"

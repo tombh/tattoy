@@ -22,7 +22,6 @@ struct WeztermConfig {
     scrollback: usize,
 }
 
-#[allow(clippy::missing_trait_methods)]
 impl wezterm_term::TerminalConfiguration for WeztermConfig {
     fn scrollback_size(&self) -> usize {
         self.scrollback
@@ -34,7 +33,7 @@ impl wezterm_term::TerminalConfiguration for WeztermConfig {
 }
 
 /// Private fields aren't relevant yet
-pub struct ShadowTTY {
+pub(crate) struct ShadowTTY {
     /// The Wezterm terminal that does most of the actual work of maintaining the terminal 🙇
     terminal: wezterm_term::Terminal,
     /// Parser that detects all the weird and wonderful TTY conventions
@@ -121,7 +120,10 @@ impl ShadowTTY {
     /// Just logging for now. But we could do some Tattoy-specific things with this. Like a Tattoy
     /// keyboard shortcut that switches the active tattoy.
     fn parse_bytes(&mut self, bytes: StreamBytes) {
-        #[allow(clippy::wildcard_enum_match_arm)]
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "We're not doing anything dangerous with the wildcard match"
+        )]
         self.parser.parse(&bytes, |action| match action {
             TermwizAction::Print(character) => tracing::trace!("{character}"),
             TermwizAction::Control(character) => match character {
@@ -142,10 +144,6 @@ impl ShadowTTY {
     }
 
     /// Converts Wezterms's maintained virtual TTY into a compositable Termwiz surface
-    #[allow(clippy::cast_possible_wrap)]
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_sign_loss)]
-    #[allow(clippy::as_conversions)]
     fn build_current_surface(
         &mut self,
     ) -> Result<(termwiz::surface::Surface, termwiz::surface::Surface)> {
@@ -158,7 +156,13 @@ impl ShadowTTY {
         let screen = self.terminal.screen_mut();
         for row in 0..=height {
             for column in 0..=width {
-                if let Some(cell) = screen.get_cell(column, row as i64) {
+                #[expect(
+                    clippy::cast_possible_wrap,
+                    clippy::as_conversions,
+                    reason = "We're well within the limits of usize and u64"
+                )]
+                let row_i64 = row as i64;
+                if let Some(cell) = screen.get_cell(column, row_i64) {
                     let attrs = cell.attrs();
                     let cursor = TermwizChange::CursorPosition {
                         x: TermwizPosition::Absolute(column),
@@ -188,6 +192,12 @@ impl ShadowTTY {
         let users_cursor = self.terminal.cursor_pos();
         let cursor = TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(users_cursor.x),
+            #[expect(
+                clippy::as_conversions,
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                reason = "We're well within the limits of usize"
+            )]
             y: TermwizPosition::Absolute(users_cursor.y as usize),
         };
         surface1.add_change(cursor.clone());

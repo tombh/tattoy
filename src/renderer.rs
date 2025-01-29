@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{ContextCompat as _, Result};
 use tokio::sync::mpsc;
 
 use termwiz::surface::Surface as TermwizSurface;
@@ -14,9 +14,8 @@ use wezterm_term::Cell;
 use crate::run::{FrameUpdate, Protocol};
 use crate::shared_state::SharedState;
 
-///
-#[allow(clippy::exhaustive_structs)]
-pub struct Renderer {
+/// `Render`
+pub(crate) struct Renderer {
     /// Shared app state
     pub state: Arc<SharedState>,
     /// The terminal's width
@@ -128,8 +127,8 @@ impl Renderer {
                     continue;
                 }
 
-                Self::build_cell(&mut frame, &bg_cells, x, y);
-                Self::build_cell(&mut frame, &pty_cells, x, y);
+                Self::build_cell(&mut frame, &bg_cells, x, y)?;
+                Self::build_cell(&mut frame, &pty_cells, x, y)?;
             }
         }
 
@@ -144,12 +143,20 @@ impl Renderer {
     }
 
     /// Add a single cell to the frame
-    fn build_cell(frame: &mut TermwizSurface, cells: &[&mut [Cell]], x: usize, y: usize) {
-        #[allow(clippy::indexing_slicing)]
-        let cell = &cells[y][x];
+    fn build_cell(
+        frame: &mut TermwizSurface,
+        cells: &[&mut [Cell]],
+        x: usize,
+        y: usize,
+    ) -> Result<()> {
+        let cell = &cells
+            .get(y)
+            .context("No y coord for cell")?
+            .get(x)
+            .context("No x coord for cell")?;
         let character = cell.str();
         if character == " " {
-            return;
+            return Ok(());
         }
 
         frame.add_changes(vec![
@@ -165,5 +172,6 @@ impl Renderer {
             )),
         ]);
         frame.add_change(character);
+        Ok(())
     }
 }
