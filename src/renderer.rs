@@ -120,14 +120,14 @@ impl Renderer {
         let (cursor_x, cursor_y) = self.pty.cursor_position();
 
         let pty_cells = self.pty.screen_cells();
-        let bg_cells = self.background.screen_cells();
+        let tattoy_cells = self.background.screen_cells();
         for y in 0..self.height {
             for x in 0..self.width {
                 if x == cursor_x && y == cursor_y {
                     continue;
                 }
 
-                Self::build_cell(&mut frame, &bg_cells, x, y)?;
+                Self::build_cell(&mut frame, &tattoy_cells, x, y)?;
                 Self::build_cell(&mut frame, &pty_cells, x, y)?;
             }
         }
@@ -155,7 +155,11 @@ impl Renderer {
             .get(x)
             .context("No x coord for cell")?;
         let character = cell.str();
-        if character == " " {
+        let is_cell_bg_default = matches!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+        if character == " " && is_cell_bg_default {
             return Ok(());
         }
 
