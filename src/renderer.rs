@@ -163,6 +163,7 @@ impl Renderer {
             return Ok(());
         }
 
+        // TODO: is there a more elegant way to copy over all the attributes?
         frame.add_changes(vec![
             TermwizChange::CursorPosition {
                 x: TermwizPosition::Absolute(x),
@@ -173,6 +174,22 @@ impl Renderer {
             )),
             TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
                 cell.attrs().background(),
+            )),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Intensity(
+                cell.attrs().intensity(),
+            )),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Italic(
+                cell.attrs().italic(),
+            )),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Underline(
+                cell.attrs().underline(),
+            )),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Blink(cell.attrs().blink())),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Reverse(
+                cell.attrs().reverse(),
+            )),
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::StrikeThrough(
+                cell.attrs().strikethrough(),
             )),
         ]);
         frame.add_change(character);

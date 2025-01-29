@@ -171,16 +171,35 @@ impl ShadowTTY {
                     surface1.add_change(cursor.clone());
                     surface2.add_change(cursor);
 
-                    let colours = vec![
+                    // TODO: is there a more elegant way to copy over all the attributes?
+                    let attributes = vec![
                         TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
                             attrs.foreground(),
                         )),
                         TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
                             attrs.background(),
                         )),
+                        TermwizChange::Attribute(termwiz::cell::AttributeChange::Intensity(
+                            attrs.intensity(),
+                        )),
+                        TermwizChange::Attribute(termwiz::cell::AttributeChange::Italic(
+                            attrs.italic(),
+                        )),
+                        TermwizChange::Attribute(termwiz::cell::AttributeChange::Underline(
+                            attrs.underline(),
+                        )),
+                        TermwizChange::Attribute(termwiz::cell::AttributeChange::Blink(
+                            attrs.blink(),
+                        )),
+                        TermwizChange::Attribute(termwiz::cell::AttributeChange::Reverse(
+                            attrs.reverse(),
+                        )),
+                        TermwizChange::Attribute(termwiz::cell::AttributeChange::StrikeThrough(
+                            attrs.strikethrough(),
+                        )),
                     ];
-                    surface1.add_changes(colours.clone());
-                    surface2.add_changes(colours);
+                    surface1.add_changes(attributes.clone());
+                    surface2.add_changes(attributes);
 
                     let contents = cell.str();
                     surface1.add_change(contents);
