@@ -8,7 +8,17 @@ use color_eyre::eyre::Result;
 use crate::renderer::Renderer;
 
 /// The size of the user's terminal
-type TTYSize = (usize, usize);
+#[derive(Default, Debug)]
+#[expect(
+    clippy::exhaustive_structs,
+    reason = "It's very unlikely that this is going to have any more fields added to it"
+)]
+pub struct TTYSize {
+    /// Width of the TTY
+    pub width: u16,
+    /// Height of the TTY
+    pub height: u16,
+}
 
 /// All the shared data the app uses
 #[derive(Default)]
@@ -25,13 +35,7 @@ impl SharedState {
     pub fn init() -> Result<Arc<Self>> {
         let tty_size = Renderer::get_users_tty_size()?;
         let state = Self::default();
-        let mut shared_state_tty_size = state
-            .tty_size
-            .write()
-            .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
-        shared_state_tty_size.0 = tty_size.cols;
-        shared_state_tty_size.1 = tty_size.rows;
-        drop(shared_state_tty_size);
+        state.set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)?;
         Ok(Arc::new(state))
     }
 
@@ -41,6 +45,21 @@ impl SharedState {
             .tty_size
             .read()
             .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))?;
-        Ok((tty_size.0, tty_size.1))
+        Ok(TTYSize {
+            width: tty_size.width,
+            height: tty_size.height,
+        })
+    }
+
+    /// Get a write lock and set the a new TTY size
+    pub fn set_tty_size(&self, width: u16, height: u16) -> Result<()> {
+        let mut shared_state_tty_size = self
+            .tty_size
+            .write()
+            .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))?;
+        shared_state_tty_size.width = width;
+        shared_state_tty_size.height = height;
+        drop(shared_state_tty_size);
+        Ok(())
     }
 }

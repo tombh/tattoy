@@ -13,9 +13,9 @@ use super::index::Tattoyer;
 #[derive(Default)]
 pub struct RandomWalker {
     /// TTY width
-    width: usize,
+    width: u16,
     /// TTY height
-    height: usize,
+    height: u16,
     /// Current x,y position
     position: Position,
     /// Current colour
@@ -34,10 +34,10 @@ impl Tattoyer for RandomWalker {
     /// Instatiate
     fn new(state: Arc<SharedState>) -> Result<Self> {
         let tty_size = state.get_tty_size()?;
-        let width = tty_size.0;
-        let height = tty_size.1;
-        let width_i32 = i32::try_from(width)?;
-        let height_i32 = i32::try_from(height)?;
+        let width = tty_size.width;
+        let height = tty_size.height;
+        let width_i32: i32 = width.into();
+        let height_i32: i32 = height.into();
         let position: Position = (
             rand::thread_rng().gen_range(1i32..width_i32),
             rand::thread_rng().gen_range(1i32..height_i32 * 2i32),
@@ -55,10 +55,15 @@ impl Tattoyer for RandomWalker {
         })
     }
 
+    fn set_tty_size(&mut self, width: u16, height: u16) {
+        self.width = width;
+        self.height = height;
+    }
+
     /// Tick the render
     fn tick(&mut self) -> Result<termwiz::surface::Surface> {
-        let width_i32 = i32::try_from(self.width)?;
-        let height_i32 = i32::try_from(self.height)?;
+        let width_i32: i32 = self.width.into();
+        let height_i32: i32 = self.height.into();
 
         self.position.0 += rand::thread_rng().gen_range(0i32..=2i32) - 1i32;
         self.position.0 = self.position.0.clamp(1i32, width_i32 - 1i32);
@@ -76,7 +81,7 @@ impl Tattoyer for RandomWalker {
             rand::thread_rng().gen_range(0.0..COLOUR_CHANGE_RATE) - COLOUR_CHANGE_RATE / 2.0;
         self.colour.2 = self.colour.2.clamp(0.0, 1.0);
 
-        let mut surface = crate::surface::Surface::new(self.width, self.height);
+        let mut surface = crate::surface::Surface::new(self.width.into(), self.height.into());
         let x_usize = usize::try_from(self.position.0)?;
         let y_usize = usize::try_from(self.position.1)?;
         surface.add_pixel(x_usize, y_usize, self.colour)?;

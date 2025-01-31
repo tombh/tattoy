@@ -15,6 +15,9 @@ pub(crate) trait Tattoyer {
     where
         Self: Sized;
 
+    /// Tell the tattoy that the user's terminal has changed size.
+    fn set_tty_size(&mut self, width: u16, height: u16);
+
     /// Run one frame of the tattoy
     fn tick(&mut self) -> Result<termwiz::surface::Surface>;
 }

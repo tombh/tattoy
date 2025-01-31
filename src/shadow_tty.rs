@@ -45,12 +45,12 @@ pub(crate) struct ShadowTTY {
 impl ShadowTTY {
     /// Create a new Shadow TTY
     pub fn new(state: Arc<SharedState>) -> Result<Self> {
-        let tty_size = state.get_tty_size()?;
+        let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
 
         let terminal = wezterm_term::Terminal::new(
             wezterm_term::TerminalSize {
-                cols: tty_size.0,
-                rows: tty_size.1,
+                cols: tty_size.cols,
+                rows: tty_size.rows,
                 pixel_width: 0,
                 pixel_height: 0,
                 dpi: 0,
@@ -77,6 +77,7 @@ impl ShadowTTY {
     ) -> Result<()> {
         loop {
             if let Some(bytes) = pty_output.recv().await {
+                // Note: I'm surprised that the bytes here aren't able to resize the terminal?
                 self.terminal.advance_bytes(bytes);
                 self.parse_bytes(bytes);
             };
@@ -84,8 +85,17 @@ impl ShadowTTY {
             // TODO: should this be oneshot?
             if let Ok(message) = protocol_receive.try_recv() {
                 match message {
-                    Protocol::END => {
+                    Protocol::End => {
                         break;
+                    }
+                    Protocol::Resize { width, height } => {
+                        self.terminal.resize(wezterm_term::TerminalSize {
+                            cols: width.into(),
+                            rows: height.into(),
+                            pixel_width: 0,
+                            pixel_height: 0,
+                            dpi: 0,
+                        });
                     }
                 };
             }
@@ -93,6 +103,8 @@ impl ShadowTTY {
             let (surface, surface_copy) = self.build_current_surface()?;
             self.update_state_surface(surface)?;
 
+            // TODO: why make 2 copies? Could we not just send and event to say that the new
+            // surface can be picked up in the central state?
             shadow_output
                 .send(FrameUpdate::PTYSurface(surface_copy))
                 .await?;
@@ -116,9 +128,9 @@ impl ShadowTTY {
         Ok(())
     }
 
-    /// Parse PTY bytes
-    /// Just logging for now. But we could do some Tattoy-specific things with this. Like a Tattoy
-    /// keyboard shortcut that switches the active tattoy.
+    /// Parse PTY output bytes. Just logging for now.
+    /// Because this is the output of the PTY I don't think we can use it for intercepting
+    /// Tattoy-specific keybindings.
     fn parse_bytes(&mut self, bytes: StreamBytes) {
         #[expect(
             clippy::wildcard_enum_match_arm,
@@ -148,25 +160,20 @@ impl ShadowTTY {
         &mut self,
     ) -> Result<(termwiz::surface::Surface, termwiz::surface::Surface)> {
         let tty_size = self.state.get_tty_size()?;
-        let width = tty_size.0;
-        let height = tty_size.1;
-        let mut surface1 = termwiz::surface::Surface::new(width, height);
-        let mut surface2 = termwiz::surface::Surface::new(width, height);
+        let width = tty_size.width;
+        let height = tty_size.height;
+        let mut surface1 = termwiz::surface::Surface::new(width.into(), height.into());
+        let mut surface2 = termwiz::surface::Surface::new(width.into(), height.into());
 
         let screen = self.terminal.screen_mut();
         for row in 0..=height {
             for column in 0..=width {
-                #[expect(
-                    clippy::cast_possible_wrap,
-                    clippy::as_conversions,
-                    reason = "We're well within the limits of usize and u64"
-                )]
-                let row_i64 = row as i64;
-                if let Some(cell) = screen.get_cell(column, row_i64) {
+                let row_i64: i64 = row.into();
+                if let Some(cell) = screen.get_cell(column.into(), row_i64) {
                     let attrs = cell.attrs();
                     let cursor = TermwizChange::CursorPosition {
-                        x: TermwizPosition::Absolute(column),
-                        y: TermwizPosition::Absolute(row),
+                        x: TermwizPosition::Absolute(column.into()),
+                        y: TermwizPosition::Absolute(row.into()),
                     };
                     surface1.add_change(cursor.clone());
                     surface2.add_change(cursor);

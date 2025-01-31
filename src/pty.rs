@@ -1,4 +1,6 @@
-//! Create a PTY and send and recieve bytes over channels
+//! Create a PTY and send and recieve bytes to/from it over channels.
+//! It doesn't actually maintain a visual representation, it's just the subprocesss of the user's
+//! actual OG terminal.
 
 use std::ffi::OsString;
 use std::io::{Read as _, Write as _};
@@ -10,7 +12,6 @@ use tokio::io::AsyncReadExt as _;
 use tokio::sync::mpsc;
 
 use crate::run::Protocol;
-use crate::shared_state::SharedState;
 
 /// A single read/write from the PTY output stream
 pub type StreamBytes = [u8; 128];
@@ -28,8 +29,8 @@ pub(crate) struct PTY {
 
 impl PTY {
     /// Instantiate
-    pub fn new(state: &Arc<SharedState>, command: Vec<OsString>) -> Result<Self> {
-        let tty_size = state.get_tty_size()?;
+    pub fn new(command: Vec<OsString>) -> Result<Self> {
+        let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
 
         #[expect(
             clippy::as_conversions,
@@ -37,27 +38,31 @@ impl PTY {
             reason = "It's just PTY sizes"
         )]
         let pty = Self {
-            width: tty_size.0 as u16,
-            height: tty_size.1 as u16,
+            width: tty_size.cols as u16,
+            height: tty_size.rows as u16,
             command,
         };
         Ok(pty)
+    }
+
+    /// Just a little central place to build the `PtySize` struct consistently.
+    const fn pty_size(width: u16, height: u16) -> portable_pty::PtySize {
+        portable_pty::PtySize {
+            cols: width,
+            rows: height,
+            // Not all systems support pixel_width, pixel_height,
+            // but it is good practice to set it to something
+            // that matches the size of the selected font.
+            pixel_width: 0,
+            pixel_height: 0,
+        }
     }
 
     /// Function just to isolate the PTY setup
     fn setup_pty(&self) -> Result<(std::fs::File, portable_pty::PtyPair)> {
         tracing::debug!("Setting up PTY");
         let pty_system = portable_pty::native_pty_system();
-
-        let pty_result = pty_system.openpty(portable_pty::PtySize {
-            rows: self.height,
-            cols: self.width,
-            // Not all systems support pixel_width, pixel_height,
-            // but it is good practice to set it to something
-            // that matches the size of the selected font.
-            pixel_width: 0,
-            pixel_height: 0,
-        });
+        let pty_result = pty_system.openpty(Self::pty_size(self.width, self.height));
 
         let pair = match pty_result {
             Ok(pty_ok) => pty_ok,
@@ -114,7 +119,9 @@ impl PTY {
         drop(pty_pair.slave);
 
         tokio::spawn(async move {
-            if let Err(err) = Self::forward_input(user_input, pty_stream_writer, protocol).await {
+            if let Err(err) =
+                Self::forward_input(user_input, pty_stream_writer, pty_pair.master, protocol).await
+            {
                 tracing::error!("Writing to PTY stream: {err}");
             }
         });
@@ -161,10 +168,15 @@ impl PTY {
         Ok(())
     }
 
+    // Note: I wonder if using `termwiz::terminal::new_terminal`'s' `poll_input()` method is also
+    // an option? I think it might not be because we're not actually intercepting `CTRL+C`, `CTRL+D`,
+    // etc. But it might be useful for Tattoy-specific keybindings?
+    //
     /// Forward channel bytes from the user's STDIN to the virtual PTY
     async fn forward_input(
         mut user_input: mpsc::Receiver<StreamBytes>,
         mut pty_stream: Arc<std::fs::File>,
+        pty_master: std::boxed::Box<(dyn portable_pty::MasterPty + std::marker::Send + 'static)>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         tracing::debug!("Starting `forward_input` loop");
@@ -178,9 +190,18 @@ impl PTY {
                 message = protocol.recv() => {
                     match message {
                         // TODO: should this be oneshot?
-                        Ok(Protocol::END) => {
+                        Ok(Protocol::End) => {
                             tracing::trace!("STDIN forwarder task received {message:?}");
+
                             break;
+                        }
+                        Ok(Protocol::Resize{width, height}) => {
+                            tracing::debug!("Resize event received on protocol {message:?}");
+
+                            let result = pty_master.resize(Self::pty_size(width, height));
+                            if result.is_err() {
+                                tracing::error!("Couldn't resize underlying PTY subprocesss: {result:?}");
+                            }
                         }
                         Err(err) => {
                             return Err(color_eyre::eyre::Error::new(err));
@@ -206,6 +227,9 @@ impl PTY {
         Ok(())
     }
 
+    // TODO: If we want any kind of Tattoy-specific keybindings, I think this is the place to put
+    // them.
+    //
     /// Redirect the main application's STDIN to the PTY process
     pub async fn consume_stdin(
         input: &mpsc::Sender<StreamBytes>,
@@ -226,10 +250,11 @@ impl PTY {
                 message = protocol.recv() => {
                     // TODO: should this be oneshot?
                     match message {
-                        Ok(Protocol::END) => {
+                        Ok(Protocol::End) => {
                             tracing::trace!("STDIN task received {message:?}");
                             break;
                         }
+                        Ok(Protocol::Resize { .. }) => (),
                         Err(err) => {
                             return Err(color_eyre::eyre::Error::new(err));
                         }
@@ -286,12 +311,11 @@ mod tests {
 
         tokio::spawn(async move {
             tracing::debug!("TEST: PTY.run() starting...");
-            let state = Arc::new(SharedState::default());
-            let pty = PTY::new(&state, command).unwrap();
+            let pty = PTY::new(command).unwrap();
             pty.run(pty_input_rx, pty_output_tx, protocol_rx)
                 .await
                 .unwrap();
-            protocol_tx.send(Protocol::END).unwrap();
+            protocol_tx.send(Protocol::End).unwrap();
             tracing::debug!("Test PTY.run() done");
         });
 

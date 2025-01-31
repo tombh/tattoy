@@ -50,8 +50,13 @@ impl Loader {
             // TODO: should this be oneshot?
             if let Ok(message) = protocol.try_recv() {
                 match message {
-                    Protocol::END => {
+                    Protocol::End => {
                         break;
+                    }
+                    Protocol::Resize { width, height } => {
+                        for tattoy in &mut self.tattoys {
+                            tattoy.set_tty_size(width, height);
+                        }
                     }
                 };
             }

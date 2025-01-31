@@ -11,9 +11,9 @@ use crate::{shared_state::SharedState, tattoys::index::Tattoyer};
 #[derive(Default)]
 pub(crate) struct SmokeyCursor {
     /// TTY width
-    width: usize,
+    width: u16,
     /// TTY height
-    height: usize,
+    height: u16,
     /// Shared app state
     state: Arc<SharedState>,
     /// All the particles of gas
@@ -28,19 +28,25 @@ impl Tattoyer for SmokeyCursor {
         let tty_size = state.get_tty_size()?;
 
         Ok(Self {
-            width: tty_size.0,
-            height: tty_size.1,
+            width: tty_size.width,
+            height: tty_size.height,
             state,
-            simulation: Simulation::new(tty_size.0, tty_size.1 * 2),
+            simulation: Simulation::new(tty_size.width.into(), (tty_size.height * 2).into()),
             durations: VecDeque::default(),
         })
+    }
+
+    fn set_tty_size(&mut self, width: u16, height: u16) {
+        self.width = width;
+        self.height = height;
     }
 
     /// One frame of the tattoy
     fn tick(&mut self) -> Result<termwiz::surface::Surface> {
         let start = std::time::Instant::now();
 
-        let mut surface = crate::surface::Surface::new(self.width, self.height);
+        let mut surface =
+            crate::surface::Surface::new(usize::from(self.width), usize::from(self.height));
         let mut pty = self
             .state
             .shadow_tty
@@ -64,7 +70,7 @@ impl Tattoyer for SmokeyCursor {
             surface.add_pixel(position.x as usize, position.y as usize, particle.colour)?;
         }
 
-        let text_coloumn = self.width - 20;
+        let text_coloumn = usize::from(self.width - 20);
         let count = self.simulation.particles.len();
         surface.add_text(text_coloumn, 0, format!("Particles: {count}"));
 

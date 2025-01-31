@@ -19,11 +19,11 @@ pub(crate) struct Renderer {
     /// Shared app state
     pub state: Arc<SharedState>,
     /// The terminal's width
-    pub width: usize,
+    pub width: u16,
     /// The terminal's height
-    pub height: usize,
+    pub height: u16,
     /// Merged tattoy surfaces
-    pub background: TermwizSurface,
+    pub tattoys: TermwizSurface,
     /// A shadow version of the user's conventional terminal
     pub pty: TermwizSurface,
 }
@@ -35,11 +35,14 @@ impl Renderer {
             state,
             width: Default::default(),
             height: Default::default(),
-            background: TermwizSurface::default(),
+            tattoys: TermwizSurface::default(),
             pty: TermwizSurface::default(),
         };
 
-        renderer.update_terminal_size()?;
+        let size = Self::get_users_tty_size()?;
+        renderer.width = size.cols.try_into()?;
+        renderer.height = size.rows.try_into()?;
+
         Ok(renderer)
     }
 
@@ -57,43 +60,59 @@ impl Renderer {
     }
 
     /// Get the user's current terminal size and propogate it
-    pub fn update_terminal_size(&mut self) -> Result<termwiz::terminal::ScreenSize> {
-        let mut terminal = Self::get_termwiz_terminal()?;
-        let size = terminal.get_screen_size()?;
-        self.width = size.cols;
-        self.height = size.rows;
-        let mut tty_size = self
-            .state
-            .tty_size
-            .write()
-            .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
-        tty_size.0 = self.width;
-        tty_size.1 = self.height;
-        drop(tty_size);
-        self.background.resize(self.width, self.height);
-        self.pty.resize(self.width, self.height);
-        Ok(size)
+    pub fn handle_resize<T: TermwizTerminal>(
+        &mut self,
+        composited_terminal: &mut BufferedTerminal<T>,
+        protocol_tx: &tokio::sync::broadcast::Sender<Protocol>,
+    ) -> Result<()> {
+        let is_resized = composited_terminal.check_for_resize()?;
+        if !is_resized {
+            return Ok(());
+        }
+
+        composited_terminal.repaint()?;
+
+        let (width, height) = composited_terminal.dimensions();
+        self.width = width.try_into()?;
+        self.height = height.try_into()?;
+        self.state.set_tty_size(self.width, self.height)?;
+        protocol_tx.send(Protocol::Resize {
+            width: self.width,
+            height: self.height,
+        })?;
+
+        Ok(())
+
+        // Note: there's no reason to resize the existing `self.pty` and `self.tattoys` because
+        // they're just old copies. There's no point resizing them if their contents' aren't also
+        // going to be resized. So instead we just wait for new updates from each one, which should
+        // be of the right size.
     }
 
     /// Handle updates from the PTY and tattoys
     pub async fn run(
         &mut self,
         mut surfaces: mpsc::Receiver<FrameUpdate>,
-        mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
+        mut protocol_rx: tokio::sync::broadcast::Receiver<Protocol>,
+        protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
     ) -> Result<()> {
-        let mut terminal = Self::get_termwiz_terminal()?;
-        terminal.set_raw_mode()?;
-        let mut output = BufferedTerminal::new(terminal)?;
+        let mut copy_of_users_terminal = Self::get_termwiz_terminal()?;
+        copy_of_users_terminal.set_raw_mode()?;
+        let mut composited_terminal = BufferedTerminal::new(copy_of_users_terminal)?;
 
         while let Some(update) = surfaces.recv().await {
-            self.render(update, &mut output)?;
+            self.handle_resize(&mut composited_terminal, &protocol_tx)?;
+            self.render(update, &mut composited_terminal)?;
 
             // TODO: should this be oneshot?
-            if let Ok(message) = protocol.try_recv() {
+            if let Ok(message) = protocol_rx.try_recv() {
                 match message {
-                    Protocol::END => {
+                    Protocol::End => {
                         break;
                     }
+                    // I AM THE ONE WHO KNOCKS!
+                    // (we sent the resize event so we've already handled it)
+                    Protocol::Resize { .. } => (),
                 };
             }
         }
@@ -107,39 +126,79 @@ impl Renderer {
     fn render(
         &mut self,
         update: FrameUpdate,
-        output: &mut BufferedTerminal<impl TermwizTerminal>,
+        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
     ) -> Result<()> {
-        let mut frame = TermwizSurface::new(self.width, self.height);
-
         match update {
-            FrameUpdate::TattoySurface(surface) => self.background = surface,
-            FrameUpdate::TattoyPixels(_) => (),
+            FrameUpdate::TattoySurface(surface) => self.tattoys = surface,
             FrameUpdate::PTYSurface(surface) => self.pty = surface,
         }
 
-        let (cursor_x, cursor_y) = self.pty.cursor_position();
+        if !self.are_dimensions_good("PTY", &self.pty.screen_lines()) {
+            return Ok(());
+        }
+        if !self.are_dimensions_good("Tattoy", &self.tattoys.screen_lines()) {
+            return Ok(());
+        }
 
+        let (cursor_x, cursor_y) = self.pty.cursor_position();
         let pty_cells = self.pty.screen_cells();
-        let tattoy_cells = self.background.screen_cells();
+        let tattoy_cells = self.tattoys.screen_cells();
+
+        let mut new_frame = TermwizSurface::new(self.width.into(), self.height.into());
         for y in 0..self.height {
             for x in 0..self.width {
-                if x == cursor_x && y == cursor_y {
+                // When deleting this, move the cursor_* defs above to below
+                if usize::from(x) == cursor_x && usize::from(y) == cursor_y {
                     continue;
                 }
 
-                Self::build_cell(&mut frame, &tattoy_cells, x, y)?;
-                Self::build_cell(&mut frame, &pty_cells, x, y)?;
+                Self::build_cell(&mut new_frame, &tattoy_cells, x.into(), y.into())?;
+                Self::build_cell(&mut new_frame, &pty_cells, x.into(), y.into())?;
             }
         }
+        composited_terminal.draw_from_screen(&new_frame, 0, 0);
 
-        output.draw_from_screen(&frame, 0, 0);
-        output.add_change(TermwizChange::CursorPosition {
+        composited_terminal.add_change(TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(cursor_x),
             y: TermwizPosition::Absolute(cursor_y),
         });
-        output.flush()?;
+
+        // This is where we actually render to the user's real terminal.
+        composited_terminal.flush()?;
 
         Ok(())
+    }
+
+    /// Check to see if the incoming frame update is the same size as the user's current terminal.
+    fn are_dimensions_good(
+        &self,
+        kind: &str,
+        lines: &[std::borrow::Cow<wezterm_term::Line>],
+    ) -> bool {
+        if lines.is_empty() {
+            tracing::debug!("Not rendering frame because {kind} update is empty");
+            return false;
+        }
+
+        let update_height = lines.len();
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "The `if` clause above proves that at least index 0 exists"
+        )]
+        let update_width = lines[0].len();
+        if update_height < self.height.into() || update_width < self.width.into() {
+            tracing::debug!(
+                "Not rendering Tattoy update because dimensions don't match: TTY {}x{}, Tattoy {}x{}",
+                self.width,
+                self.height,
+                update_width,
+                update_height,
+
+            );
+            return false;
+        }
+
+        true
     }
 
     /// Add a single cell to the frame
