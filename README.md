@@ -22,11 +22,13 @@ Logs go to: `./tattoy.log`
 * [x] Bold doesn't get passed through properly, run `htop` to see.
 * [x] Resizing isn't detected.
 * [x] Cursor isn't transparent.
-* [ ] Send surface updates to state only, then protocol sends small signal not big update.
+* [x] Send surface updates to state only, then protocol sends small signal not big update.
 * [ ] Look into performance, especially scrolling in nvim.
+* [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.
 * [ ] Double width characters aren't passed through, eg "🦀".
+* [ ] Explore rendering a frame even if any of the surfaces aren't the right size, in order to not prevent updates from other surfaces.
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
 * [ ] `tmux` mouse events cause runaway behaviour in `htop`.
 * [ ] `CTRL-D` doesn't fully return to terminal, needs extra `CTRL-C`.

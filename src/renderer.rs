@@ -130,7 +130,7 @@ impl Renderer {
     ) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => self.tattoys = surface,
-            FrameUpdate::PTYSurface(surface) => self.pty = surface,
+            FrameUpdate::PTYSurface => self.get_updated_pty()?,
         }
 
         if !self.are_dimensions_good("PTY", &self.pty.screen_lines()) {
@@ -160,6 +160,27 @@ impl Renderer {
 
         // This is where we actually render to the user's real terminal.
         composited_terminal.flush()?;
+
+        Ok(())
+    }
+
+    /// Fetch the freshly made PTY frame from the shared state.
+    fn get_updated_pty(&mut self) -> Result<()> {
+        let surface = self
+            .state
+            .shadow_tty
+            .read()
+            .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))?;
+        let size = surface.dimensions();
+        let (cursor_x, cursor_y) = surface.cursor_position();
+        self.pty.draw_from_screen(&surface, 0, 0);
+        drop(surface);
+
+        self.pty.resize(size.0, size.1);
+        self.pty.add_change(TermwizChange::CursorPosition {
+            x: TermwizPosition::Absolute(cursor_x),
+            y: TermwizPosition::Absolute(cursor_y),
+        });
 
         Ok(())
     }

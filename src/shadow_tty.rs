@@ -100,14 +100,10 @@ impl ShadowTTY {
                 };
             }
 
-            let (surface, surface_copy) = self.build_current_surface()?;
+            let surface = self.build_current_surface()?;
             self.update_state_surface(surface)?;
 
-            // TODO: why make 2 copies? Could we not just send and event to say that the new
-            // surface can be picked up in the central state?
-            shadow_output
-                .send(FrameUpdate::PTYSurface(surface_copy))
-                .await?;
+            shadow_output.send(FrameUpdate::PTYSurface).await?;
         }
 
         tracing::debug!("ShadowTTY loop finished");
@@ -156,14 +152,11 @@ impl ShadowTTY {
     }
 
     /// Converts Wezterms's maintained virtual TTY into a compositable Termwiz surface
-    fn build_current_surface(
-        &mut self,
-    ) -> Result<(termwiz::surface::Surface, termwiz::surface::Surface)> {
+    fn build_current_surface(&mut self) -> Result<termwiz::surface::Surface> {
         let tty_size = self.state.get_tty_size()?;
         let width = tty_size.width;
         let height = tty_size.height;
-        let mut surface1 = termwiz::surface::Surface::new(width.into(), height.into());
-        let mut surface2 = termwiz::surface::Surface::new(width.into(), height.into());
+        let mut surface = termwiz::surface::Surface::new(width.into(), height.into());
 
         let screen = self.terminal.screen_mut();
         for row in 0..=height {
@@ -175,8 +168,7 @@ impl ShadowTTY {
                         x: TermwizPosition::Absolute(column.into()),
                         y: TermwizPosition::Absolute(row.into()),
                     };
-                    surface1.add_change(cursor.clone());
-                    surface2.add_change(cursor);
+                    surface.add_change(cursor.clone());
 
                     // TODO: is there a more elegant way to copy over all the attributes?
                     let attributes = vec![
@@ -205,12 +197,10 @@ impl ShadowTTY {
                             attrs.strikethrough(),
                         )),
                     ];
-                    surface1.add_changes(attributes.clone());
-                    surface2.add_changes(attributes);
+                    surface.add_changes(attributes.clone());
 
                     let contents = cell.str();
-                    surface1.add_change(contents);
-                    surface2.add_change(contents);
+                    surface.add_change(contents);
                 }
             }
         }
@@ -226,9 +216,8 @@ impl ShadowTTY {
             )]
             y: TermwizPosition::Absolute(users_cursor.y as usize),
         };
-        surface1.add_change(cursor.clone());
-        surface2.add_change(cursor);
+        surface.add_change(cursor);
 
-        Ok((surface1, surface2))
+        Ok(surface)
     }
 }

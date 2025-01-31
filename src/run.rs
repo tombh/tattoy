@@ -23,8 +23,8 @@ use crate::shared_state::SharedState;
 pub enum FrameUpdate {
     /// A frame of a tattoy TTY screen
     TattoySurface(termwiz::surface::Surface),
-    /// A frame of a PTY terminal
-    PTYSurface(termwiz::surface::Surface),
+    /// A frame of a PTY terminal has been updated in the shared state
+    PTYSurface,
 }
 
 /// Commands to control the various tasks/threads
