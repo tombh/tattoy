@@ -62,7 +62,8 @@ impl Loader {
             }
 
             for tattoy in &mut self.tattoys {
-                tattoy_output.try_send(FrameUpdate::TattoySurface(tattoy.tick()?))?;
+                let surface = tattoy.tick()?;
+                tattoy_output.try_send(FrameUpdate::TattoySurface(surface))?;
             }
 
             if let Some(i) = target_frame_rate_micro.checked_sub(frame_time.elapsed()) {

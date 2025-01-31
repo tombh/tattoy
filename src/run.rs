@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::cli_args::CliArgs;
 use crate::loader::Loader;
-use crate::pty::{StreamBytes, PTY};
+use crate::pty::{StreamBytesFromPTY, StreamBytesFromSTDIN, PTY};
 use crate::renderer::Renderer;
 use crate::shadow_tty::ShadowTTY;
 use crate::shared_state::SharedState;
@@ -72,15 +72,15 @@ pub(crate) async fn run() -> Result<()> {
 
     let state_arc = SharedState::init()?;
 
-    let (pty_output_tx, pty_output_rx) = mpsc::channel::<StreamBytes>(1);
-    let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytes>(1);
+    let (pty_output_tx, pty_output_rx) = mpsc::channel::<StreamBytesFromPTY>(1);
+    let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytesFromSTDIN>(1);
 
     // TODO: Channel size of 16 caused `no available capacity` error. Think about what is an actual
     // reasonable size, or handle the error more gracefully.
-    let (bg_screen_tx, screen_rx) = mpsc::channel(1000);
+    let (bg_screen_tx, screen_rx) = mpsc::channel(8192);
     let pty_screen_tx = bg_screen_tx.clone();
 
-    let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
+    let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
     let protocol_stdin_rx = protocol_tx.subscribe();
     let protocol_pty_rx = protocol_tx.subscribe();
     let protocol_shadow_rx = protocol_tx.subscribe();

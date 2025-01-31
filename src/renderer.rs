@@ -146,8 +146,8 @@ impl Renderer {
         let mut new_frame = TermwizSurface::new(self.width.into(), self.height.into());
         for y in 0..self.height {
             for x in 0..self.width {
-                Self::build_cell(&mut new_frame, &tattoy_cells, x.into(), y.into())?;
-                Self::build_cell(&mut new_frame, &pty_cells, x.into(), y.into())?;
+                Self::add_cell(&mut new_frame, &tattoy_cells, x.into(), y.into())?;
+                Self::add_cell(&mut new_frame, &pty_cells, x.into(), y.into())?;
             }
         }
         composited_terminal.draw_from_screen(&new_frame, 0, 0);
@@ -218,7 +218,7 @@ impl Renderer {
     }
 
     /// Add a single cell to the frame
-    fn build_cell(
+    fn add_cell(
         frame: &mut TermwizSurface,
         cells: &[&mut [Cell]],
         x: usize,

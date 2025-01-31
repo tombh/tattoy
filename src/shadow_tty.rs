@@ -4,13 +4,11 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
-use termwiz::escape::parser::Parser as TermwizParser;
-use termwiz::escape::Action as TermwizAction;
 use termwiz::surface::Change as TermwizChange;
 use termwiz::surface::Position as TermwizPosition;
 use tokio::sync::mpsc;
 
-use crate::pty::StreamBytes;
+use crate::pty::StreamBytesFromPTY;
 use crate::run::FrameUpdate;
 use crate::run::Protocol;
 use crate::shared_state::SharedState;
@@ -36,8 +34,6 @@ impl wezterm_term::TerminalConfiguration for WeztermConfig {
 pub(crate) struct ShadowTTY {
     /// The Wezterm terminal that does most of the actual work of maintaining the terminal 🙇
     terminal: wezterm_term::Terminal,
-    /// Parser that detects all the weird and wonderful TTY conventions
-    parser: TermwizParser,
     /// Shared app state
     state: Arc<SharedState>,
 }
@@ -61,26 +57,41 @@ impl ShadowTTY {
             Box::<Vec<u8>>::default(),
         );
 
-        Ok(Self {
-            terminal,
-            parser: TermwizParser::new(),
-            state,
-        })
+        Ok(Self { terminal, state })
     }
 
     /// Start listening to a stream of PTY bytes and render them to a shadow TTY surface
     pub async fn run(
         &mut self,
-        mut pty_output: mpsc::Receiver<StreamBytes>,
+        mut pty_output: mpsc::Receiver<StreamBytesFromPTY>,
         shadow_output: &mpsc::Sender<FrameUpdate>,
         mut protocol_receive: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         loop {
+            // TODO:
+            // The output of the PTY seems to be capped at 4095 bytes. Making the size of
+            // `StreamBytesFromPTY` bigger than that doesn't seem to make a difference. This means
+            // that large screen updates `self.build_current_surface()` can be called an
+            // unnecessary number of times.
+            //
+            // Possible solutions:
+            //   * Ideally get the PTY to send bigger payloads.
+            //   * Only call `self.build_current_surface()` at a given frame rate, probably 60fps.
+            //     This could be augmented with a check for the size so the payloads smaller than
+            //     4095 get rendered immediately.
+            //   * When receiving a payload of exactly 4095 bytes, wait a fixed amount of time for
+            //     more payloads, because in most cases 4095 means that there wasn't enough room to
+            //     fit everything in a single payload.
+            //   * Make `self.build_current_surface()` able to detect new payloads as they happen
+            //     so it can cancel itself and immediately start working on the new one.
             if let Some(bytes) = pty_output.recv().await {
                 // Note: I'm surprised that the bytes here aren't able to resize the terminal?
                 self.terminal.advance_bytes(bytes);
-                self.parse_bytes(bytes);
             };
+
+            let surface = self.build_current_surface()?;
+            self.update_state_surface(surface)?;
+            shadow_output.send(FrameUpdate::PTYSurface).await?;
 
             // TODO: should this be oneshot?
             if let Ok(message) = protocol_receive.try_recv() {
@@ -99,11 +110,6 @@ impl ShadowTTY {
                     }
                 };
             }
-
-            let surface = self.build_current_surface()?;
-            self.update_state_surface(surface)?;
-
-            shadow_output.send(FrameUpdate::PTYSurface).await?;
         }
 
         tracing::debug!("ShadowTTY loop finished");
@@ -124,33 +130,6 @@ impl ShadowTTY {
         Ok(())
     }
 
-    /// Parse PTY output bytes. Just logging for now.
-    /// Because this is the output of the PTY I don't think we can use it for intercepting
-    /// Tattoy-specific keybindings.
-    fn parse_bytes(&mut self, bytes: StreamBytes) {
-        #[expect(
-            clippy::wildcard_enum_match_arm,
-            reason = "We're not doing anything dangerous with the wildcard match"
-        )]
-        self.parser.parse(&bytes, |action| match action {
-            TermwizAction::Print(character) => tracing::trace!("{character}"),
-            TermwizAction::Control(character) => match character {
-                termwiz::escape::ControlCode::HorizontalTab
-                | termwiz::escape::ControlCode::LineFeed
-                | termwiz::escape::ControlCode::CarriageReturn => {
-                    tracing::trace!("{character:?}");
-                }
-                _ => {}
-            },
-            TermwizAction::CSI(csi) => {
-                tracing::trace!("{csi:?}");
-            }
-            wild => {
-                tracing::trace!("{wild:?}");
-            }
-        });
-    }
-
     /// Converts Wezterms's maintained virtual TTY into a compositable Termwiz surface
     fn build_current_surface(&mut self) -> Result<termwiz::surface::Surface> {
         let tty_size = self.state.get_tty_size()?;
@@ -158,6 +137,8 @@ impl ShadowTTY {
         let height = tty_size.height;
         let mut surface = termwiz::surface::Surface::new(width.into(), height.into());
 
+        // TODO: Explore using this to improve performance:
+        //   `self.terminal.screen().get_changed_stable_rows()`
         let screen = self.terminal.screen_mut();
         for row in 0..=height {
             for column in 0..=width {
@@ -168,7 +149,7 @@ impl ShadowTTY {
                         x: TermwizPosition::Absolute(column.into()),
                         y: TermwizPosition::Absolute(row.into()),
                     };
-                    surface.add_change(cursor.clone());
+                    surface.add_change(cursor);
 
                     // TODO: is there a more elegant way to copy over all the attributes?
                     let attributes = vec![
@@ -196,11 +177,9 @@ impl ShadowTTY {
                         TermwizChange::Attribute(termwiz::cell::AttributeChange::StrikeThrough(
                             attrs.strikethrough(),
                         )),
+                        cell.str().into(),
                     ];
-                    surface.add_changes(attributes.clone());
-
-                    let contents = cell.str();
-                    surface.add_change(contents);
+                    surface.add_changes(attributes);
                 }
             }
         }
