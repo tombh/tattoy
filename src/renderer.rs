@@ -140,24 +140,19 @@ impl Renderer {
             return Ok(());
         }
 
-        let (cursor_x, cursor_y) = self.pty.cursor_position();
         let pty_cells = self.pty.screen_cells();
         let tattoy_cells = self.tattoys.screen_cells();
 
         let mut new_frame = TermwizSurface::new(self.width.into(), self.height.into());
         for y in 0..self.height {
             for x in 0..self.width {
-                // When deleting this, move the cursor_* defs above to below
-                if usize::from(x) == cursor_x && usize::from(y) == cursor_y {
-                    continue;
-                }
-
                 Self::build_cell(&mut new_frame, &tattoy_cells, x.into(), y.into())?;
                 Self::build_cell(&mut new_frame, &pty_cells, x.into(), y.into())?;
             }
         }
         composited_terminal.draw_from_screen(&new_frame, 0, 0);
 
+        let (cursor_x, cursor_y) = self.pty.cursor_position();
         composited_terminal.add_change(TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(cursor_x),
             y: TermwizPosition::Absolute(cursor_y),

@@ -21,7 +21,7 @@ Logs go to: `./tattoy.log`
 * [x] Background colour of " " (space) isn't passed through.
 * [x] Bold doesn't get passed through properly, run `htop` to see.
 * [x] Resizing isn't detected.
-* [ ] Cursor isn't transparent.
+* [x] Cursor isn't transparent.
 * [ ] Send surface updates to state only, then protocol sends small signal not big update.
 * [ ] Look into performance, especially scrolling in nvim.
 * [ ] Detect alternate screen so to hide cursor
