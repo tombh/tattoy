@@ -23,7 +23,8 @@ Logs go to: `./tattoy.log`
 * [x] Resizing isn't detected.
 * [x] Cursor isn't transparent.
 * [x] Send surface updates to state only, then protocol sends small signal not big update.
-* [ ] Look into performance, especially scrolling in nvim.
+* [x] Look into performance, especially scrolling in nvim.
+* [ ] Implement scrollback/history.
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.
@@ -34,6 +35,7 @@ Logs go to: `./tattoy.log`
 * [ ] `CTRL-D` doesn't fully return to terminal, needs extra `CTRL-C`.
 * [ ] Centralise place where app exits and outputs backtrace and messages etc.
 * [ ] Doesn't work on Nushell. Just freezes.
+* [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.
 
 ## Design
 

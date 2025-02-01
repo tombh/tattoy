@@ -59,7 +59,6 @@ pub(crate) async fn run() -> Result<()> {
     //   render as true color and then downgrade later when Tattoy does its final output.
     std::env::set_var("COLORTERM", "truecolor");
 
-    setup_logging()?;
     tracing::info!("Starting Tattoy");
 
     let cli = CliArgs::parse();
@@ -171,16 +170,5 @@ pub(crate) async fn run() -> Result<()> {
         exit(1);
     };
 
-    Ok(())
-}
-
-/// Setup logging
-pub(crate) fn setup_logging() -> Result<()> {
-    let log_file = "tattoy.log";
-    let file = std::fs::File::create(log_file)?;
-    tracing_subscriber::fmt()
-        .with_writer(file)
-        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
-        .init();
     Ok(())
 }

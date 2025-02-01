@@ -3,9 +3,8 @@
 //! actual OG terminal.
 
 use std::ffi::OsString;
-use std::io::{Read as _, Write as _};
+use std::io::Read as _;
 use std::os::fd::FromRawFd as _;
-use std::sync::Arc;
 
 use color_eyre::eyre::{eyre, ContextCompat as _, Result};
 use tokio::io::AsyncReadExt as _;
@@ -90,8 +89,11 @@ impl PTY {
         };
 
         // The only reason we need the raw file descriptor is because it allows the PTY
-        // to close when it receives CTRL+D. I got the idea from this
+        // to close when it receives CTRL+D. I got the idea from here:
         // [Github comment](https://github.com/wez/wezterm/discussions/5151)
+        //
+        // I'm not 100% sure that it's needed. Maybe the `termwiz::Terminal.set_raw_mode()` in our
+        // `Renderer` is already intercepting `CTRL+D`?
         let Some(master_fd) = pair.master.as_raw_fd() else {
             return Err(eyre!("Couldn't get master file descriptor for PTY"));
         };
@@ -111,10 +113,12 @@ impl PTY {
         pty_output: mpsc::Sender<StreamBytesFromPTY>,
         protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
-        let (pty_stream, pty_pair) = self.setup_pty()?;
-        let pty_stream_arc = Arc::new(pty_stream);
-        let mut pty_stream_reader = Arc::clone(&pty_stream_arc);
-        let pty_stream_writer = Arc::clone(&pty_stream_arc);
+        let (pty_raw_device_file, pty_pair) = self.setup_pty()?;
+
+        let mut pty_stream_reader = match pty_pair.master.try_clone_reader() {
+            Ok(reader) => reader,
+            Err(err) => color_eyre::eyre::bail!(err),
+        };
 
         // Release any handles owned by the slave: we don't need it now that we've spawned the child.
         // We need `pair.master` though as that keeps the PTY alive
@@ -122,7 +126,8 @@ impl PTY {
 
         tokio::spawn(async move {
             if let Err(err) =
-                Self::forward_input(user_input, pty_stream_writer, pty_pair.master, protocol).await
+                Self::forward_input(user_input, pty_raw_device_file, pty_pair.master, protocol)
+                    .await
             {
                 tracing::error!("Writing to PTY stream: {err}");
             }
@@ -158,16 +163,6 @@ impl PTY {
                     }
                 }
                 Err(err) => {
-                    #[expect(
-                        clippy::mem_forget,
-                        reason = "
-                            We don't want the internal `drop()` to be called on this because if we have
-                            an error in the PTY stream, we assume that it's already gone. I think it's
-                            to do with the unsafe `from_raw_fd` in the setup code.
-                        "
-                    )]
-                    std::mem::forget(pty_stream_arc);
-
                     tracing::warn!("Reading PTY stream: {err}");
                     break;
                 }
@@ -188,11 +183,15 @@ impl PTY {
     /// Forward channel bytes from the user's STDIN to the virtual PTY
     async fn forward_input(
         mut user_input: mpsc::Receiver<StreamBytesFromSTDIN>,
-        mut pty_stream: Arc<std::fs::File>,
+        pty_stream: std::fs::File,
         pty_master: std::boxed::Box<(dyn portable_pty::MasterPty + std::marker::Send + 'static)>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         tracing::debug!("Starting `forward_input` loop");
+
+        // > BufWriter<W> can improve the speed of programs that make small and repeated write calls to
+        // > the same file or network socket.
+        let mut writer = std::io::BufWriter::new(pty_stream);
 
         #[expect(
             clippy::integer_division_remainder_used,
@@ -201,42 +200,67 @@ impl PTY {
         loop {
             tokio::select! {
                 message = protocol.recv() => {
-                    match message {
-                        // TODO: should this be oneshot?
-                        Ok(Protocol::End) => {
-                            tracing::trace!("STDIN forwarder task received {message:?}");
-
-                            break;
-                        }
-                        Ok(Protocol::Resize{width, height}) => {
-                            tracing::debug!("Resize event received on protocol {message:?}");
-
-                            let result = pty_master.resize(Self::pty_size(width, height));
-                            if result.is_err() {
-                                tracing::error!("Couldn't resize underlying PTY subprocesss: {result:?}");
-                            }
-                        }
-                        Err(err) => {
-                            return Err(color_eyre::eyre::Error::new(err));
-                        }
-                    };
+                    if !Self::handle_protocol_message(message, &pty_master)? { break }
                 }
-                some_bytes = user_input.recv() => {
-                    if let Some(bytes) = some_bytes {
-                        // Don't send unnecessary bytes, because `terminal.advance_bytes` parses them all
-                        for byte in bytes {
-                            if byte == 0 {
-                                break;
-                            }
-                            pty_stream.write_all(&[byte])?;
-                        }
-                        pty_stream.flush()?;
-                    }
-                }
+                some_bytes = user_input.recv() => { Self::handle_bytes_from_stdin(some_bytes, &mut writer)? }
             }
         }
 
         tracing::debug!("STDIN forwarder loop finished");
+        Ok(())
+    }
+
+    /// Handle a message from the Tattoy protocol broadcast channel.
+    fn handle_protocol_message(
+        message: std::result::Result<
+            crate::run::Protocol,
+            tokio::sync::broadcast::error::RecvError,
+        >,
+        pty_master: &std::boxed::Box<(dyn portable_pty::MasterPty + std::marker::Send + 'static)>,
+    ) -> Result<bool> {
+        match message {
+            // TODO: should this be oneshot?
+            Ok(Protocol::End) => {
+                tracing::trace!("STDIN forwarder task received {message:?}");
+
+                return Ok(false);
+            }
+            Ok(Protocol::Resize { width, height }) => {
+                tracing::debug!("Resize event received on protocol {message:?}");
+
+                let result = pty_master.resize(Self::pty_size(width, height));
+                if result.is_err() {
+                    tracing::error!("Couldn't resize underlying PTY subprocesss: {result:?}");
+                }
+            }
+            Err(err) => {
+                return Err(color_eyre::eyre::Error::new(err));
+            }
+        };
+
+        Ok(true)
+    }
+
+    /// Handle STDIN from user's actual real terminal.
+    fn handle_bytes_from_stdin(
+        maybe_bytes: Option<StreamBytesFromSTDIN>,
+        mut pty_stdin: impl std::io::Write,
+    ) -> Result<()> {
+        let Some(bytes) = maybe_bytes else {
+            return Ok(());
+        };
+
+        // Sending the entire payload (`StreamBytesFromSTDIN`) seems to break some input 🤔
+        // Also, is it more efficient like this? Not sending more bytes than is needed probably
+        // prevents some unnecessary parsing somewhere?
+        for byte in bytes {
+            if byte == 0 {
+                break;
+            }
+            pty_stdin.write_all(&[byte])?;
+        }
+        pty_stdin.flush()?;
+
         Ok(())
     }
 
