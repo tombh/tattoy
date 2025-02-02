@@ -67,53 +67,79 @@ impl ShadowTTY {
         shadow_output: &mpsc::Sender<FrameUpdate>,
         mut protocol_receive: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
+        #[expect(
+            clippy::integer_division_remainder_used,
+            reason = "`tokio::select! generates this.`"
+        )]
         loop {
-            // TODO:
-            // The output of the PTY seems to be capped at 4095 bytes. Making the size of
-            // `StreamBytesFromPTY` bigger than that doesn't seem to make a difference. This means
-            // that large screen updates `self.build_current_surface()` can be called an
-            // unnecessary number of times.
-            //
-            // Possible solutions:
-            //   * Ideally get the PTY to send bigger payloads.
-            //   * Only call `self.build_current_surface()` at a given frame rate, probably 60fps.
-            //     This could be augmented with a check for the size so the payloads smaller than
-            //     4095 get rendered immediately.
-            //   * When receiving a payload of exactly 4095 bytes, wait a fixed amount of time for
-            //     more payloads, because in most cases 4095 means that there wasn't enough room to
-            //     fit everything in a single payload.
-            //   * Make `self.build_current_surface()` able to detect new payloads as they happen
-            //     so it can cancel itself and immediately start working on the new one.
-            if let Some(bytes) = pty_output.recv().await {
-                // Note: I'm surprised that the bytes here aren't able to resize the terminal?
-                self.terminal.advance_bytes(bytes);
-            };
-
-            let surface = self.build_current_surface()?;
-            self.update_state_surface(surface)?;
-            shadow_output.send(FrameUpdate::PTYSurface).await?;
-
-            // TODO: should this be oneshot?
-            if let Ok(message) = protocol_receive.try_recv() {
-                match message {
-                    Protocol::End => {
-                        break;
-                    }
-                    Protocol::Resize { width, height } => {
-                        self.terminal.resize(wezterm_term::TerminalSize {
-                            cols: width.into(),
-                            rows: height.into(),
-                            pixel_width: 0,
-                            pixel_height: 0,
-                            dpi: 0,
-                        });
-                    }
-                };
+            tokio::select! {
+                Some(pty_bytes) = pty_output.recv() => self.read_from_pty(&pty_bytes, shadow_output).await?,
+                Ok(message) = protocol_receive.recv() => {
+                    let is_exit = self.handle_protocol_message(&message);
+                    if is_exit { break };
+                }
+                else => { break }
             }
         }
 
         tracing::debug!("ShadowTTY loop finished");
         Ok(())
+    }
+
+    // TODO:
+    // The output of the PTY seems to be capped at 4095 bytes. Making the size of
+    // `StreamBytesFromPTY` bigger than that doesn't seem to make a difference. This means
+    // that large screen updates `self.build_current_surface()` can be called an
+    // unnecessary number of times.
+    //
+    // Possible solutions:
+    //   * Ideally get the PTY to send bigger payloads.
+    //   * Only call `self.build_current_surface()` at a given frame rate, probably 60fps.
+    //     This could be augmented with a check for the size so the payloads smaller than
+    //     4095 get rendered immediately.
+    //   * When receiving a payload of exactly 4095 bytes, wait a fixed amount of time for
+    //     more payloads, because in most cases 4095 means that there wasn't enough room to
+    //     fit everything in a single payload.
+    //   * Make `self.build_current_surface()` able to detect new payloads as they happen
+    //     so it can cancel itself and immediately start working on the new one.
+    //
+    /// Handle bytes from the PTY subprocess.
+    async fn read_from_pty(
+        &mut self,
+        pty_output: &StreamBytesFromPTY,
+        shadow_output: &mpsc::Sender<FrameUpdate>,
+    ) -> Result<()> {
+        self.terminal.advance_bytes(pty_output);
+        let surface = self.build_current_surface()?;
+        self.update_state_surface(surface)?;
+
+        let result = shadow_output.send(FrameUpdate::PTYSurface).await;
+        if let Err(err) = result {
+            tracing::error!("Couldn't notify frame update channel about new PTY surface: {err:?}");
+        }
+
+        Ok(())
+    }
+
+    /// Handle any messages from the global Tattoy protocol
+    fn handle_protocol_message(&mut self, message: &Protocol) -> bool {
+        tracing::debug!("Shadow TTY received protocol message: {message:?}");
+        match message {
+            Protocol::End => {
+                return false;
+            }
+            Protocol::Resize { width, height } => {
+                self.terminal.resize(wezterm_term::TerminalSize {
+                    cols: usize::from(*width),
+                    rows: usize::from(*height),
+                    pixel_width: 0,
+                    pixel_height: 0,
+                    dpi: 0,
+                });
+            }
+        };
+
+        true
     }
 
     /// Send the current PTY surface to the shared state.

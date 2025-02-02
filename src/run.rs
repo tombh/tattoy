@@ -80,7 +80,6 @@ pub(crate) async fn run() -> Result<()> {
     let pty_screen_tx = bg_screen_tx.clone();
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
-    let protocol_stdin_rx = protocol_tx.subscribe();
     let protocol_pty_rx = protocol_tx.subscribe();
     let protocol_shadow_rx = protocol_tx.subscribe();
     let protocol_runner_rx = protocol_tx.subscribe();
@@ -91,8 +90,10 @@ pub(crate) async fn run() -> Result<()> {
 
     let pty = PTY::new(vec![std::env::var("SHELL")?.into()])?;
 
-    tokio::spawn(async move {
-        if let Err(err) = PTY::consume_stdin(&pty_input_tx, protocol_stdin_rx).await {
+    // NOTE: We don't `join()` this thread, because it's just listening on STDIN. It doesn't listen
+    // on the Tattoy protocol channel because listening to 2 channels synchronously is hard.
+    std::thread::spawn(move || {
+        if let Err(err) = crate::input::Input::consume_stdin(&pty_input_tx) {
             eprintln!("PTY error: {err:?}");
             exit(1);
         };

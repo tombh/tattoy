@@ -5,6 +5,7 @@
 // definitions.
 
 pub mod cli_args;
+pub mod input;
 pub mod loader;
 pub mod pty;
 pub mod renderer;
