@@ -73,10 +73,14 @@ impl ShadowTTY {
         )]
         loop {
             tokio::select! {
-                Some(pty_bytes) = pty_output.recv() => self.read_from_pty(&pty_bytes, shadow_output).await?,
+                Some(pty_bytes) = pty_output.recv() => {
+                    self.read_from_pty(&pty_bytes, shadow_output).await?;
+                },
                 Ok(message) = protocol_receive.recv() => {
-                    let is_exit = self.handle_protocol_message(&message);
-                    if is_exit { break };
+                    self.handle_protocol_message(&message);
+                    if matches!(message, Protocol::End) {
+                        break;
+                    }
                 }
                 else => { break }
             }
@@ -84,6 +88,37 @@ impl ShadowTTY {
 
         tracing::debug!("ShadowTTY loop finished");
         Ok(())
+    }
+
+    /// Start the shadow TTY tokio task. It's an in-memory render of the PTY.
+    pub fn start(
+        state: Arc<SharedState>,
+        protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
+        pty_output_rx: mpsc::Receiver<StreamBytesFromPTY>,
+        pty_screen_tx: mpsc::Sender<FrameUpdate>,
+    ) -> tokio::task::JoinHandle<Result<()>> {
+        tokio::spawn(async move {
+            // This would be much simpler if async closures where stable, because then we could use
+            // the `?` syntax.
+            match Self::new(Arc::clone(&state)) {
+                Ok(mut shadow_tty) => {
+                    let result = shadow_tty
+                        .run(pty_output_rx, &pty_screen_tx, protocol_tx.subscribe())
+                        .await;
+
+                    if let Err(error) = result {
+                        crate::run::broadcast_protocol_end(&protocol_tx);
+                        return Err(error);
+                    };
+                }
+                Err(error) => {
+                    crate::run::broadcast_protocol_end(&protocol_tx);
+                    return Err(error);
+                }
+            };
+
+            Ok(())
+        })
     }
 
     // TODO:
@@ -122,12 +157,10 @@ impl ShadowTTY {
     }
 
     /// Handle any messages from the global Tattoy protocol
-    fn handle_protocol_message(&mut self, message: &Protocol) -> bool {
+    fn handle_protocol_message(&mut self, message: &Protocol) {
         tracing::debug!("Shadow TTY received protocol message: {message:?}");
         match message {
-            Protocol::End => {
-                return false;
-            }
+            Protocol::End => (),
             Protocol::Resize { width, height } => {
                 self.terminal.resize(wezterm_term::TerminalSize {
                     cols: usize::from(*width),
@@ -138,8 +171,6 @@ impl ShadowTTY {
                 });
             }
         };
-
-        true
     }
 
     /// Send the current PTY surface to the shared state.
@@ -163,8 +194,13 @@ impl ShadowTTY {
         let height = tty_size.height;
         let mut surface = termwiz::surface::Surface::new(width.into(), height.into());
 
-        // TODO: Explore using this to improve performance:
-        //   `self.terminal.screen().get_changed_stable_rows()`
+        // TODO:
+        //   * Explore using this to improve performance:
+        //     `self.terminal.screen().get_changed_stable_rows()`
+        //   * Handle scrolling:
+        //     self.terminal.is_alt_screen_active()
+        //     screen.scroll_up()
+        //     screen.scroll_down()
         let screen = self.terminal.screen_mut();
         for row in 0..=height {
             for column in 0..=width {

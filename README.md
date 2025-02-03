@@ -25,14 +25,21 @@ Logs go to: `./tattoy.log`
 * [x] Send surface updates to state only, then protocol sends small signal not big update.
 * [x] Look into performance, especially scrolling in nvim.
 * [x] `CTRL-D` doesn't fully return to terminal, needs extra `CTRL-C`.
+* [x] Resizing is broken.
+* [ ] Look at projects like Ratatui to see how to do integration tests.
 * [ ] Implement scrollback/history.
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.
+* [ ] User-friendly error output for known errors
 * [ ] Double width characters aren't passed through, eg "🦀".
+* [ ] Bug: `atuin` can't get the cursor position. Maybe I need to intercept '\e[6n'?
+* [ ] Don't log to file by default
 * [ ] Explore rendering a frame even if any of the surfaces aren't the right size, in order to not prevent updates from other surfaces.
+* [ ] Use `tokio::select!` in Loader
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
 * [ ] `tmux` mouse events cause runaway behaviour in `htop`.
+* [ ] Explore returning errors in tasks/threads, joining them and acting on them. Instead of sending the error to shared state.
 * [ ] Centralise place where app exits and outputs backtrace and messages etc.
 * [ ] Doesn't work on Nushell. Just freezes.
 * [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.

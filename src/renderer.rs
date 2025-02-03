@@ -46,6 +46,37 @@ impl Renderer {
         Ok(renderer)
     }
 
+    /// Instantiate and run
+    pub fn start(
+        state: Arc<SharedState>,
+        surfaces_rx: mpsc::Receiver<FrameUpdate>,
+        protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
+    ) -> tokio::task::JoinHandle<Result<()>> {
+        let protocol_rx = protocol_tx.subscribe();
+        tokio::spawn(async move {
+            // This would be much simpler if async closures where stable, because then we could use
+            // the `?` syntax.
+            match Self::new(Arc::clone(&state)) {
+                Ok(mut renderer) => {
+                    let result = renderer
+                        .run(surfaces_rx, protocol_rx, protocol_tx.clone())
+                        .await;
+
+                    if let Err(error) = result {
+                        crate::run::broadcast_protocol_end(&protocol_tx);
+                        return Err(error);
+                    };
+                }
+                Err(error) => {
+                    crate::run::broadcast_protocol_end(&protocol_tx);
+                    return Err(error);
+                }
+            };
+
+            Ok(())
+        })
+    }
+
     /// We need this just because I can't figure out how to pass `Box<dyn Terminal>` to
     /// `BufferedTerminal::new()`
     fn get_termwiz_terminal() -> Result<impl TermwizTerminal> {
@@ -89,35 +120,44 @@ impl Renderer {
         // be of the right size.
     }
 
-    /// Handle updates from the PTY and tattoys
-    pub async fn run(
+    /// Listen for surface updates from the PTY and any running tattoys.
+    /// It lives in its own method so that we can catch any errors and ensure that the user's
+    /// terminal is always returned to cooked mode.
+    async fn run(
         &mut self,
         mut surfaces: mpsc::Receiver<FrameUpdate>,
         mut protocol_rx: tokio::sync::broadcast::Receiver<Protocol>,
         protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
     ) -> Result<()> {
+        tracing::debug!("Putting user's terminal into raw mode");
         let mut copy_of_users_terminal = Self::get_termwiz_terminal()?;
         copy_of_users_terminal.set_raw_mode()?;
         let mut composited_terminal = BufferedTerminal::new(copy_of_users_terminal)?;
 
-        while let Some(update) = surfaces.recv().await {
-            self.handle_resize(&mut composited_terminal, &protocol_tx)?;
-            self.render(update, &mut composited_terminal)?;
-
-            // TODO: should this be oneshot?
-            if let Ok(message) = protocol_rx.try_recv() {
-                match message {
-                    Protocol::End => {
+        tracing::debug!("Starting render loop");
+        #[expect(
+            clippy::integer_division_remainder_used,
+            reason = "`tokio::select! generates this.`"
+        )]
+        loop {
+            tokio::select! {
+                Some(update) = surfaces.recv() => {
+                    self.handle_resize(&mut composited_terminal, &protocol_tx)?;
+                    self.render(update, &mut composited_terminal)?;
+                }
+                Ok(message) = protocol_rx.recv() => {
+                    if matches!(message, Protocol::End) {
                         break;
                     }
-                    // I AM THE ONE WHO KNOCKS!
-                    // (we sent the resize event so we've already handled it)
-                    Protocol::Resize { .. } => (),
-                };
+                },
+                else => { break }
             }
         }
+        tracing::debug!("Exited render loop");
 
-        tracing::debug!("Renderer loop finished");
+        tracing::debug!("Setting user's terminal to cooked mode");
+        composited_terminal.terminal().set_cooked_mode()?;
+
         Ok(())
     }
 
@@ -130,7 +170,7 @@ impl Renderer {
     ) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => self.tattoys = surface,
-            FrameUpdate::PTYSurface => self.get_updated_pty()?,
+            FrameUpdate::PTYSurface => self.get_updated_pty_frame()?,
         }
 
         if !self.are_dimensions_good("PTY", &self.pty.screen_lines()) {
@@ -165,7 +205,7 @@ impl Renderer {
     }
 
     /// Fetch the freshly made PTY frame from the shared state.
-    fn get_updated_pty(&mut self) -> Result<()> {
+    fn get_updated_pty_frame(&mut self) -> Result<()> {
         let surface = self
             .state
             .shadow_tty

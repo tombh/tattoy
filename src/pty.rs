@@ -59,7 +59,10 @@ impl PTY {
     }
 
     /// Function just to isolate the PTY setup
-    fn setup_pty(&self) -> Result<(std::fs::File, portable_pty::PtyPair)> {
+    fn setup_pty(
+        &self,
+        protocol_out: tokio::sync::broadcast::Receiver<Protocol>,
+    ) -> Result<(std::fs::File, portable_pty::PtyPair)> {
         tracing::debug!("Setting up PTY");
         let pty_system = portable_pty::native_pty_system();
         let pty_result = pty_system.openpty(Self::pty_size(self.width, self.height));
@@ -77,7 +80,7 @@ impl PTY {
         tracing::debug!("Launching `{:?}` on PTY", self.command);
         let mut cmd = portable_pty::CommandBuilder::from_argv(self.command.clone());
         cmd.cwd(std::env::current_dir()?);
-        match pair.slave.spawn_command(cmd) {
+        let spawn = match pair.slave.spawn_command(cmd) {
             Ok(pty_ok) => pty_ok,
             Err(pty_error) => {
                 // For some reason the error returned by `spawn_command` can't be handled
@@ -86,18 +89,18 @@ impl PTY {
                 return Err(eyre!(error));
             }
         };
+        Self::kill_on_protocol_end(protocol_out, spawn);
 
-        // The only reason we need the raw file descriptor is because it allows the PTY
-        // to close when it receives CTRL+D. I got the idea from here:
-        // [Github comment](https://github.com/wez/wezterm/discussions/5151)
-        //
-        // I'm not 100% sure that it's needed. Maybe the `termwiz::Terminal.set_raw_mode()` in our
-        // `Renderer` is already intercepting `CTRL+D`?
+        // I originally used the raw file descriptor based on discussions here:
+        //   [Github comment](https://github.com/wez/wezterm/discussions/5151)
+        // But since then I use it more because `pair.master.try_clone_reader()` doesn't detect the
+        // end of the PTY process and so blocks the whole Tattoy app. Listening on the raw FD
+        // however, does detect the end of the PTY and so we can exit gracefully.
         let Some(master_fd) = pair.master.as_raw_fd() else {
             return Err(eyre!("Couldn't get master file descriptor for PTY"));
         };
 
-        tracing::debug!("Returning PTY file descriptor");
+        tracing::trace!("Returning PTY file descriptor");
         Ok((
             // SAFETY: Why is this unsafe? Is there another safe way to do this?
             unsafe { std::fs::File::from_raw_fd(master_fd) },
@@ -105,29 +108,59 @@ impl PTY {
         ))
     }
 
+    /// Listen for the `End` message from the Tattoy protocol channel and kill the PTY.
+    fn kill_on_protocol_end(
+        mut protocol_out: tokio::sync::broadcast::Receiver<Protocol>,
+        mut spawn: Box<dyn portable_pty::Child + Send + Sync>,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                match protocol_out.recv().await {
+                    Ok(message) => match message {
+                        Protocol::End => {
+                            tracing::debug!("PTY received Tattoy message {message:?}");
+                            let result = spawn.kill();
+                            if let Err(error) = result {
+                                tracing::error!("Couldn't kill PTY: {error:?}");
+                                // TODO: maybe we want to force exit here?
+                            }
+                            tracing::debug!("PTY sent kill signals");
+                            break;
+                        }
+                        // Resize is handled on the user input thread.
+                        Protocol::Resize { .. } => (),
+                    },
+                    Err(error) => {
+                        tracing::error!("Reading protocol from PTY loop: {error:?}");
+                    }
+                }
+            }
+        });
+    }
+
     /// Start the PTY
     pub async fn run(
         &self,
         user_input: mpsc::Receiver<StreamBytesFromSTDIN>,
         pty_output: mpsc::Sender<StreamBytesFromPTY>,
-        protocol: tokio::sync::broadcast::Receiver<Protocol>,
+        protocol_in: tokio::sync::broadcast::Receiver<Protocol>,
+        protocol_out: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
-        let (pty_raw_device_file, pty_pair) = self.setup_pty()?;
+        let (pty_raw_device_file, pty_pair) = self.setup_pty(protocol_out)?;
+        let mut pty_stream_reader = std::io::BufReader::new(pty_raw_device_file.try_clone()?);
 
-        let mut pty_stream_reader = match pty_pair.master.try_clone_reader() {
-            Ok(reader) => reader,
-            Err(err) => color_eyre::eyre::bail!(err),
-        };
-
-        // Release any handles owned by the slave: we don't need it now that we've spawned the child.
-        // We need `pair.master` though as that keeps the PTY alive
+        // We have to drop the slave so that we don't hang on it when we exit.
         drop(pty_pair.slave);
 
         tokio::spawn(async move {
-            if let Err(err) =
-                Self::forward_input(user_input, pty_raw_device_file, pty_pair.master, protocol)
-                    .await
-            {
+            let result = Self::forward_input(
+                user_input,
+                pty_raw_device_file,
+                pty_pair.master,
+                protocol_in,
+            )
+            .await;
+            if let Err(err) = result {
                 tracing::error!("Writing to PTY stream: {err}");
             }
         });
@@ -199,7 +232,10 @@ impl PTY {
         loop {
             tokio::select! {
                 message = protocol.recv() => {
-                    if !Self::handle_protocol_message(message, &pty_master)? { break }
+                    Self::handle_protocol_message(&message, &pty_master)?;
+                    if matches!(message, Ok(Protocol::End)) {
+                        break;
+                    }
                 }
                 some_bytes = user_input.recv() => { Self::handle_bytes_from_stdin(some_bytes, &mut writer)? }
             }
@@ -211,33 +247,32 @@ impl PTY {
 
     /// Handle a message from the Tattoy protocol broadcast channel.
     fn handle_protocol_message(
-        message: std::result::Result<
+        message: &std::result::Result<
             crate::run::Protocol,
             tokio::sync::broadcast::error::RecvError,
         >,
         pty_master: &std::boxed::Box<(dyn portable_pty::MasterPty + std::marker::Send + 'static)>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         match message {
             // TODO: should this be oneshot?
             Ok(Protocol::End) => {
                 tracing::trace!("STDIN forwarder task received {message:?}");
-
-                return Ok(false);
+                return Ok(());
             }
             Ok(Protocol::Resize { width, height }) => {
                 tracing::debug!("Resize event received on protocol {message:?}");
 
-                let result = pty_master.resize(Self::pty_size(width, height));
+                let result = pty_master.resize(Self::pty_size(*width, *height));
                 if result.is_err() {
                     tracing::error!("Couldn't resize underlying PTY subprocesss: {result:?}");
                 }
             }
             Err(err) => {
-                return Err(color_eyre::eyre::Error::new(err));
+                return Err(color_eyre::eyre::Error::new(err.clone()));
             }
         };
 
-        Ok(true)
+        Ok(())
     }
 
     /// Handle STDIN from user's actual real terminal.
@@ -280,7 +315,8 @@ mod tests {
         let (pty_output_tx, mut pty_output_rx) = mpsc::channel::<StreamBytesFromPTY>(1);
         let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytesFromSTDIN>(1);
         let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
-        let protocol_rx = protocol_tx.subscribe();
+        let protocol_rx_in = protocol_tx.subscribe();
+        let protocol_rx_out = protocol_tx.subscribe();
 
         let output_task = tokio::spawn(async move {
             tracing::debug!("TEST: Output listener loop starting...");
@@ -296,7 +332,7 @@ mod tests {
         tokio::spawn(async move {
             tracing::debug!("TEST: PTY.run() starting...");
             let pty = PTY::new(command).unwrap();
-            pty.run(pty_input_rx, pty_output_tx, protocol_rx)
+            pty.run(pty_input_rx, pty_output_tx, protocol_rx_in, protocol_rx_out)
                 .await
                 .unwrap();
             protocol_tx.send(Protocol::End).unwrap();

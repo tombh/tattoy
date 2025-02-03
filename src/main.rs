@@ -34,15 +34,26 @@ use color_eyre::eyre::Result;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _, Layer as _};
 
 #[expect(clippy::non_ascii_literal, reason = "It's just for debugging")]
+#[expect(
+    clippy::print_stderr,
+    reason = "It's our central place for reporting errors to the user"
+)]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     setup_logging()?;
     color_eyre::install()?;
-    run::run().await?;
+    let state_arc = shared_state::SharedState::init()?;
+    let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
     tracing::debug!("Tattoy is exiting 🙇");
+    if let Err(error) = result {
+        tracing::error!("{error:?}");
+        eprintln!("Error: {error}");
+        eprintln!("See `./tattoy.log` for more details");
+    }
     Ok(())
 }
 
+// TODO: don't log by default.
 /// Setup logging
 fn setup_logging() -> Result<()> {
     let log_file = "tattoy.log";

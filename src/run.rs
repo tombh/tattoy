@@ -1,6 +1,5 @@
 //! Main entrypoint for running Tattoy
 
-use std::process::exit;
 use std::sync::Arc;
 
 use clap::Parser as _;
@@ -8,13 +7,14 @@ use color_eyre::eyre::Result;
 use tokio::sync::mpsc;
 
 use crate::cli_args::CliArgs;
+use crate::input::Input;
 use crate::loader::Loader;
-use crate::pty::{StreamBytesFromPTY, StreamBytesFromSTDIN, PTY};
+use crate::pty::PTY;
 use crate::renderer::Renderer;
 use crate::shadow_tty::ShadowTTY;
 use crate::shared_state::SharedState;
 
-// TODO: Maybe it'd be nice to also just send an vector of true colour pixels? Like a frame of a
+// TODO: Maybe it'd be nice to also just send a vector of true colour pixels? Like a frame of a
 // video for example?
 //
 /// There a are 2 "screens" or "surfaces" to manage in Tattoy. The fancy special affects screen
@@ -42,14 +42,82 @@ pub enum Protocol {
     },
 }
 
+// TODO:
+// Putting any errors in shared state, feels a bit weird. Does it make more sense to have each task/thread
+// return its error, and then check them all at the end?
+//
 /// Main entrypoint
-#[expect(
-    clippy::use_debug,
-    clippy::print_stderr,
-    clippy::exit,
-    reason = "The central place where errors are handled"
-)]
-pub(crate) async fn run() -> Result<()> {
+pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
+    let enabled_tattoys = setup(state_arc)?;
+    let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
+
+    // TODO: I've seen this cause "No more capacity" error.
+    let (pty_input_tx, pty_input_rx) = mpsc::channel(1);
+    let input_handle = Input::start(pty_input_tx, protocol_tx.clone());
+
+    let (pty_output_tx, pty_output_rx) = mpsc::channel(1);
+    let (tattoy_frame_tx, tattoy_frame_rx) = mpsc::channel(8192);
+    let shadow_tty_handle = ShadowTTY::start(
+        Arc::clone(state_arc),
+        protocol_tx.clone(),
+        pty_output_rx,
+        tattoy_frame_tx.clone(),
+    );
+
+    let tattoys_handle = Loader::start(
+        enabled_tattoys,
+        Arc::clone(state_arc),
+        protocol_tx.clone(),
+        tattoy_frame_tx,
+    );
+
+    let renderer = Renderer::start(Arc::clone(state_arc), tattoy_frame_rx, protocol_tx.clone());
+
+    let pty = PTY::new(vec![std::env::var("SHELL")?.into()])?;
+    pty.run(
+        pty_input_rx,
+        pty_output_tx,
+        protocol_tx.subscribe(),
+        protocol_tx.subscribe(),
+    )
+    .await?;
+
+    tracing::debug!("Left PTY thread, exiting Tattoy...");
+    protocol_tx.send(Protocol::End)?;
+
+    tattoys_handle
+        .join()
+        .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))??;
+
+    if input_handle.is_finished() {
+        // The STDIN loop doesn't listen to the global Tattoy protocol, so it can't exit its loop.
+        // Therefore we should only join it if it finished because of its own error.
+        input_handle
+            .join()
+            .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))??;
+    }
+
+    shadow_tty_handle.await??;
+    renderer.await??;
+
+    Ok(())
+}
+
+/// Signal all task/thread loops to exit.
+///
+/// We keep it in its own function because we need to handle the error separately. If the error
+/// were to be bubbled with `?` as usual, there's a chance it would never be logged, because the
+/// protocol end signal is itself what allows the central error handler to even be reached.
+pub fn broadcast_protocol_end(protocol_tx: &tokio::sync::broadcast::Sender<Protocol>) {
+    tracing::debug!("Broadcasting the protocol `End` message to all listeners");
+    let result = protocol_tx.send(Protocol::End);
+    if let Err(error) = result {
+        tracing::error!("{error:?}");
+    }
+}
+
+/// Prepare the application to start.
+fn setup(state: &std::sync::Arc<SharedState>) -> Result<Vec<String>> {
     let mut enabled_tattoys: Vec<String> = vec![];
 
     // Assuming true colour makes Tattoy simpler.
@@ -65,111 +133,13 @@ pub(crate) async fn run() -> Result<()> {
     if let Some(tattoys) = cli.enabled_tattoys {
         enabled_tattoys.push(tattoys);
     } else {
-        eprintln!("Please provide at least one tattoy with the `--use` argument");
-        exit(1);
+        let error =
+            color_eyre::eyre::eyre!("Please provide at least one tattoy with the `--use` argument");
+        return Err(error);
     }
 
-    let state_arc = SharedState::init()?;
-
-    let (pty_output_tx, pty_output_rx) = mpsc::channel::<StreamBytesFromPTY>(1);
-    let (pty_input_tx, pty_input_rx) = mpsc::channel::<StreamBytesFromSTDIN>(1);
-
-    // TODO: Channel size of 16 caused `no available capacity` error. Think about what is an actual
-    // reasonable size, or handle the error more gracefully.
-    let (bg_screen_tx, screen_rx) = mpsc::channel(8192);
-    let pty_screen_tx = bg_screen_tx.clone();
-
-    let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
-    let protocol_pty_rx = protocol_tx.subscribe();
-    let protocol_shadow_rx = protocol_tx.subscribe();
-    let protocol_runner_rx = protocol_tx.subscribe();
-    let protocol_renderer_rx = protocol_tx.subscribe();
-
     let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
-    state_arc.set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)?;
+    state.set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)?;
 
-    let pty = PTY::new(vec![std::env::var("SHELL")?.into()])?;
-
-    // NOTE: We don't `join()` this thread, because it's just listening on STDIN. It doesn't listen
-    // on the Tattoy protocol channel because listening to 2 channels synchronously is hard.
-    std::thread::spawn(move || {
-        if let Err(err) = crate::input::Input::consume_stdin(&pty_input_tx) {
-            eprintln!("PTY error: {err:?}");
-            exit(1);
-        };
-    });
-
-    let shadow_state = Arc::clone(&state_arc);
-    tokio::spawn(async move {
-        let mut shadow_tty = match ShadowTTY::new(shadow_state) {
-            Ok(ok) => ok,
-            Err(err) => {
-                eprintln!("Shadow TTY error: {err:?}");
-                exit(1);
-            }
-        };
-
-        if let Err(err) = shadow_tty
-            .run(pty_output_rx, &pty_screen_tx, protocol_shadow_rx)
-            .await
-        {
-            eprintln!("Shadow TTY error: {err:?}");
-            exit(1);
-        }
-    });
-
-    let loader_state = Arc::clone(&state_arc);
-    let loader_thread = std::thread::spawn(move || {
-        let maybe_tattoys = Loader::new(&loader_state, enabled_tattoys);
-        match maybe_tattoys {
-            Ok(mut tattoys) => {
-                if let Err(err) = tattoys.run(&bg_screen_tx, protocol_runner_rx) {
-                    // Note: I've seen `no available capacity`
-                    eprintln!("Tattoy runner error: {err:?}");
-                    exit(1);
-                }
-            }
-            Err(err) => {
-                eprintln!("Tattoys Loader error: {err:?}");
-                exit(1);
-            }
-        }
-    });
-
-    let protocol_tx_clone = protocol_tx.clone();
-    let render_state = Arc::clone(&state_arc);
-    let render_task = tokio::spawn(async move {
-        let maybe_renderer = Renderer::new(render_state);
-        match maybe_renderer {
-            Ok(mut renderer) => {
-                if let Err(err) = renderer
-                    .run(screen_rx, protocol_renderer_rx, protocol_tx_clone)
-                    .await
-                {
-                    eprintln!("Renderer error: {err:?}");
-                    exit(1);
-                };
-            }
-            Err(err) => {
-                eprintln!("Tattoys Loader error: {err:?}");
-                exit(1);
-            }
-        };
-    });
-
-    pty.run(pty_input_rx, pty_output_tx, protocol_pty_rx)
-        .await?;
-    protocol_tx.send(Protocol::End)?;
-
-    if let Err(err) = loader_thread.join() {
-        eprintln!("Couldn't join loader thread: {err:?}");
-        exit(1);
-    };
-
-    if let Err(err) = render_task.await {
-        eprintln!("Couldn't join render task: {err:?}");
-        exit(1);
-    };
-
-    Ok(())
+    Ok(enabled_tattoys)
 }
