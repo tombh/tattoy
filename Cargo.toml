@@ -1,30 +1,9 @@
-[package]
-name = "tattoy"
-description = "Eye-candy for your terminal"
-version = "0.1.0"
-edition = "2021"
-readme = "README.md"
-repository = "TODO"
-license = "MIT"
-keywords = ["shell"]
-categories = ["shell"]
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = [
+    "crates/tattoy",
+]
 
-[dependencies]
-clap = { version = "4.5.4", features = ["derive"] }
-color-eyre = "0.6.3"
-console-subscriber = "0.4.1"
-glam = { git = "https://github.com/bitshifter/glam-rs", rev = "aacb9c5f", features = [ "fast-math"] }
-portable-pty = "0.8.1"
-rand = "0.8.5"
-rayon = "1.10.0"
-rstar = "0.12.0"
-termwiz = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
-tokio = { version = "1.43.0", features = ["full", "tracing"] }
-tracing = "0.1.40"
-tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
-wezterm-term = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
-
+resolver = "2"
 
 # Canonical lints for whole crate
 #
@@ -36,11 +15,11 @@ wezterm-term = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf
 # We set base lints to give the fullest, most pedantic feedback possible.
 # Though we prefer that they are just warnings during development so that build-denial
 # is only enforced in CI.
-[lints.rust]
+[workspace.lints.rust]
 # It's always good to write as much documentation as possible
 missing_docs = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 # `clippy::all` is already on by default. It implies the following:
 #   * clippy::correctness code that is outright wrong or useless
 #   * clippy::suspicious code that is most likely wrong or useless
