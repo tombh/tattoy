@@ -9,9 +9,7 @@ use tokio::sync::mpsc;
 use crate::cli_args::CliArgs;
 use crate::input::Input;
 use crate::loader::Loader;
-use crate::pty::PTY;
 use crate::renderer::Renderer;
-use crate::shadow_tty::ShadowTTY;
 use crate::shared_state::SharedState;
 
 // TODO: Maybe it'd be nice to also just send a vector of true colour pixels? Like a frame of a
@@ -51,44 +49,43 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let enabled_tattoys = setup(state_arc)?;
     let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
 
-    // TODO: I've seen this cause "No more capacity" error.
-    let (pty_input_tx, pty_input_rx) = mpsc::channel(1);
+    let (pty_input_tx, pty_input_rx) = mpsc::channel(64);
     let input_handle = Input::start(pty_input_tx, protocol_tx.clone());
 
-    let (pty_output_tx, pty_output_rx) = mpsc::channel(1);
-    let (tattoy_frame_tx, tattoy_frame_rx) = mpsc::channel(8192);
-    let shadow_tty_handle = ShadowTTY::start(
-        Arc::clone(state_arc),
-        protocol_tx.clone(),
-        pty_output_rx,
-        tattoy_frame_tx.clone(),
-    );
+    // let (pty_output_tx, pty_output_rx) = mpsc::channel(1);
+    let (surfaces_tx, surfaces_rx) = mpsc::channel(8192);
 
     let tattoys_handle = Loader::start(
         enabled_tattoys,
         Arc::clone(state_arc),
         protocol_tx.clone(),
-        tattoy_frame_tx,
+        surfaces_tx.clone(),
     );
 
-    let renderer = Renderer::start(Arc::clone(state_arc), tattoy_frame_rx, protocol_tx.clone());
-
-    let pty = PTY::new(vec![std::env::var("SHELL")?.into()])?;
-    pty.run(
+    let renderer = Renderer::start(Arc::clone(state_arc), surfaces_rx, protocol_tx.clone());
+    let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
+    crate::terminal_proxy::TerminalProxy::start(
+        Arc::clone(state_arc),
         pty_input_rx,
-        pty_output_tx,
-        protocol_tx.subscribe(),
-        protocol_tx.subscribe(),
+        surfaces_tx,
+        protocol_tx.clone(),
+        shadow_terminal::shadow_terminal::Config {
+            width: users_tty_size.cols.try_into()?,
+            height: users_tty_size.rows.try_into()?,
+            command: vec![std::env::var("SHELL")?.into()],
+            scrollback: 1000,
+        },
     )
     .await?;
-
     tracing::debug!("Left PTY thread, exiting Tattoy...");
-    protocol_tx.send(Protocol::End)?;
+    broadcast_protocol_end(&protocol_tx);
 
+    tracing::trace!("Joining tattoys loader thread");
     tattoys_handle
         .join()
         .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))??;
 
+    tracing::trace!("Joining input thread");
     if input_handle.is_finished() {
         // The STDIN loop doesn't listen to the global Tattoy protocol, so it can't exit its loop.
         // Therefore we should only join it if it finished because of its own error.
@@ -97,9 +94,10 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
             .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))??;
     }
 
-    shadow_tty_handle.await??;
+    tracing::trace!("Awaiting renderer task");
     renderer.await??;
 
+    tracing::trace!("Leaving Tattoy's main `run()` function");
     Ok(())
 }
 

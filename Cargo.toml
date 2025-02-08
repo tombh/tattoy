@@ -1,9 +1,16 @@
 [workspace]
 members = [
     "crates/tattoy",
+    "crates/shadow_terminal",
 ]
 
 resolver = "2"
+
+[workspace.dependencies]
+tokio = { version = "1.43.0", features = ["full", "tracing"] }
+tracing = "0.1.40"
+tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
+termwiz = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
 
 # Canonical lints for whole crate
 #

@@ -26,7 +26,7 @@ Logs go to: `./tattoy.log`
 * [x] Look into performance, especially scrolling in nvim.
 * [x] `CTRL-D` doesn't fully return to terminal, needs extra `CTRL-C`.
 * [x] Resizing is broken.
-* [ ] Look at projects like Ratatui to see how to do integration tests.
+* [x] Look at projects like Ratatui to see how to do integration tests.
 * [ ] Implement scrollback/history.
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor

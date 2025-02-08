@@ -5,7 +5,8 @@ use std::io::Read as _;
 use color_eyre::eyre::Result;
 use tokio::sync::mpsc;
 
-use crate::pty::StreamBytesFromSTDIN;
+/// Bytes from STDIN
+pub type BytesFromSTDIN = [u8; 128];
 
 /// Handle input from the user
 pub(crate) struct Input;
@@ -15,17 +16,20 @@ impl Input {
     // them.
     //
     /// Forward the tattoy application's STDIN to the PTY process
-    pub fn consume_stdin(user_input: &mpsc::Sender<StreamBytesFromSTDIN>) -> Result<()> {
+    pub fn consume_stdin(user_input: &mpsc::Sender<BytesFromSTDIN>) -> Result<()> {
         tracing::debug!("Starting to listen on STDIN");
 
         let stdin = std::io::stdin();
         let mut reader = std::io::BufReader::new(stdin);
 
         loop {
-            let mut buffer: StreamBytesFromSTDIN = [0; 128];
+            let mut buffer: BytesFromSTDIN = [0; 128];
             match reader.read(&mut buffer[..]) {
                 Ok(n) => {
                     if n > 0 {
+                        let sample = String::from_utf8_lossy(&buffer);
+                        tracing::trace!("Forwarding STDIN input: {sample}");
+
                         // TODO:
                         // 1. Loop through 1 byte at a time, waiting for a valid parsed event.
                         // 2. Keep track of all the bytes that have contributed to a possible
@@ -64,7 +68,7 @@ impl Input {
 
     /// Run the thread that listens to the user's STDIN.
     pub fn start(
-        pty_input_tx: mpsc::Sender<StreamBytesFromSTDIN>,
+        pty_input_tx: mpsc::Sender<BytesFromSTDIN>,
         protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> std::thread::JoinHandle<std::result::Result<(), color_eyre::eyre::Error>> {
         std::thread::spawn(move || -> Result<()> {

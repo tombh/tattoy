@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::{ContextCompat as _, Result};
+use termwiz::cell::Cell;
 use tokio::sync::mpsc;
 
-use termwiz::surface::Surface as TermwizSurface;
 use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
+use termwiz::surface::{Line, Surface as TermwizSurface};
 use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
-use wezterm_term::Cell;
 
 use crate::run::{FrameUpdate, Protocol};
 use crate::shared_state::SharedState;
@@ -226,11 +226,7 @@ impl Renderer {
     }
 
     /// Check to see if the incoming frame update is the same size as the user's current terminal.
-    fn are_dimensions_good(
-        &self,
-        kind: &str,
-        lines: &[std::borrow::Cow<wezterm_term::Line>],
-    ) -> bool {
+    fn are_dimensions_good(&self, kind: &str, lines: &[std::borrow::Cow<Line>]) -> bool {
         if lines.is_empty() {
             tracing::debug!("Not rendering frame because {kind} update is empty");
             return false;

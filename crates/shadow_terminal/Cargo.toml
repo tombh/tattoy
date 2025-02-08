@@ -1,0 +1,26 @@
+[package]
+name = "shadow-terminal"
+description = "A fully rendered in-memory terminal"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+repository = "TODO"
+license = "MIT"
+keywords = ["shell, testing"]
+categories = ["shell"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+portable-pty = "0.8.1"
+termwiz.workspace = true
+wezterm-term = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
+snafu = "0.8.5"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+indoc = "2.0.5"

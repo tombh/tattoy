@@ -136,14 +136,14 @@ impl Surface {
 
 #[cfg(test)]
 #[expect(clippy::indexing_slicing, reason = "Tests aren't so strict")]
-mod tests {
+mod test {
     use super::*;
 
     const WHITE: Colour = (1.0, 1.0, 1.0);
     const GREY: Colour = (0.5, 0.5, 0.5);
 
-    fn add_pixel_on_fresh_surface(x: usize, y: usize) -> Vec<Vec<wezterm_term::Cell>> {
-        let mut cells_copy: Vec<Vec<wezterm_term::Cell>> = Vec::default();
+    fn add_pixel_on_fresh_surface(x: usize, y: usize) -> Vec<Vec<termwiz::cell::Cell>> {
+        let mut cells_copy: Vec<Vec<termwiz::cell::Cell>> = Vec::default();
         let mut surface = Surface::new(2, 1);
         surface.add_pixel(x, y, WHITE).unwrap();
         let cells = surface.surface.screen_cells();

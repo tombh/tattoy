@@ -29,7 +29,7 @@ impl Simulation {
     pub fn add_pty_particles(
         &mut self,
         cursor: (usize, usize),
-        pty: &[&mut [wezterm_term::Cell]],
+        pty: &[&mut [termwiz::cell::Cell]],
     ) -> usize {
         let scale = self.config.scale;
         let mut count: usize = 0;

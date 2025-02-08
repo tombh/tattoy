@@ -56,7 +56,7 @@ impl Simulation {
     }
 
     /// A tick of a graphical frame render
-    pub fn tick(&mut self, cursor: (usize, usize), pty: &[&mut [wezterm_term::Cell]]) {
+    pub fn tick(&mut self, cursor: (usize, usize), pty: &[&mut [termwiz::cell::Cell]]) {
         if is_random_trigger(1) {
             self.add_particle(cursor.0 as f32, (cursor.1 * 2) as f32);
         }
@@ -151,7 +151,7 @@ impl Simulation {
     clippy::float_cmp,
     reason = "Tests aren't so strict"
 )]
-mod tests {
+mod test {
     use super::*;
 
     fn make_sim() -> Simulation {

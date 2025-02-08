@@ -1267,6 +1267,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indoc"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
+
+[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2269,6 +2275,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "shadow-terminal"
+version = "0.1.0"
+dependencies = [
+ "indoc",
+ "portable-pty",
+ "snafu",
+ "termwiz",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "wezterm-term",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2361,6 +2381,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
+name = "snafu"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "223891c85e2a29c3fe8fb900c1fae5e69c2e42415e3177752e8718475efa5019"
+dependencies = [
+ "snafu-derive",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03c3c6b7927ffe7ecaa769ee0e3994da3b8cafc8f444578982c83ecb161af917"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+]
+
+[[package]]
 name = "socket2"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2448,15 +2489,14 @@ dependencies = [
  "color-eyre",
  "console-subscriber",
  "glam",
- "portable-pty",
  "rand",
  "rayon",
  "rstar",
+ "shadow-terminal",
  "termwiz",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "wezterm-term",
 ]
 
 [[package]]

@@ -74,6 +74,7 @@ impl Loader {
 
             // TODO: Use `tokio::select!`
             if let Ok(message) = protocol.try_recv() {
+                tracing::trace!("Tattoys loader loop received message: {message:?}");
                 match message {
                     Protocol::End => {
                         break;

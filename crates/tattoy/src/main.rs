@@ -7,12 +7,11 @@
 pub mod cli_args;
 pub mod input;
 pub mod loader;
-pub mod pty;
 pub mod renderer;
 pub mod run;
-pub mod shadow_tty;
 pub mod shared_state;
 pub mod surface;
+pub mod terminal_proxy;
 
 /// This is where all the various tattoys are kept
 pub mod tattoys {
@@ -42,6 +41,10 @@ use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _
 async fn main() -> Result<()> {
     setup_logging()?;
     color_eyre::install()?;
+    tracing::debug!(
+        "Tokio runtime flavour: {:?}",
+        tokio::runtime::Handle::current().runtime_flavor()
+    );
     let state_arc = shared_state::SharedState::init()?;
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
     tracing::debug!("Tattoy is exiting 🙇");
