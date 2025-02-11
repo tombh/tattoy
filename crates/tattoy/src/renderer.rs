@@ -6,8 +6,8 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 use termwiz::cell::Cell;
 use tokio::sync::mpsc;
 
+use termwiz::surface::Surface as TermwizSurface;
 use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
-use termwiz::surface::{Line, Surface as TermwizSurface};
 use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
 
@@ -150,7 +150,6 @@ impl Renderer {
                         break;
                     }
                 },
-                else => { break }
             }
         }
         tracing::debug!("Exited render loop");
@@ -169,25 +168,31 @@ impl Renderer {
         composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
     ) -> Result<()> {
         match update {
-            FrameUpdate::TattoySurface(surface) => self.tattoys = surface,
-            FrameUpdate::PTYSurface => self.get_updated_pty_frame()?,
+            FrameUpdate::TattoySurface(surface) => {
+                tracing::debug!("Rendering Tattoy frame update");
+                self.tattoys = surface;
+            }
+            FrameUpdate::PTYSurface => {
+                tracing::debug!("Rendering PTY frame update");
+                self.get_updated_pty_frame()?;
+            }
         }
 
-        if !self.are_dimensions_good("PTY", &self.pty.screen_lines()) {
-            return Ok(());
-        }
-        if !self.are_dimensions_good("Tattoy", &self.tattoys.screen_lines()) {
-            return Ok(());
-        }
-
+        let pty_frame_size = self.pty.dimensions();
         let pty_cells = self.pty.screen_cells();
+
+        let tattoy_frame_size = self.tattoys.dimensions();
         let tattoy_cells = self.tattoys.screen_cells();
 
         let mut new_frame = TermwizSurface::new(self.width.into(), self.height.into());
         for y in 0..self.height {
             for x in 0..self.width {
-                Self::add_cell(&mut new_frame, &tattoy_cells, x.into(), y.into())?;
-                Self::add_cell(&mut new_frame, &pty_cells, x.into(), y.into())?;
+                if usize::from(x) < tattoy_frame_size.0 && usize::from(y) < tattoy_frame_size.1 {
+                    Self::add_cell(&mut new_frame, &tattoy_cells, x.into(), y.into())?;
+                }
+                if usize::from(x) < pty_frame_size.0 && usize::from(y) < pty_frame_size.1 {
+                    Self::add_cell(&mut new_frame, &pty_cells, x.into(), y.into())?;
+                }
             }
         }
         composited_terminal.draw_from_screen(&new_frame, 0, 0);
@@ -211,46 +216,19 @@ impl Renderer {
             .shadow_tty
             .read()
             .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))?;
+
         let size = surface.dimensions();
+        self.pty.resize(size.0, size.1);
         let (cursor_x, cursor_y) = surface.cursor_position();
         self.pty.draw_from_screen(&surface, 0, 0);
         drop(surface);
 
-        self.pty.resize(size.0, size.1);
         self.pty.add_change(TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(cursor_x),
             y: TermwizPosition::Absolute(cursor_y),
         });
 
         Ok(())
-    }
-
-    /// Check to see if the incoming frame update is the same size as the user's current terminal.
-    fn are_dimensions_good(&self, kind: &str, lines: &[std::borrow::Cow<Line>]) -> bool {
-        if lines.is_empty() {
-            tracing::debug!("Not rendering frame because {kind} update is empty");
-            return false;
-        }
-
-        let update_height = lines.len();
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "The `if` clause above proves that at least index 0 exists"
-        )]
-        let update_width = lines[0].len();
-        if update_height < self.height.into() || update_width < self.width.into() {
-            tracing::debug!(
-                "Not rendering Tattoy update because dimensions don't match: TTY {}x{}, Tattoy {}x{}",
-                self.width,
-                self.height,
-                update_width,
-                update_height,
-
-            );
-            return false;
-        }
-
-        true
     }
 
     /// Add a single cell to the frame
@@ -262,9 +240,9 @@ impl Renderer {
     ) -> Result<()> {
         let cell = &cells
             .get(y)
-            .context("No y coord for cell")?
+            .context(format!("No y coord ({y}) for cell"))?
             .get(x)
-            .context("No x coord for cell")?;
+            .context(format!("No x coord ({x}) for cell"))?;
         let character = cell.str();
         let is_cell_bg_default = matches!(
             cell.attrs().background(),

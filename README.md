@@ -3,14 +3,16 @@
 Currently running with:
 
 ```
-SHELL=zsh RUST_BACKTRACE=1 RUST_LOG="none,tattoy=trace" cargo run -- --use smokey_cursor
+SHELL=zsh RUST_BACKTRACE=1 RUST_LOG="none,shadow_terminal=trace,tattoy=trace" cargo run -- --use smokey_cursor
 ```
 
 Testing with:
 
 ```
-RUST_LOG="none,tattoy=trace" cargo test -- --nocapture
+cargo build --package tattoy && cargo test -- --nocapture
 ```
+
+In CI I use `cargo nextest run --retries 1` because some of the e2e tests are flakey.
 
 Generate docs with:
 `cargo doc --no-deps --document-private-items --open`
@@ -27,6 +29,10 @@ Logs go to: `./tattoy.log`
 * [x] `CTRL-D` doesn't fully return to terminal, needs extra `CTRL-C`.
 * [x] Resizing is broken.
 * [x] Look at projects like Ratatui to see how to do integration tests.
+* [x] Use `tokio::select!` in Loader
+* [x] Explore rendering a frame even if any of the surfaces aren't the right size, in order to not prevent updates from other surfaces.
+* [x] Explore returning errors in tasks/threads, joining them and acting on them. Instead of sending the error to shared state.
+* [x] Centralise place where app exits and outputs backtrace and messages etc.
 * [ ] Implement scrollback/history.
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
@@ -35,14 +41,11 @@ Logs go to: `./tattoy.log`
 * [ ] Double width characters aren't passed through, eg "🦀".
 * [ ] Bug: `atuin` can't get the cursor position. Maybe I need to intercept '\e[6n'?
 * [ ] Don't log to file by default
-* [ ] Explore rendering a frame even if any of the surfaces aren't the right size, in order to not prevent updates from other surfaces.
-* [ ] Use `tokio::select!` in Loader
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
 * [ ] `tmux` mouse events cause runaway behaviour in `htop`.
-* [ ] Explore returning errors in tasks/threads, joining them and acting on them. Instead of sending the error to shared state.
-* [ ] Centralise place where app exits and outputs backtrace and messages etc.
-* [ ] Doesn't work on Nushell. Just freezes.
 * [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.
+* [ ] Make flakey tests reliable.
+* [ ] Doesn't work on Nushell. Just freezes.
 
 ## Design
 

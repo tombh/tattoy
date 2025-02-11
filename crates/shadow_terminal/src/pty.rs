@@ -10,6 +10,7 @@ use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     sync::mpsc,
 };
+use tracing::Instrument as _;
 
 /// A single payload from the PTY output stream.
 pub type BytesFromPTY = [u8; 4096];
@@ -78,6 +79,7 @@ impl PTY {
         mut protocol_out: tokio::sync::broadcast::Receiver<crate::Protocol>,
         mut spawn: Box<dyn portable_pty::Child + Send + Sync>,
     ) {
+        let current_span = tracing::Span::current();
         tokio::spawn(async move {
             tracing::debug!("Starting loop for PTY spawn to receive protocol messages");
             loop {
@@ -90,7 +92,9 @@ impl PTY {
                                 tracing::error!("Couldn't kill PTY: {error:?}");
                                 // TODO: maybe we want to force exit here?
                             }
-                            tracing::debug!("PTY sent kill signals");
+                            tracing::debug!(
+                                "`kill()` (which includes OS kill signals) sent to PTY spawn process"
+                            );
                             break;
                         }
                         crate::Protocol::Resize { .. } => (),
@@ -101,7 +105,7 @@ impl PTY {
                 }
             }
             tracing::debug!("Leaving spawn shutdown listener loop.");
-        });
+        }.instrument(current_span));
     }
 
     /// Start the PTY
@@ -125,7 +129,9 @@ impl PTY {
         // We have to drop the slave so that we don't hang on it when we exit.
         drop(pty_pair.slave);
 
+        // TODO: should we be handling any errors in here?
         let protocol_for_input_loop = self.control_tx.subscribe();
+        let current_span = tracing::Span::current();
         tokio::spawn(async move {
             let result = Self::forward_input(
                 input_rx,
@@ -133,6 +139,7 @@ impl PTY {
                 pty_pair.master,
                 protocol_for_input_loop,
             )
+            .instrument(current_span)
             .await;
             if let Err(err) = result {
                 tracing::error!("Writing to PTY stream: {err}");
@@ -196,7 +203,7 @@ impl PTY {
                     .to_string()
                     .replace('[', "\\[");
                 let sample = output
-                    .get(0..std::cmp::min(output.len(), 10))
+                    .get(0..std::cmp::min(output.len(), 1000))
                     .with_whatever_context(|| {
                         "Not enough characters in sample output (should be impossible)"
                     })?;
@@ -258,7 +265,7 @@ impl PTY {
                 return Ok(());
             }
             Ok(crate::Protocol::Resize { width, height }) => {
-                tracing::debug!("Resize event received on protocol {message:?}");
+                tracing::debug!("Resize event received on PTY input loop {message:?}");
 
                 let result = pty_master.resize(Self::pty_size(*width, *height));
                 if result.is_err() {

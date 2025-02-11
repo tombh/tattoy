@@ -16,6 +16,9 @@
     clippy::self_named_module_files,
     reason = "I just couldn't think of another name apart from ShadowTerminal"
 )]
+#![expect(clippy::pub_use, reason = "How else are you supposed re-export??")]
+
+pub use wezterm_term;
 
 pub mod active_terminal;
 mod errors;

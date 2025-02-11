@@ -5,6 +5,7 @@ use snafu::ResultExt as _;
 use termwiz::surface::Change as TermwizChange;
 use termwiz::surface::Position as TermwizPosition;
 use tokio::sync::mpsc;
+use tracing::Instrument as _;
 
 /// Wezterm's internal configuration
 #[derive(Debug)]
@@ -95,13 +96,7 @@ impl ShadowTerminal {
 
         tracing::debug!("Creating the in-memory Wezterm terminal");
         let terminal = wezterm_term::Terminal::new(
-            wezterm_term::TerminalSize {
-                cols: config.width.into(),
-                rows: config.height.into(),
-                pixel_width: 0,
-                pixel_height: 0,
-                dpi: 0,
-            },
+            Self::wezterm_size(config.width.into(), config.height.into()),
             std::sync::Arc::new(WeztermConfig {
                 scrollback: config.scrollback,
             }),
@@ -138,7 +133,8 @@ impl ShadowTerminal {
         // I don't think the PTY should be run in a standard thread, because it's not actually CPU
         // intensive in terms of the current thread. It runs in an OS sub process, so in theory
         // shouldn't conflict with Tokio's IO-focussed scheduler?
-        tokio::spawn(async move { pty.run(input_rx).await })
+        let current_span = tracing::Span::current();
+        tokio::spawn(async move { pty.run(input_rx).instrument(current_span).await })
     }
 
     /// Start listening to a stream of PTY bytes and render them to a shadow Termwiz surface
@@ -252,13 +248,10 @@ impl ShadowTerminal {
         match message {
             crate::Protocol::End => (),
             crate::Protocol::Resize { width, height } => {
-                self.terminal.resize(wezterm_term::TerminalSize {
-                    cols: usize::from(*width),
-                    rows: usize::from(*height),
-                    pixel_width: 0,
-                    pixel_height: 0,
-                    dpi: 0,
-                });
+                self.terminal.resize(Self::wezterm_size(
+                    usize::from(*width),
+                    usize::from(*height),
+                ));
             }
         };
     }
@@ -339,6 +332,35 @@ impl ShadowTerminal {
         surface.add_change(cursor);
 
         Ok(surface)
+    }
+
+    /// Just a convenience wrapper around the native Wezterm type
+    const fn wezterm_size(width: usize, height: usize) -> wezterm_term::TerminalSize {
+        wezterm_term::TerminalSize {
+            cols: width,
+            rows: height,
+            pixel_width: 0,
+            pixel_height: 0,
+            dpi: 0,
+        }
+    }
+
+    /// Resize the underlying PTY. That's the only way to send the resquired OS `SIGWINCH`.
+    ///
+    /// # Errors
+    /// If the `Protocol::Resize` message cannot be sent.
+    #[inline]
+    pub fn resize(
+        &mut self,
+        width: u16,
+        height: u16,
+    ) -> Result<(), tokio::sync::broadcast::error::SendError<crate::Protocol>> {
+        self.channels
+            .control_tx
+            .send(crate::Protocol::Resize { width, height })?;
+        self.terminal
+            .resize(Self::wezterm_size(width.into(), height.into()));
+        Ok(())
     }
 }
 

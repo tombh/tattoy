@@ -28,3 +28,10 @@ assert_eq!(
     "}
 );
 ```
+
+## testing
+* End to end tests depend on `nano` (to help text resizing the terminal).
+
+## TODO
+* [ ] Every test has to be marked with `#[tokio::test(flavor = "multi_thread")]` otherwise tests can hang. I'm not sure why, I'd really like to know.
+* [ ] If `#[tokio::test(flavor = "multi_thread")]` is really necessary it'd be nice if there was a way to globally set it for tests.

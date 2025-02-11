@@ -10,15 +10,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-test:
+    name: "Build and Test 🔬"
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - run: rustup toolchain install 1.84.0 --profile minimal
-    - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.84.0 --profile minimal
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
 
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - name: Build
+        run: cargo build --verbose
+      - name: Run tests
+        run: cargo nextest run --no-fail-fast --retries 1
+      - name: Output e2e test logs (on failure)
+        if: failure()
+        run: cat crates/tests/tattoy.log
+
+  lints:
+    name: "Lints 💅"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install 1.84.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint
+        run: cargo clippy -- --deny warnings
+      - name: Formatting
+        run: cargo fmt --check

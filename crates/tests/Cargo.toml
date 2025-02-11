@@ -1,0 +1,19 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+shadow-terminal = { path = "../shadow_terminal" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+indoc.workspace = true
+
+[[test]]
+name = "e2e"
+path = "e2e_tests.rs"
+
+[lints]
+workspace = true

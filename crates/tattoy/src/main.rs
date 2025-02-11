@@ -64,7 +64,7 @@ fn setup_logging() -> Result<()> {
     let logfile_layer = tracing_subscriber::fmt::layer()
         .with_writer(file)
         .with_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()?
+            tracing_subscriber::EnvFilter::from_default_env()
                 // We don't want any of the trace lines that make the `tokio-console` possible
                 .add_directive("tokio=debug".parse()?)
                 .add_directive("runtime=debug".parse()?),
