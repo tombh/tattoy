@@ -155,6 +155,8 @@ impl PTY {
             tokio::select! {
                 result = self.read_stream(&mut pty_stream_reader) => {
                     if let Err(error) = result {
+                        // TODO: The error should be bubbled, and logged centrally
+                        tracing::error!("{error:?}");
                         snafu::whatever!("{error:?}");
                     }
                 }
@@ -165,7 +167,11 @@ impl PTY {
                                 break;
                             }
                         }
-                        Err(err) => snafu::whatever!("{err:?}"),
+                        Err(err) => {
+                            // TODO: The error should be bubbled, and logged centrally
+                            tracing::error!("{err:?}");
+                            snafu::whatever!("{err:?}");
+                        },
 
                     }
                 }
@@ -202,12 +208,14 @@ impl PTY {
                 let output = String::from_utf8_lossy(payload)
                     .to_string()
                     .replace('[', "\\[");
-                let sample = output
-                    .get(0..std::cmp::min(output.len(), 1000))
-                    .with_whatever_context(|| {
+                let maybe_sample = output.get(0..std::cmp::min(output.len() - 1, 1000));
+                if let Some(sample) = maybe_sample {
+                    tracing::trace!("Sent PTY output ({size}): '{}'...", sample);
+                } else {
+                    tracing::error!(
                         "Not enough characters in sample output (should be impossible)"
-                    })?;
-                tracing::trace!("Sent PTY output ({size}): '{}'...", sample);
+                    );
+                }
             }
             Err(err) => {
                 snafu::whatever!("Reading PTY stream: {err}");
