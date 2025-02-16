@@ -3,7 +3,7 @@
 Currently running with:
 
 ```
-SHELL=zsh RUST_BACKTRACE=1 RUST_LOG="none,shadow_terminal=trace,tattoy=trace" cargo run -- --use smokey_cursor
+TERM=xterm-256color SHELL=zsh RUST_BACKTRACE=1 RUST_LOG="none,shadow_terminal=trace,tattoy=trace" cargo run -- --use smokey_cursor
 ```
 
 Testing with:
@@ -33,18 +33,20 @@ Logs go to: `./tattoy.log`
 * [x] Explore rendering a frame even if any of the surfaces aren't the right size, in order to not prevent updates from other surfaces.
 * [x] Explore returning errors in tasks/threads, joining them and acting on them. Instead of sending the error to shared state.
 * [x] Centralise place where app exits and outputs backtrace and messages etc.
+* [ ] `tmux` mouse events cause runaway behaviour in `htop`.
 * [ ] Implement scrollback/history.
+* [ ] Double width characters aren't passed through, eg "🦀".
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.
 * [ ] User-friendly error output for known errors
-* [ ] Double width characters aren't passed through, eg "🦀".
 * [ ] Bug: `atuin` can't get the cursor position. Maybe I need to intercept '\e[6n'?
 * [ ] Don't log to file by default
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
-* [ ] `tmux` mouse events cause runaway behaviour in `htop`.
+* [ ] Allow scrolling witrh keys.
 * [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.
 * [ ] Make flakey tests reliable.
+* [ ] When scrolling the Shadow Terminal itself should refuse all input. Currently Tattoy is the one surpressing input.
 * [ ] Doesn't work on Nushell. Just freezes.
 
 ## Design

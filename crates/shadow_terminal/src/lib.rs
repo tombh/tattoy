@@ -39,4 +39,20 @@ pub enum Protocol {
         /// Height of the shadow terminal
         height: u16,
     },
+    /// Signals the terminal switching between normal and alternate screen
+    IsAlternateScreen(bool),
+    /// Scrolling of the terminal scrollback
+    Scroll(Scroll),
+}
+
+/// The various states of scrolling
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum Scroll {
+    /// Scroll the Wezterm terminal frontend up
+    Up,
+    /// Scroll the Wezterm terminal frontend down
+    Down,
+    /// Exit the scroll, returning the terminal to how it was before scrolling started.
+    Cancel,
 }

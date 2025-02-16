@@ -1,4 +1,12 @@
 //! End to end tests
+
+#[expect(
+    clippy::large_futures,
+    reason = "
+        These are just tests, and the downsides should mainfest as a showstopping stack
+        overflow, so we'll know about it soon enough.
+    "
+)]
 #[cfg(test)]
 mod e2e {
     use shadow_terminal::{shadow_terminal::Config, steppable_terminal::SteppableTerminal};
@@ -25,28 +33,26 @@ mod e2e {
     }
 
     async fn start_tattoy() -> SteppableTerminal {
-        let prompt = SteppableTerminal::get_prompt_string("sh".into())
-            .await
-            .unwrap();
-        // Add an extra space to differentiate it from the prompt that is used to start Tattoy.
-        let ready_prompt = format!("{prompt} ");
+        let shell = "bash";
+        let prompt = "tattoy $ ";
 
         let config = Config {
             width: 50,
             height: 10,
-            command: vec!["sh".into()],
+            command: vec![shell.into()],
             ..Config::default()
         };
         let mut stepper = SteppableTerminal::start(config).await.unwrap();
 
-        let command = generate_tattoy_command();
+        let command = generate_tattoy_command(shell, prompt);
         stepper.send_command(&command).unwrap();
-        stepper.wait_for_string(&ready_prompt, None).await.unwrap();
+        stepper.wait_for_string(prompt, None).await.unwrap();
+        assert_random_walker_moves(&mut stepper).await;
         stepper
     }
 
     // We use the minimum possible ENV to support reproducibility of tests.
-    fn generate_tattoy_command() -> String {
+    fn generate_tattoy_command(shell: &str, prompt: &str) -> String {
         let pwd = std::env::current_dir().unwrap();
         #[expect(
             clippy::option_if_let_else,
@@ -60,31 +66,37 @@ mod e2e {
         let minimum_env = format!(
             "\
             TERM=xterm-256color \
-            SHELL=sh \
-            PATH=/usr/bin \
+            SHELL='{shell}' \
+            PATH=/usr/bin:/bin:/sbin:/usr/local/bin:/usr/sbin \
             PWD={pwd:?} \
-            {rust_log}\
+            PS1='{prompt}' \
+            {rust_log} \
             "
         );
         format!(
-            "exec env --ignore-environment {} {} --use random_walker",
+            "\
+            unset $(env | cut -d= -f1) && \
+            {} {} \
+            --use random_walker \
+            --command 'bash --norc --noprofile'\
+            ",
             minimum_env,
             tattoy_binary_path()
         )
     }
 
     async fn assert_random_walker_moves(tattoy: &mut SteppableTerminal) {
-        let iterations = 500;
-        tattoy.wait_for_string("▄", Some(500)).await.unwrap();
+        let iterations = 1000;
+        tattoy.wait_for_string("▄", Some(iterations)).await.unwrap();
         let coords = tattoy.get_coords_of_cell_by_content("▄").unwrap();
-        for i in 0u16..=iterations {
+        for i in 0..=iterations {
             tattoy.render_all_output();
             assert!(
                 i != iterations,
                 "Random walker didn't move in a {iterations} iterations."
             );
 
-            tattoy.wait_for_string("▄", Some(500)).await.unwrap();
+            tattoy.wait_for_string("▄", Some(iterations)).await.unwrap();
             let next_coords = tattoy.get_coords_of_cell_by_content("▄").unwrap();
             if coords != next_coords {
                 break;
@@ -113,7 +125,6 @@ mod e2e {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn resizing() {
-        setup_logging();
         let mut tattoy = start_tattoy().await;
         tattoy.send_command("nano --restricted").unwrap();
         tattoy.wait_for_string("GNU nano", None).await.unwrap();
@@ -139,7 +150,7 @@ mod e2e {
         let resized_bottom = resized_size.rows - 1;
         let resized_right = resized_size.cols - 1;
         tattoy
-            .wait_for_string_at("^X Exit", 0, resized_bottom, None)
+            .wait_for_string_at("^X Exit", 0, resized_bottom, Some(1000))
             .await
             .unwrap();
         let resized_menu_item_paste = tattoy
@@ -148,5 +159,48 @@ mod e2e {
         assert_eq!(resized_menu_item_paste, "Paste");
 
         assert_random_walker_moves(&mut tattoy).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn scrolling() {
+        async fn assert_scrolling_off(tattoy: &mut SteppableTerminal) {
+            let size = tattoy.shadow_terminal.terminal.get_size();
+            let bottom = size.rows - 1;
+            tattoy
+                .wait_for_string_at("nulla pariatur?", 0, bottom - 1, None)
+                .await
+                .unwrap();
+        }
+
+        async fn assert_scrolled_up(tattoy: &mut SteppableTerminal) {
+            let size = tattoy.shadow_terminal.terminal.get_size();
+            let bottom = size.rows - 1;
+            tattoy
+                .wait_for_string_at("riosam, nisi", 0, bottom, None)
+                .await
+                .unwrap();
+        }
+
+        setup_logging();
+        let escape = "\x1b";
+        let mouse_up = "\x1b[<64;14;2M";
+        let mouse_down = "\x1b[<65;15;5M";
+
+        let mut tattoy = start_tattoy().await;
+
+        tattoy.send_command("cat LOREM_IPSUM.txt").unwrap();
+        assert_scrolling_off(&mut tattoy).await;
+
+        tattoy.send_input(mouse_up).unwrap();
+        assert_scrolled_up(&mut tattoy).await;
+
+        tattoy.send_input(mouse_down).unwrap();
+        assert_scrolling_off(&mut tattoy).await;
+
+        tattoy.send_input(mouse_up).unwrap();
+        assert_scrolled_up(&mut tattoy).await;
+
+        tattoy.send_input(escape).unwrap();
+        assert_scrolling_off(&mut tattoy).await;
     }
 }

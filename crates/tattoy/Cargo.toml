@@ -11,6 +11,7 @@ categories = ["shell"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.86" # See: https://github.com/dtolnay/async-trait/issues/287 for when this becomes obsolete.
 clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
 console-subscriber = "0.4.1"

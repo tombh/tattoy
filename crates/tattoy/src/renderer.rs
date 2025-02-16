@@ -11,7 +11,7 @@ use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
 use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
 
-use crate::run::{FrameUpdate, Protocol};
+use crate::run::FrameUpdate;
 use crate::shared_state::SharedState;
 
 /// `Render`
@@ -50,7 +50,7 @@ impl Renderer {
     pub fn start(
         state: Arc<SharedState>,
         surfaces_rx: mpsc::Receiver<FrameUpdate>,
-        protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> tokio::task::JoinHandle<Result<()>> {
         let protocol_rx = protocol_tx.subscribe();
         tokio::spawn(async move {
@@ -91,10 +91,10 @@ impl Renderer {
     }
 
     /// Get the user's current terminal size and propogate it
-    pub fn handle_resize<T: TermwizTerminal>(
+    pub async fn handle_resize<T: TermwizTerminal + Send>(
         &mut self,
         composited_terminal: &mut BufferedTerminal<T>,
-        protocol_tx: &tokio::sync::broadcast::Sender<Protocol>,
+        protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
         let is_resized = composited_terminal.check_for_resize()?;
         if !is_resized {
@@ -106,8 +106,8 @@ impl Renderer {
         let (width, height) = composited_terminal.dimensions();
         self.width = width.try_into()?;
         self.height = height.try_into()?;
-        self.state.set_tty_size(self.width, self.height)?;
-        protocol_tx.send(Protocol::Resize {
+        self.state.set_tty_size(self.width, self.height).await;
+        protocol_tx.send(crate::run::Protocol::Resize {
             width: self.width,
             height: self.height,
         })?;
@@ -126,8 +126,8 @@ impl Renderer {
     async fn run(
         &mut self,
         mut surfaces: mpsc::Receiver<FrameUpdate>,
-        mut protocol_rx: tokio::sync::broadcast::Receiver<Protocol>,
-        protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
+        mut protocol_rx: tokio::sync::broadcast::Receiver<crate::run::Protocol>,
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
         tracing::debug!("Putting user's terminal into raw mode");
         let mut copy_of_users_terminal = Self::get_termwiz_terminal()?;
@@ -142,14 +142,15 @@ impl Renderer {
         loop {
             tokio::select! {
                 Some(update) = surfaces.recv() => {
-                    self.handle_resize(&mut composited_terminal, &protocol_tx)?;
-                    self.render(update, &mut composited_terminal)?;
+                    self.handle_resize(&mut composited_terminal, &protocol_tx).await?;
+                    self.render(update, &mut composited_terminal).await?;
                 }
                 Ok(message) = protocol_rx.recv() => {
-                    if matches!(message, Protocol::End) {
+                    Self::handle_protocol_message(&mut composited_terminal, &message);
+                    if matches!(message, crate::run::Protocol::End) {
                         break;
                     }
-                },
+                }
             }
         }
         tracing::debug!("Exited render loop");
@@ -160,21 +161,54 @@ impl Renderer {
         Ok(())
     }
 
+    /// Handle messages from the global Tattoy protocol.
+    fn handle_protocol_message(
+        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
+        message: &crate::run::Protocol,
+    ) {
+        #[expect(clippy::wildcard_enum_match_arm, reason = "It's our internal protocol")]
+        let result = match message {
+            crate::run::Protocol::CursorVisibility(is_visible) => {
+                Self::cursor_visibility(composited_terminal, *is_visible)
+            }
+            _ => Ok(()),
+        };
+
+        if let Err(error) = result {
+            tracing::error!("Handling protocol message in renderer: {error:?}");
+        }
+    }
+
+    /// Hide/show the cursor in the end user's terminal.
+    fn cursor_visibility(
+        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
+        is_visible: bool,
+    ) -> Result<()> {
+        let cursor_visibility = if is_visible {
+            termwiz::surface::CursorVisibility::Visible
+        } else {
+            termwiz::surface::CursorVisibility::Hidden
+        };
+        composited_terminal.add_change(TermwizChange::CursorVisibility(cursor_visibility));
+        composited_terminal.flush()?;
+
+        Ok(())
+    }
+
     /// Do a single render to the user's actual terminal. It uses a diffing algorithm to make
     /// the minimum number of changes.
-    fn render(
+    async fn render(
         &mut self,
         update: FrameUpdate,
-        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
+        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
     ) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => {
-                tracing::debug!("Rendering Tattoy frame update");
                 self.tattoys = surface;
             }
             FrameUpdate::PTYSurface => {
-                tracing::debug!("Rendering PTY frame update");
-                self.get_updated_pty_frame()?;
+                tracing::trace!("Rendering PTY frame update");
+                self.get_updated_pty_frame().await?;
             }
         }
 
@@ -210,12 +244,8 @@ impl Renderer {
     }
 
     /// Fetch the freshly made PTY frame from the shared state.
-    fn get_updated_pty_frame(&mut self) -> Result<()> {
-        let surface = self
-            .state
-            .shadow_tty
-            .read()
-            .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))?;
+    async fn get_updated_pty_frame(&mut self) -> Result<()> {
+        let surface = self.state.shadow_tty_screen.read().await;
 
         let size = surface.dimensions();
         self.pty.resize(size.0, size.1);

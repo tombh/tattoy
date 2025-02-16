@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
         "Tokio runtime flavour: {:?}",
         tokio::runtime::Handle::current().runtime_flavor()
     );
-    let state_arc = shared_state::SharedState::init()?;
+    let state_arc = shared_state::SharedState::init().await?;
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
     tracing::debug!("Tattoy is exiting 🙇");
     if let Err(error) = result {

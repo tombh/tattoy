@@ -36,9 +36,11 @@ impl SteppableTerminal {
     pub async fn start(
         config: crate::shadow_terminal::Config,
     ) -> Result<Self, crate::errors::SteppableTerminalError> {
-        let shadow_terminal = crate::shadow_terminal::ShadowTerminal::new(config);
+        let (surface_output_tx, _) = tokio::sync::mpsc::channel(1);
+        let shadow_terminal =
+            crate::shadow_terminal::ShadowTerminal::new(config, surface_output_tx);
 
-        let (pty_input_tx, pty_input_rx) = tokio::sync::mpsc::channel(10);
+        let (pty_input_tx, pty_input_rx) = tokio::sync::mpsc::channel(16);
         let pty_task_handle = shadow_terminal.start(pty_input_rx);
 
         let mut steppable = Self {
@@ -108,13 +110,21 @@ impl SteppableTerminal {
         Ok(())
     }
 
-    /// Send string input directly into the underlying PTY process. This doesn't go through the
+    /// Send input directly into the underlying PTY process. This doesn't go through the
     /// shadow terminal's "frontend".
+    ///
+    /// For some reason this function is unreliable when sending more than one character. It is
+    /// better to send larger strings using the OSC Paste mode. See [`self.paste_string()`]
     ///
     /// # Errors
     /// If sending the string fails
     #[inline]
-    pub fn send_string(&self, string: &str) -> Result<(), crate::errors::PTYError> {
+    pub fn send_input(&self, string: &str) -> Result<(), crate::errors::PTYError> {
+        tracing::trace!(
+            "SteppableTerminal sending string: {}",
+            string.replace('\n', "\\n")
+        );
+
         let mut reader = std::io::BufReader::new(string.as_bytes());
         let mut buffer: crate::pty::BytesFromSTDIN = [0; 128];
         while let Ok(n) = reader.read(&mut buffer[..]) {
@@ -130,15 +140,30 @@ impl SteppableTerminal {
         Ok(())
     }
 
-    /// The same as `send_string()` but just appends a new line, to execute the string as a
-    /// command. This will only work if the terminal is currently in a interactive REPL.
+    /// Send a command to the terminal REPL. This pastes the command body, then sends a single
+    /// newline to tell the TTY to run the command.
     ///
     /// # Errors
     /// If sending the string fails
     #[inline]
     pub fn send_command(&self, command: &str) -> Result<(), crate::errors::PTYError> {
-        let string = format!("{command}\n");
-        self.send_string(string.as_str())?;
+        self.paste_string(command)?;
+        self.send_input("\n")?;
+
+        Ok(())
+    }
+
+    /// Use OSC Paste codes to send a large amount of text at once to the terminal.
+    ///
+    /// # Errors
+    /// If sending the string fails
+    #[inline]
+    pub fn paste_string(&self, string: &str) -> Result<(), crate::errors::PTYError> {
+        let paste_start = "\x1b[200~";
+        let paste_end = "\x1b[201~";
+        let pastable_string = format!("{paste_start}{string}{paste_end}");
+
+        self.send_input(pastable_string.as_ref())?;
 
         Ok(())
     }
@@ -187,8 +212,8 @@ impl SteppableTerminal {
         let size = self.shadow_terminal.terminal.get_size();
         let mut screen = self.shadow_terminal.terminal.screen().clone();
         let mut output = String::new();
-        let scrollback = self.get_scrollback_position()?;
-        for y in scrollback..size.rows {
+        // let scrollback = self.get_scrollback_position()?;
+        for y in 0..size.rows {
             for x in 0..size.cols {
                 let maybe_cell = screen.get_cell(
                     x,
@@ -319,13 +344,13 @@ impl SteppableTerminal {
     #[tracing::instrument(name = "get_prompt")]
     #[inline]
     pub async fn get_prompt_string(
-        shell: std::ffi::OsString,
+        command: [&str; 3],
     ) -> Result<String, crate::errors::SteppableTerminalError> {
         tracing::info!("Starting `get_prompt` terminal instance...");
         let config = crate::shadow_terminal::Config {
             width: 30,
             height: 10,
-            command: vec![shell],
+            command: command.into_iter().map(std::convert::Into::into).collect(),
             ..crate::shadow_terminal::Config::default()
         };
         let mut stepper = Self::start(config).await?;
@@ -442,11 +467,13 @@ mod test {
     use super::*;
     use crate::shadow_terminal::Config;
 
+    const COMMAND: [&str; 3] = ["bash", "--norc", "--noprofile"];
+
     async fn run() -> SteppableTerminal {
         let config = Config {
             width: 50,
             height: 10,
-            command: vec!["sh".into()],
+            command: COMMAND.into_iter().map(std::convert::Into::into).collect(),
             ..Config::default()
         };
         SteppableTerminal::start(config).await.unwrap()
@@ -461,9 +488,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn basic_interactivity() {
-        let prompt = SteppableTerminal::get_prompt_string("sh".into())
-            .await
-            .unwrap();
+        let prompt = SteppableTerminal::get_prompt_string(COMMAND).await.unwrap();
         let mut stepper = run().await;
 
         let question = "echo $((2*3*3*5*3607*3803))";
@@ -506,7 +531,7 @@ mod test {
         let resized_bottom = resized_size.rows - 1;
         let resized_right = resized_size.cols - 1;
         stepper
-            .wait_for_string_at("^X Exit", 0, resized_bottom, Some(500))
+            .wait_for_string_at("^X Exit", 0, resized_bottom, Some(1000))
             .await
             .unwrap();
         let resized_menu_item_paste = stepper

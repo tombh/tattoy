@@ -80,32 +80,34 @@ impl PTY {
         mut spawn: Box<dyn portable_pty::Child + Send + Sync>,
     ) {
         let current_span = tracing::Span::current();
-        tokio::spawn(async move {
-            tracing::debug!("Starting loop for PTY spawn to receive protocol messages");
-            loop {
-                match protocol_out.recv().await {
-                    Ok(message) => match message {
-                        crate::Protocol::End => {
-                            tracing::debug!("PTY received Tattoy message {message:?}");
-                            let result = spawn.kill();
-                            if let Err(error) = result {
-                                tracing::error!("Couldn't kill PTY: {error:?}");
-                                // TODO: maybe we want to force exit here?
+        tokio::spawn(
+            async move {
+                tracing::debug!("Starting loop for PTY spawn to receive protocol messages");
+                loop {
+                    match protocol_out.recv().await {
+                        Ok(message) => {
+                            if matches!(message, crate::Protocol::End)  {
+                                tracing::debug!("PTY received Tattoy message {message:?}");
+                                let result = spawn.kill();
+                                if let Err(error) = result {
+                                    tracing::error!("Couldn't kill PTY: {error:?}");
+                                    // TODO: maybe we want to force exit here?
+                                }
+                                tracing::debug!(
+                                    "`kill()` (which includes OS kill signals) sent to PTY spawn process"
+                                );
+                                break;
                             }
-                            tracing::debug!(
-                                "`kill()` (which includes OS kill signals) sent to PTY spawn process"
-                            );
-                            break;
                         }
-                        crate::Protocol::Resize { .. } => (),
-                    },
-                    Err(error) => {
-                        tracing::error!("Reading protocol from PTY loop: {error:?}");
+                        Err(error) => {
+                            tracing::error!("Reading protocol from PTY loop: {error:?}");
+                        }
                     }
                 }
+                tracing::debug!("Leaving spawn shutdown listener loop.");
             }
-            tracing::debug!("Leaving spawn shutdown listener loop.");
-        }.instrument(current_span));
+            .instrument(current_span),
+        );
     }
 
     /// Start the PTY
@@ -155,6 +157,14 @@ impl PTY {
             tokio::select! {
                 result = self.read_stream(&mut pty_stream_reader) => {
                     if let Err(error) = result {
+                        // This is the error when the PTY naturally ends. Is there a better way to
+                        // match?
+                        let pty_exit = "Os { code: 5, kind: Uncategorized, message: \"Input/output error\" }";
+                        if error.to_string().contains(pty_exit) {
+                            tracing::info!("PTY exited by its own accord");
+                            break;
+                        };
+
                         // TODO: The error should be bubbled, and logged centrally
                         tracing::error!("{error:?}");
                         snafu::whatever!("{error:?}");
@@ -218,7 +228,7 @@ impl PTY {
                 }
             }
             Err(err) => {
-                snafu::whatever!("Reading PTY stream: {err}");
+                snafu::whatever!("Reading PTY stream: {err:?}");
             }
         }
 
@@ -280,6 +290,7 @@ impl PTY {
                     tracing::error!("Couldn't resize underlying PTY subprocesss: {result:?}");
                 }
             }
+            Ok(_) => (),
             Err(err) => snafu::whatever!("{err:?}"),
         };
 

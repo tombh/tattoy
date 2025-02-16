@@ -21,10 +21,10 @@ pub(crate) struct Loader {
 
 impl Loader {
     /// Create a Compositor/Tattoy
-    pub fn new(state: &Arc<SharedState>, requested_tattoys: Vec<String>) -> Result<Self> {
+    pub async fn new(state: &Arc<SharedState>, requested_tattoys: Vec<String>) -> Result<Self> {
         let mut tattoys: Vec<Box<dyn Tattoyer + Send>> = vec![];
         for tattoy in requested_tattoys {
-            let instance = create_instance(&tattoy, state)?;
+            let instance = create_instance(&tattoy, state).await?;
             tattoys.push(instance);
         }
         if tattoys.is_empty() {
@@ -40,25 +40,41 @@ impl Loader {
         protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
         tattoy_frame_tx: mpsc::Sender<FrameUpdate>,
     ) -> std::thread::JoinHandle<Result<(), color_eyre::eyre::Error>> {
-        let protocol_rx = protocol_tx.subscribe();
+        let tokio_runtime = tokio::runtime::Handle::current();
         std::thread::spawn(move || -> Result<()> {
-            let closure = || {
-                let mut tattoys = Self::new(&state, enabled_tattoys)?;
-                tattoys.run(&tattoy_frame_tx, protocol_rx)?;
+            tokio_runtime.block_on(async {
+                if let Err(error) = Self::start_without_concurrency(
+                    enabled_tattoys,
+                    state,
+                    protocol_tx.clone(),
+                    tattoy_frame_tx,
+                )
+                .await
+                {
+                    crate::run::broadcast_protocol_end(&protocol_tx);
+                    return Err(error);
+                }
+
                 Ok(())
-            };
-
-            if let Err(error) = closure() {
-                crate::run::broadcast_protocol_end(&protocol_tx);
-                return Err(error);
-            }
-
-            Ok(())
+            })
         })
     }
 
+    /// Just a convenience wrapper to catch all the magic `?` errors in one place.
+    async fn start_without_concurrency(
+        enabled_tattoys: Vec<String>,
+        state: Arc<SharedState>,
+        protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
+        tattoy_frame_tx: mpsc::Sender<FrameUpdate>,
+    ) -> Result<()> {
+        let protocol_rx = protocol_tx.subscribe();
+        let mut tattoys = Self::new(&state, enabled_tattoys).await?;
+        tattoys.run(&tattoy_frame_tx, protocol_rx).await?;
+        Ok(())
+    }
+
     /// Run the tattoy(s)
-    pub fn run(
+    pub async fn run(
         &mut self,
         tattoy_output: &mpsc::Sender<FrameUpdate>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
@@ -74,22 +90,29 @@ impl Loader {
 
             // TODO: Use `tokio::select!`
             if let Ok(message) = protocol.try_recv() {
-                tracing::trace!("Tattoys loader loop received message: {message:?}");
+                #[expect(clippy::wildcard_enum_match_arm, reason = "It's our internal protocol")]
                 match message {
                     Protocol::End => {
+                        tracing::trace!("Tattoys loader loop received message: {message:?}");
                         break;
                     }
                     Protocol::Resize { width, height } => {
+                        tracing::trace!("Tattoys loader loop received message: {message:?}");
                         for tattoy in &mut self.tattoys {
                             tattoy.set_tty_size(width, height);
                         }
                     }
+                    _ => (),
                 };
             }
 
             for tattoy in &mut self.tattoys {
-                let surface = tattoy.tick()?;
-                tattoy_output.try_send(FrameUpdate::TattoySurface(surface))?;
+                let surface = tattoy.tick().await?;
+                let result = tattoy_output.try_send(FrameUpdate::TattoySurface(surface));
+                if let Err(error) = result {
+                    tracing::error!("Sending output for tattoy {error:?}");
+                    break;
+                }
             }
 
             if let Some(i) = target_frame_rate_micro.checked_sub(frame_time.elapsed()) {

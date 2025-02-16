@@ -30,10 +30,11 @@ type Colour = (f32, f32, f32);
 /// The rate at which the colour changes
 const COLOUR_CHANGE_RATE: f32 = 0.3;
 
+#[async_trait::async_trait]
 impl Tattoyer for RandomWalker {
     /// Instatiate
-    fn new(state: Arc<SharedState>) -> Result<Self> {
-        let tty_size = state.get_tty_size()?;
+    async fn new(state: Arc<SharedState>) -> Result<Self> {
+        let tty_size = state.get_tty_size().await;
         let width = tty_size.width;
         let height = tty_size.height;
         let width_i32: i32 = width.into();
@@ -61,7 +62,7 @@ impl Tattoyer for RandomWalker {
     }
 
     /// Tick the render
-    fn tick(&mut self) -> Result<termwiz::surface::Surface> {
+    async fn tick(&mut self) -> Result<termwiz::surface::Surface> {
         let width_i32: i32 = self.width.into();
         let height_i32: i32 = self.height.into();
 

@@ -22,10 +22,11 @@ pub(crate) struct SmokeyCursor {
     durations: VecDeque<f64>,
 }
 
+#[async_trait::async_trait]
 impl Tattoyer for SmokeyCursor {
     /// Instantiate
-    fn new(state: Arc<SharedState>) -> Result<Self> {
-        let tty_size = state.get_tty_size()?;
+    async fn new(state: Arc<SharedState>) -> Result<Self> {
+        let tty_size = state.get_tty_size().await;
 
         Ok(Self {
             width: tty_size.width,
@@ -42,16 +43,12 @@ impl Tattoyer for SmokeyCursor {
     }
 
     /// One frame of the tattoy
-    fn tick(&mut self) -> Result<termwiz::surface::Surface> {
+    async fn tick(&mut self) -> Result<termwiz::surface::Surface> {
         let start = std::time::Instant::now();
 
         let mut surface =
             crate::surface::Surface::new(usize::from(self.width), usize::from(self.height));
-        let mut pty = self
-            .state
-            .shadow_tty
-            .write()
-            .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
+        let mut pty = self.state.shadow_tty_screen.write().await;
         let cursor = pty.cursor_position();
         let cells = pty.screen_cells();
 
@@ -75,7 +72,6 @@ impl Tattoyer for SmokeyCursor {
         surface.add_text(text_coloumn, 0, format!("Particles: {count}"));
 
         #[expect(
-            clippy::as_conversions,
             clippy::cast_precision_loss,
             clippy::default_numeric_fallback,
             reason = "This is just debugging output"

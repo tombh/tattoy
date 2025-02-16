@@ -12,8 +12,10 @@ use crate::loader::Loader;
 use crate::renderer::Renderer;
 use crate::shared_state::SharedState;
 
-// TODO: Maybe it'd be nice to also just send a vector of true colour pixels? Like a frame of a
-// video for example?
+// TODO:
+//  * Can this not live on the protocol? Then we could get rid of the channel.
+//  * Maybe it'd be nice to also just send a vector of true colour pixels? Like a frame of a
+//    video for example?
 //
 /// There a are 2 "screens" or "surfaces" to manage in Tattoy. The fancy special affects screen
 /// and the traditional PTY.
@@ -28,7 +30,7 @@ pub enum FrameUpdate {
 /// Commands to control the various tasks/threads
 #[non_exhaustive]
 #[derive(Clone, Debug)]
-pub enum Protocol {
+pub(crate) enum Protocol {
     /// The entire application is exiting
     End,
     /// User's TTY is resized.
@@ -38,6 +40,10 @@ pub enum Protocol {
         /// Height of new terminal
         height: u16,
     },
+    /// Parsed input from STDIN
+    Input(crate::input::ParsedInput),
+    /// The visibility of the end user's cursor.
+    CursorVisibility(bool),
 }
 
 // TODO:
@@ -46,17 +52,15 @@ pub enum Protocol {
 //
 /// Main entrypoint
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
-    let enabled_tattoys = setup(state_arc)?;
+    let cli_args = setup(state_arc).await?;
     let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
 
-    let (pty_input_tx, pty_input_rx) = mpsc::channel(64);
-    let input_handle = Input::start(pty_input_tx, protocol_tx.clone());
+    let input_thread_handle = Input::start(protocol_tx.clone());
 
-    // let (pty_output_tx, pty_output_rx) = mpsc::channel(1);
     let (surfaces_tx, surfaces_rx) = mpsc::channel(8192);
 
     let tattoys_handle = Loader::start(
-        enabled_tattoys,
+        cli_args.enabled_tattoys,
         Arc::clone(state_arc),
         protocol_tx.clone(),
         surfaces_tx.clone(),
@@ -66,14 +70,13 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     crate::terminal_proxy::TerminalProxy::start(
         Arc::clone(state_arc),
-        pty_input_rx,
         surfaces_tx,
         protocol_tx.clone(),
         shadow_terminal::shadow_terminal::Config {
             width: users_tty_size.cols.try_into()?,
             height: users_tty_size.rows.try_into()?,
-            command: vec![std::env::var("SHELL")?.into()],
-            scrollback: 1000,
+            command: get_startup_command(cli_args.command)?,
+            ..Default::default()
         },
     )
     .await?;
@@ -83,15 +86,15 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     tracing::trace!("Joining tattoys loader thread");
     tattoys_handle
         .join()
-        .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))??;
+        .map_err(|err| color_eyre::eyre::eyre!("Tattoys handle: {err:?}"))??;
 
     tracing::trace!("Joining input thread");
-    if input_handle.is_finished() {
+    if input_thread_handle.is_finished() {
         // The STDIN loop doesn't listen to the global Tattoy protocol, so it can't exit its loop.
         // Therefore we should only join it if it finished because of its own error.
-        input_handle
+        input_thread_handle
             .join()
-            .map_err(|err| color_eyre::eyre::eyre!("{err:?}"))??;
+            .map_err(|err| color_eyre::eyre::eyre!("STDIN handle: {err:?}"))??;
     }
 
     tracing::trace!("Awaiting renderer task");
@@ -101,12 +104,23 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     Ok(())
 }
 
+/// Get the command that Tattoy will use to startup, usuall something like `bash`.
+fn get_startup_command(maybe_command: Option<String>) -> Result<Vec<std::ffi::OsString>> {
+    if let Some(command) = maybe_command {
+        return Ok(command
+            .split_whitespace()
+            .map(std::convert::Into::into)
+            .collect());
+    }
+    Ok(vec![std::env::var("SHELL")?.into()])
+}
+
 /// Signal all task/thread loops to exit.
 ///
 /// We keep it in its own function because we need to handle the error separately. If the error
 /// were to be bubbled with `?` as usual, there's a chance it would never be logged, because the
 /// protocol end signal is itself what allows the central error handler to even be reached.
-pub fn broadcast_protocol_end(protocol_tx: &tokio::sync::broadcast::Sender<Protocol>) {
+pub(crate) fn broadcast_protocol_end(protocol_tx: &tokio::sync::broadcast::Sender<Protocol>) {
     tracing::debug!("Broadcasting the protocol `End` message to all listeners");
     let result = protocol_tx.send(Protocol::End);
     if let Err(error) = result {
@@ -115,9 +129,7 @@ pub fn broadcast_protocol_end(protocol_tx: &tokio::sync::broadcast::Sender<Proto
 }
 
 /// Prepare the application to start.
-fn setup(state: &std::sync::Arc<SharedState>) -> Result<Vec<String>> {
-    let mut enabled_tattoys: Vec<String> = vec![];
-
+async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     // Assuming true colour makes Tattoy simpler.
     // * I think it's safe to assume that the vast majority of people using Tattoy will have a
     //   true color terminal anyway.
@@ -127,17 +139,10 @@ fn setup(state: &std::sync::Arc<SharedState>) -> Result<Vec<String>> {
 
     tracing::info!("Starting Tattoy");
 
-    let cli = CliArgs::parse();
-    if let Some(tattoys) = cli.enabled_tattoys {
-        enabled_tattoys.push(tattoys);
-    } else {
-        let error =
-            color_eyre::eyre::eyre!("Please provide at least one tattoy with the `--use` argument");
-        return Err(error);
-    }
-
     let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
-    state.set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)?;
+    state
+        .set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)
+        .await;
 
-    Ok(enabled_tattoys)
+    Ok(CliArgs::parse())
 }
