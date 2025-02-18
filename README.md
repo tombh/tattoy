@@ -19,6 +19,10 @@ Generate docs with:
 
 Logs go to: `./tattoy.log`
 
+## Usage
+Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other keybindings for scrolling).
+
+
 ## TODO
 * [x] Background colour of " " (space) isn't passed through.
 * [x] Bold doesn't get passed through properly, run `htop` to see.

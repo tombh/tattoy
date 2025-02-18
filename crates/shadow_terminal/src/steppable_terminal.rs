@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::io::Read as _;
 use std::sync::Arc;
 
-use snafu::ResultExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
 use tracing::Instrument as _;
 
 /// The default time to wait looking for terminal screen content.
@@ -448,6 +448,63 @@ impl SteppableTerminal {
         }
 
         Ok(())
+    }
+
+    /// Wait for the given background colour at the given coordinates
+    ///
+    /// # Errors
+    /// * If it can't get the screen contents.
+    /// * If it no cell is found at the coords
+    #[inline]
+    pub async fn wait_for_bg_color_at(
+        &mut self,
+        maybe_colour: Option<(f32, f32, f32, f32)>,
+        x: usize,
+        y: usize,
+        maybe_timeout: Option<u32>,
+    ) -> Result<(), crate::errors::SteppableTerminalError> {
+        let timeout = maybe_timeout.map_or(DEFAULT_TIMEOUT, |ms| ms);
+        let colour = match maybe_colour {
+            Some(colour) => Self::make_colour_attribute(colour.0, colour.1, colour.2, colour.3),
+            None => termwiz::color::ColorAttribute::Default,
+        };
+
+        for i in 0u32..=timeout {
+            self.render_all_output();
+            let cell = self.get_cell_at(x, y)?;
+
+            if cell
+                .clone()
+                .with_whatever_context(|| format!("Couldn't find cell at: {x}x{y}"))?
+                .attrs()
+                .background()
+                == colour
+            {
+                break;
+            }
+            if i == timeout {
+                self.dump_screen()?;
+                snafu::whatever!(
+                    "'{colour:?}' not found in cell ({:?}) at {x}x{y} after {timeout} milliseconds.",
+                    cell
+                );
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        }
+
+        Ok(())
+    }
+
+    /// Convenience function for making Termwiz colours.
+    const fn make_colour_attribute(
+        red: f32,
+        green: f32,
+        blue: f32,
+        alpha: f32,
+    ) -> termwiz::color::ColorAttribute {
+        termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(termwiz::color::SrgbaTuple(
+            red, green, blue, alpha,
+        ))
     }
 }
 

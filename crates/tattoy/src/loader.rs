@@ -4,8 +4,6 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
-use tokio::sync::mpsc;
-
 use crate::run::{FrameUpdate, Protocol};
 use crate::shared_state::SharedState;
 use crate::tattoys::index::{create_instance, Tattoyer};
@@ -21,7 +19,10 @@ pub(crate) struct Loader {
 
 impl Loader {
     /// Create a Compositor/Tattoy
-    pub async fn new(state: &Arc<SharedState>, requested_tattoys: Vec<String>) -> Result<Self> {
+    pub async fn new(state: &Arc<SharedState>, mut requested_tattoys: Vec<String>) -> Result<Self> {
+        // The scrollbar should always be enabled
+        requested_tattoys.push("scrollbar".to_owned());
+
         let mut tattoys: Vec<Box<dyn Tattoyer + Send>> = vec![];
         for tattoy in requested_tattoys {
             let instance = create_instance(&tattoy, state).await?;
@@ -38,7 +39,7 @@ impl Loader {
         enabled_tattoys: Vec<String>,
         state: Arc<SharedState>,
         protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
-        tattoy_frame_tx: mpsc::Sender<FrameUpdate>,
+        tattoy_frame_tx: tokio::sync::mpsc::Sender<FrameUpdate>,
     ) -> std::thread::JoinHandle<Result<(), color_eyre::eyre::Error>> {
         let tokio_runtime = tokio::runtime::Handle::current();
         std::thread::spawn(move || -> Result<()> {
@@ -65,7 +66,7 @@ impl Loader {
         enabled_tattoys: Vec<String>,
         state: Arc<SharedState>,
         protocol_tx: tokio::sync::broadcast::Sender<Protocol>,
-        tattoy_frame_tx: mpsc::Sender<FrameUpdate>,
+        tattoy_frame_tx: tokio::sync::mpsc::Sender<FrameUpdate>,
     ) -> Result<()> {
         let protocol_rx = protocol_tx.subscribe();
         let mut tattoys = Self::new(&state, enabled_tattoys).await?;
@@ -76,7 +77,7 @@ impl Loader {
     /// Run the tattoy(s)
     pub async fn run(
         &mut self,
-        tattoy_output: &mpsc::Sender<FrameUpdate>,
+        tattoy_output: &tokio::sync::mpsc::Sender<FrameUpdate>,
         mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
     ) -> Result<()> {
         let target_frame_rate = 30;
@@ -107,11 +108,13 @@ impl Loader {
             }
 
             for tattoy in &mut self.tattoys {
-                let surface = tattoy.tick().await?;
-                let result = tattoy_output.try_send(FrameUpdate::TattoySurface(surface));
-                if let Err(error) = result {
-                    tracing::error!("Sending output for tattoy {error:?}");
-                    break;
+                let maybe_surface = tattoy.tick().await?;
+                if let Some(surface) = maybe_surface {
+                    let result = tattoy_output.try_send(FrameUpdate::TattoySurface(surface));
+                    if let Err(error) = result {
+                        tracing::error!("Sending output for tattoy {error:?}");
+                        break;
+                    }
                 }
             }
 

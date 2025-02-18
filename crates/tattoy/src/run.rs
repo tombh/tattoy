@@ -19,10 +19,9 @@ use crate::shared_state::SharedState;
 //
 /// There a are 2 "screens" or "surfaces" to manage in Tattoy. The fancy special affects screen
 /// and the traditional PTY.
-#[non_exhaustive]
-pub enum FrameUpdate {
+pub(crate) enum FrameUpdate {
     /// A frame of a tattoy TTY screen
-    TattoySurface(termwiz::surface::Surface),
+    TattoySurface(crate::surface::Surface),
     /// A frame of a PTY terminal has been updated in the shared state
     PTYSurface,
 }

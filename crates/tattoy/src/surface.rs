@@ -7,14 +7,29 @@ use termwiz::surface::Change as TermwizChange;
 use termwiz::surface::Position as TermwizPosition;
 
 /// An RGB colour
-type Colour = (f32, f32, f32);
+pub(crate) type Colour = (f32, f32, f32, f32);
+
+/// A default pure white.
+pub const WHITE: Colour = (1.0, 1.0, 1.0, 1.0);
+
+/// A default pure black.
+pub const BLACK: Colour = (0.0, 0.0, 0.0, 1.0);
+
+/// A default pure red.
+pub const RED: Colour = (1.0, 0.0, 0.0, 1.0);
 
 /// `Surface`
 pub(crate) struct Surface {
+    /// The unique ID of the tattoy to which this surface belongs.
+    pub id: String,
     /// The terminal's width
     pub width: usize,
     /// The terminal's height
     pub height: usize,
+    /// The order in which the tattoy should be rendered. The PTY is always layer 0, so any
+    /// ordering value below 0 will make the tattoy appear below the user's terminal content,
+    /// and any value above 0 will make it appear above the user's terminal content.
+    pub ordering: i16,
     /// A surface of terminal cells
     pub surface: termwiz::surface::Surface,
 }
@@ -22,10 +37,12 @@ pub(crate) struct Surface {
 impl Surface {
     /// Create a Compositor/Tattoy
     #[must_use]
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(id: String, width: usize, height: usize, ordering: i16) -> Self {
         Self {
+            id,
             width,
             height,
+            ordering,
             surface: termwiz::surface::Surface::new(width, height),
         }
     }
@@ -65,15 +82,30 @@ impl Surface {
         Ok(())
     }
 
-    /// Overlay white text at a given coord
-    pub fn add_text(&mut self, x: usize, y: usize, text: String) {
+    /// Overlay text at a given coord with the given colours.
+    pub fn add_text(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: String,
+        maybe_background_colour: Option<Colour>,
+        maybe_foreground_colour: Option<Colour>,
+    ) {
+        let bg_colour = maybe_background_colour
+            .map_or_else(Self::make_default_bg_colour, |colour| {
+                Self::make_bg_colour(colour)
+            });
+
+        let fg_colour = maybe_foreground_colour
+            .map_or_else(|| Self::make_fg_colour(WHITE), Self::make_fg_colour);
+
         self.surface.add_changes(vec![
             TermwizChange::CursorPosition {
                 x: TermwizPosition::Absolute(x),
                 y: TermwizPosition::Absolute(y),
             },
-            Self::make_default_bg_colour(),
-            Self::make_fg_colour((1.0, 1.0, 1.0)),
+            bg_colour,
+            fg_colour,
         ]);
         self.surface.add_change(text);
     }
@@ -82,7 +114,7 @@ impl Surface {
     #[must_use]
     pub const fn make_colour_attribute(colour: Colour) -> termwiz::color::ColorAttribute {
         termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(termwiz::color::SrgbaTuple(
-            colour.0, colour.1, colour.2, 1.0,
+            colour.0, colour.1, colour.2, colour.3,
         ))
     }
 
@@ -139,12 +171,11 @@ impl Surface {
 mod test {
     use super::*;
 
-    const WHITE: Colour = (1.0, 1.0, 1.0);
-    const GREY: Colour = (0.5, 0.5, 0.5);
+    const GREY: Colour = (0.5, 0.5, 0.5, 1.0);
 
     fn add_pixel_on_fresh_surface(x: usize, y: usize) -> Vec<Vec<termwiz::cell::Cell>> {
         let mut cells_copy: Vec<Vec<termwiz::cell::Cell>> = Vec::default();
-        let mut surface = Surface::new(2, 1);
+        let mut surface = Surface::new("test".into(), 2, 1, -1);
         surface.add_pixel(x, y, WHITE).unwrap();
         let cells = surface.surface.screen_cells();
         for (i, line) in cells.iter().enumerate() {
@@ -173,7 +204,7 @@ mod test {
 
     #[test]
     fn add_pixels_on_or_near_other_pixels() {
-        let mut surface = Surface::new(2, 1);
+        let mut surface = Surface::new("test".into(), 2, 1, -1);
         surface.add_pixel(0, 0, WHITE).unwrap();
 
         let bg = Surface::make_colour_attribute(GREY);

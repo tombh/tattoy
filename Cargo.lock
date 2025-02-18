@@ -2593,6 +2593,7 @@ version = "0.1.0"
 dependencies = [
  "indoc",
  "shadow-terminal",
+ "termwiz",
  "tokio",
  "tracing",
  "tracing-subscriber",

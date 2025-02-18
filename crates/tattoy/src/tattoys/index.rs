@@ -11,6 +11,11 @@ use super::{random_walker::RandomWalker, smokey_cursor::main::SmokeyCursor};
 /// The trait that all tattoys must follow
 #[async_trait::async_trait]
 pub(crate) trait Tattoyer {
+    /// The unique ID for this tattoy.
+    fn id() -> String
+    where
+        Self: Sized;
+
     /// Instantiate
     async fn new(state: Arc<SharedState>) -> Result<Self>
     where
@@ -20,7 +25,7 @@ pub(crate) trait Tattoyer {
     fn set_tty_size(&mut self, width: u16, height: u16);
 
     /// Run one frame of the tattoy
-    async fn tick(&mut self) -> Result<termwiz::surface::Surface>;
+    async fn tick(&mut self) -> Result<Option<crate::surface::Surface>>;
 }
 
 /// How to map from a CLI arg to a tattoy implementation
@@ -32,6 +37,9 @@ pub(crate) async fn create_instance(
     match tattoy {
         "random_walker" => Ok(Box::new(RandomWalker::new(state_clone).await?)),
         "smokey_cursor" => Ok(Box::new(SmokeyCursor::new(state_clone).await?)),
+        "scrollbar" => Ok(Box::new(
+            super::scrollbar::Scrollbar::new(state_clone).await?,
+        )),
         _ => Err(color_eyre::eyre::eyre!(
             "The tattoy, `{tattoy}` was not found"
         )),

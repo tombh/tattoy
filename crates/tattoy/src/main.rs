@@ -7,6 +7,7 @@
 pub mod cli_args;
 pub mod input;
 pub mod loader;
+pub mod opaque_cell;
 pub mod renderer;
 pub mod run;
 pub mod shared_state;
@@ -17,6 +18,7 @@ pub mod terminal_proxy;
 pub mod tattoys {
     pub mod index;
     pub mod random_walker;
+    pub mod scrollbar;
     pub mod utils;
 
     /// The smokey cursor Tattoy

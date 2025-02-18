@@ -2,6 +2,7 @@
 
 #[expect(
     clippy::large_futures,
+    clippy::unreadable_literal,
     reason = "
         These are just tests, and the downsides should mainfest as a showstopping stack
         overflow, so we'll know about it soon enough.
@@ -166,8 +167,15 @@ mod e2e {
         async fn assert_scrolling_off(tattoy: &mut SteppableTerminal) {
             let size = tattoy.shadow_terminal.terminal.get_size();
             let bottom = size.rows - 1;
+            let right = size.cols - 1;
             tattoy
                 .wait_for_string_at("nulla pariatur?", 0, bottom - 1, None)
+                .await
+                .unwrap();
+
+            // Check for absence of scrollbar
+            tattoy
+                .wait_for_bg_color_at(None, right, bottom - 3, None)
                 .await
                 .unwrap();
         }
@@ -175,8 +183,20 @@ mod e2e {
         async fn assert_scrolled_up(tattoy: &mut SteppableTerminal) {
             let size = tattoy.shadow_terminal.terminal.get_size();
             let bottom = size.rows - 1;
+            let right = size.cols - 1;
             tattoy
                 .wait_for_string_at("riosam, nisi", 0, bottom, None)
+                .await
+                .unwrap();
+
+            // Check for scrollbar
+            tattoy
+                .wait_for_bg_color_at(
+                    Some((0.33333334, 0.33333334, 0.33333334, 1.0)),
+                    right,
+                    bottom - 3,
+                    None,
+                )
                 .await
                 .unwrap();
         }
@@ -194,6 +214,7 @@ mod e2e {
         tattoy.send_input(mouse_up).unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
+        tattoy.send_input(mouse_down).unwrap();
         tattoy.send_input(mouse_down).unwrap();
         assert_scrolling_off(&mut tattoy).await;
 

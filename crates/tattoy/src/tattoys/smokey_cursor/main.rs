@@ -24,6 +24,10 @@ pub(crate) struct SmokeyCursor {
 
 #[async_trait::async_trait]
 impl Tattoyer for SmokeyCursor {
+    fn id() -> String {
+        "smokey_cursor".into()
+    }
+
     /// Instantiate
     async fn new(state: Arc<SharedState>) -> Result<Self> {
         let tty_size = state.get_tty_size().await;
@@ -43,11 +47,15 @@ impl Tattoyer for SmokeyCursor {
     }
 
     /// One frame of the tattoy
-    async fn tick(&mut self) -> Result<termwiz::surface::Surface> {
+    async fn tick(&mut self) -> Result<Option<crate::surface::Surface>> {
         let start = std::time::Instant::now();
 
-        let mut surface =
-            crate::surface::Surface::new(usize::from(self.width), usize::from(self.height));
+        let mut surface = crate::surface::Surface::new(
+            Self::id(),
+            usize::from(self.width),
+            usize::from(self.height),
+            -10,
+        );
         let mut pty = self.state.shadow_tty_screen.write().await;
         let cursor = pty.cursor_position();
         let cells = pty.screen_cells();
@@ -69,7 +77,7 @@ impl Tattoyer for SmokeyCursor {
 
         let text_coloumn = usize::from(self.width - 20);
         let count = self.simulation.particles.len();
-        surface.add_text(text_coloumn, 0, format!("Particles: {count}"));
+        surface.add_text(text_coloumn, 0, format!("Particles: {count}"), None, None);
 
         #[expect(
             clippy::cast_precision_loss,
@@ -79,13 +87,13 @@ impl Tattoyer for SmokeyCursor {
         {
             let average_tick = self.durations.iter().sum::<f64>() / self.durations.len() as f64;
             let fps = 1.0 / average_tick;
-            surface.add_text(text_coloumn, 1, format!("FPS: {fps:.3}"));
+            surface.add_text(text_coloumn, 1, format!("FPS: {fps:.3}"), None, None);
         };
 
         self.durations.push_front(start.elapsed().as_secs_f64());
         if self.durations.len() > 30 {
             self.durations.pop_back();
         }
-        Ok(surface.surface)
+        Ok(Some(surface))
     }
 }

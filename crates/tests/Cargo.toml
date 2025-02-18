@@ -6,6 +6,7 @@ publish = false
 
 [dev-dependencies]
 shadow-terminal = { path = "../shadow_terminal" }
+termwiz.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

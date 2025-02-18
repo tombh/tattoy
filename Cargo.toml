@@ -70,6 +70,9 @@ unseparated_literal_suffix = "allow"
 multiple_inherent_impl = "allow"
 upper_case_acronyms = "allow"
 struct_field_names = "allow"
+# I just personally prefer the `match` syntax for if-let matching.
+option_if_let_else = "allow"
+
 
 # > Yeah, we know, the 90’s called and wanted their charset back. Even so, there still are editors
 # > and other programs out there that don’t work well with Unicode. So if the code is meant to be

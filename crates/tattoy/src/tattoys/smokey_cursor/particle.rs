@@ -42,9 +42,6 @@ static SPIKY_GRAD: f32 =
 static VISC_LAP: f32 =
     40.0 / (PI * PARTICLE_SIZE * PARTICLE_SIZE * PARTICLE_SIZE * PARTICLE_SIZE * PARTICLE_SIZE);
 
-/// Colour of a gas particle
-type Colour = (f32, f32, f32);
-
 /// A single particle of gas
 #[derive(Clone, PartialEq, Debug)]
 #[non_exhaustive]
@@ -64,7 +61,7 @@ pub struct Particle {
     /// Density of the particle
     pub pressure: f32,
     /// Colour of a gas particle
-    pub colour: Colour,
+    pub colour: crate::surface::Colour,
     /// Whether this particle is locked in place. It still contributes its denisty, pressure, etc
     /// to the rest of the simulation, but it doesn't change its own position.
     pub is_immovable: bool,
@@ -159,7 +156,7 @@ impl Particle {
     pub fn default_movable(scale: f32, velocity: Vec2, x: f32, y: f32) -> Self {
         let ish_range = 0.01;
         let colour_ish = rand::thread_rng().gen_range(-ish_range..ish_range);
-        let colour = (0.15 + colour_ish, 0.15 + colour_ish, 0.15 + colour_ish);
+        let colour = (0.15 + colour_ish, 0.15 + colour_ish, 0.15 + colour_ish, 1.0);
         Self {
             created_at: std::time::Instant::now(),
             scale,
@@ -181,7 +178,7 @@ impl Particle {
             scale,
             position: Vec2::new(x * scale, y * scale),
             density: 1.0,
-            colour: (1.0, 1.0, 1.0),
+            colour: (1.0, 1.0, 1.0, 1.0),
             velocity: Vec2::ZERO,
             force: Vec2::ZERO,
             pressure: 0.0,
@@ -197,7 +194,7 @@ impl Default for Particle {
             scale: 1.0,
             position: Vec2::ZERO,
             density: 1.0,
-            colour: Colour::default(),
+            colour: crate::surface::Colour::default(),
             velocity: Vec2::ZERO,
             force: Vec2::ZERO,
             pressure: 0.0,
