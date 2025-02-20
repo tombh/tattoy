@@ -104,7 +104,7 @@ impl Loader {
                         }
                     }
                     _ => (),
-                };
+                }
             }
 
             for tattoy in &mut self.tattoys {

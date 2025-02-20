@@ -5,9 +5,11 @@
 // definitions.
 
 pub mod cli_args;
+pub mod config;
 pub mod input;
 pub mod loader;
 pub mod opaque_cell;
+pub mod palette_parser;
 pub mod renderer;
 pub mod run;
 pub mod shared_state;

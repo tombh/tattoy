@@ -64,7 +64,7 @@ impl OpaqueCell<'_> {
             let attribute = Self::make_true_colour_attribute(blended_colour);
 
             self.0.attrs_mut().set_foreground(attribute);
-        };
+        }
     }
 
     /// Blend the cell colours with the cell above.

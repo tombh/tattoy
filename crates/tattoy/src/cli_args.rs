@@ -12,4 +12,12 @@ pub struct CliArgs {
     /// The command to start Tattoy with. Default to `$SHELL`.
     #[arg(short, long)]
     pub command: Option<String>,
+
+    /// Use image capture to detect the true colour values of the terminal's palette.
+    #[arg(long)]
+    pub capture_palette: bool,
+
+    /// Provide a screenshot of the terminal's palette for parsing into true colours.
+    #[arg(long, value_name = "Path to screenshot file")]
+    pub parse_palette: Option<String>,
 }

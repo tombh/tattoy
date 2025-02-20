@@ -37,7 +37,7 @@ impl Input {
             if let Err(error) = result {
                 crate::run::broadcast_protocol_end(&protocol_for_shutdown);
                 return Err(error);
-            };
+            }
             Ok(())
         })
     }
@@ -68,7 +68,6 @@ impl Input {
                         );
                     } else {
                         tracing::warn!("Couldn't get bytes from STDIN input buffer");
-                        continue;
                     }
                 }
                 Err(err) => {

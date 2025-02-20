@@ -163,7 +163,7 @@ impl PTY {
                         if error.to_string().contains(pty_exit) {
                             tracing::info!("PTY exited by its own accord");
                             break;
-                        };
+                        }
 
                         // TODO: The error should be bubbled, and logged centrally
                         tracing::error!("{error:?}");
@@ -208,7 +208,7 @@ impl PTY {
                 let result = self.output_tx.send(buffer).await;
                 if let Err(err) = result {
                     tracing::error!("Sending bytes on PTY output channel: {err}");
-                };
+                }
 
                 // Debugging only
                 // TODO: only do this is dev builds?
@@ -292,7 +292,7 @@ impl PTY {
             }
             Ok(_) => (),
             Err(err) => snafu::whatever!("{err:?}"),
-        };
+        }
 
         Ok(())
     }

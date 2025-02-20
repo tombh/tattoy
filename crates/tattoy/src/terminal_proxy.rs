@@ -93,7 +93,7 @@ impl TerminalProxy {
                 self.handle_input(&input).await?;
             }
             _ => (),
-        };
+        }
 
         Ok(())
     }

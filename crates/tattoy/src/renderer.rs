@@ -66,13 +66,13 @@ impl Renderer {
                     if let Err(error) = result {
                         crate::run::broadcast_protocol_end(&protocol_tx);
                         return Err(error);
-                    };
+                    }
                 }
                 Err(error) => {
                     crate::run::broadcast_protocol_end(&protocol_tx);
                     return Err(error);
                 }
-            };
+            }
 
             Ok(())
         })

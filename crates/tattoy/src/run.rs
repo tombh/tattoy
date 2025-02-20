@@ -52,6 +52,17 @@ pub(crate) enum Protocol {
 /// Main entrypoint
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let cli_args = setup(state_arc).await?;
+
+    if cli_args.capture_palette {
+        crate::palette_parser::PaletteParser::run(None)?;
+        return Ok(());
+    }
+
+    if let Some(screenshot) = cli_args.parse_palette {
+        crate::palette_parser::PaletteParser::run(Some(&screenshot))?;
+        return Ok(());
+    }
+
     let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
 
     let input_thread_handle = Input::start(protocol_tx.clone());

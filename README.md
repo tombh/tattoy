@@ -37,8 +37,11 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [x] Explore rendering a frame even if any of the surfaces aren't the right size, in order to not prevent updates from other surfaces.
 * [x] Explore returning errors in tasks/threads, joining them and acting on them. Instead of sending the error to shared state.
 * [x] Centralise place where app exits and outputs backtrace and messages etc.
+* [x] Implement scrollback/history.
+* [x] Palette detection.
+* [x] Ask for consent before taking screen shot.
+* [x] Support manually providing a screenshot of the palette.
 * [ ] `tmux` mouse events cause runaway behaviour in `htop`.
-* [ ] Implement scrollback/history.
 * [ ] Double width characters aren't passed through, eg "🦀".
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor

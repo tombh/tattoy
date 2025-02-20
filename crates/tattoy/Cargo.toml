@@ -15,15 +15,20 @@ async-trait = "0.1.86" # See: https://github.com/dtolnay/async-trait/issues/287 
 clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
 console-subscriber = "0.4.1"
+dirs = "6.0.0"
 glam = { git = "https://github.com/bitshifter/glam-rs", rev = "aacb9c5f", features = [ "fast-math"] }
 rand = "0.8.5"
 rayon = "1.10.0"
 rstar = "0.12.0"
+serde = "1.0.217"
 shadow-terminal = { path = "../shadow_terminal"}
+tempfile = "3.17.1"
 termwiz.workspace = true
 tokio.workspace = true
+toml = "0.8.20"
 tracing.workspace = true
 tracing-subscriber.workspace = true
+xcap = "0.3.2"
 
 [lints]
 workspace = true

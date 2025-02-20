@@ -208,7 +208,9 @@ mod e2e {
 
         let mut tattoy = start_tattoy().await;
 
-        tattoy.send_command("cat LOREM_IPSUM.txt").unwrap();
+        tattoy
+            .send_command("cat resources/LOREM_IPSUM.txt")
+            .unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
         tattoy.send_input(mouse_up).unwrap();

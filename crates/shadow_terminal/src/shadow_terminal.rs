@@ -349,7 +349,7 @@ impl ShadowTerminal {
             }
 
             _ => (),
-        };
+        }
     }
 
     // TODO:
