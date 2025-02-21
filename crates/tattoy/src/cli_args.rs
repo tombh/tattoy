@@ -20,4 +20,9 @@ pub struct CliArgs {
     /// Provide a screenshot of the terminal's palette for parsing into true colours.
     #[arg(long, value_name = "Path to screenshot file")]
     pub parse_palette: Option<String>,
+
+    /// Path to config file directory. A directory must be used because Tattoy has various config
+    /// files.
+    #[arg(long, value_name = "Path to config directory")]
+    pub config_dir: Option<std::path::PathBuf>,
 }

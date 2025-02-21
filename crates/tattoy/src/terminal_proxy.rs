@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
-use crate::shared_state::SharedState;
+use crate::{palette_parser::PaletteParser, shared_state::SharedState};
 
 /// A proxy for signals and data to and from an in-memory shadow terminal.
 pub(crate) struct TerminalProxy {
@@ -17,29 +17,33 @@ pub(crate) struct TerminalProxy {
     surfaces_tx: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     /// The Tattoy protocol
     tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+    /// A hash map linking palette indexes to true colour values.
+    palette: Option<crate::palette_parser::Palette>,
 }
 
 impl TerminalProxy {
     /// Instantiate.
+    ///
     /// The `surfaces_tx` channel sends `termwiz::surface::Surface` updates representing the current
     /// content of the shadow terminal.
-    const fn new(
-        state: Arc<SharedState>,
+    async fn new(
+        state: &Arc<SharedState>,
         shadow_terminal: shadow_terminal::active_terminal::ActiveTerminal,
         surfaces_tx: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
-    ) -> Self {
-        Self {
-            state,
+    ) -> Result<Self> {
+        Ok(Self {
+            state: Arc::clone(state),
             shadow_terminal,
             surfaces_tx,
             tattoy_protocol,
-        }
+            palette: crate::config::Config::load_palette(state).await?,
+        })
     }
 
     /// Start the main loop listening for signals and data to and from the shadow terminal.
     pub async fn start(
-        state: Arc<SharedState>,
+        state: &Arc<SharedState>,
         surfaces_tx: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         config: shadow_terminal::shadow_terminal::Config,
@@ -48,7 +52,7 @@ impl TerminalProxy {
 
         let mut shadow_terminal_events = shadow_terminal.control_tx.subscribe();
         let mut tattoy_protocol_rx = tattoy_protocol.subscribe();
-        let mut proxy = Self::new(state, shadow_terminal, surfaces_tx, tattoy_protocol);
+        let mut proxy = Self::new(state, shadow_terminal, surfaces_tx, tattoy_protocol).await?;
 
         #[expect(
             clippy::integer_division_remainder_used,
@@ -116,7 +120,9 @@ impl TerminalProxy {
         surface: shadow_terminal::shadow_terminal::Surface,
     ) -> Result<()> {
         match surface {
-            shadow_terminal::shadow_terminal::Surface::Scrollback(scrollback) => {
+            shadow_terminal::shadow_terminal::Surface::Scrollback(mut scrollback) => {
+                self.convert_cells_to_true_colour(&mut scrollback.surface);
+
                 // TODO: could most of this live in its own function?
                 let mut shadow_tty_scrollback = self.state.shadow_tty_scrollback.write().await;
                 *shadow_tty_scrollback = scrollback;
@@ -131,7 +137,9 @@ impl TerminalProxy {
                         .send(crate::run::Protocol::CursorVisibility(!new_scrolling_state))?;
                 }
             }
-            shadow_terminal::shadow_terminal::Surface::Screen(screen) => {
+            shadow_terminal::shadow_terminal::Surface::Screen(mut screen) => {
+                self.convert_cells_to_true_colour(&mut screen);
+
                 let mut shadow_tty = self.state.shadow_tty_screen.write().await;
                 *shadow_tty = screen;
                 drop(shadow_tty);
@@ -140,6 +148,24 @@ impl TerminalProxy {
         }
 
         Ok(())
+    }
+
+    /// Convert palette indexes into their true colour values.
+    fn convert_cells_to_true_colour(&self, surface: &mut termwiz::surface::Surface) {
+        let Some(palette) = &self.palette else {
+            return;
+        };
+
+        let default_colour_attribute = PaletteParser::true_colour_from_index(palette, 0);
+        let default_colour =
+            crate::opaque_cell::OpaqueCell::extract_colour(default_colour_attribute);
+
+        for line in &mut surface.screen_cells() {
+            for cell in line.iter_mut() {
+                let mut opaque_cell = crate::opaque_cell::OpaqueCell::new(cell, default_colour);
+                opaque_cell.convert_to_true_colour(palette);
+            }
+        }
     }
 
     /// Handle signals from the Wezterm shadow terminal.

@@ -21,7 +21,7 @@ type Screenshot = xcap::image::ImageBuffer<xcap::image::Rgba<u8>, std::vec::Vec<
 type PaletteColour = (u8, u8, u8);
 
 /// Convenience type for the palette hash.
-type Palette = std::collections::HashMap<String, PaletteColour>;
+pub type Palette = std::collections::HashMap<String, PaletteColour>;
 
 /// Reset any OSC colour codes
 const RESET_COLOUR: &str = "\x1b[m";
@@ -61,7 +61,10 @@ enum ParserState {
 )]
 impl PaletteParser {
     /// Main entrypoint
-    pub fn run(maybe_user_screenshot: Option<&String>) -> Result<()> {
+    pub async fn run(
+        state: &std::sync::Arc<crate::shared_state::SharedState>,
+        maybe_user_screenshot: Option<&String>,
+    ) -> Result<()> {
         let screenshot = match maybe_user_screenshot {
             Some(path) => {
                 Self::print_native_palette()?;
@@ -89,9 +92,18 @@ impl PaletteParser {
             }
         };
         Self::print_true_colour_palette(&palette)?;
-        Self::save(&palette)?;
+        Self::save(state, &palette).await?;
 
         Ok(())
+    }
+
+    /// Canonical path to the palette config file.
+    pub async fn palette_config_path(
+        state: &std::sync::Arc<crate::shared_state::SharedState>,
+    ) -> std::path::PathBuf {
+        crate::config::Config::directory(state)
+            .await
+            .join("palette.toml")
     }
 
     /// Print all the colours of the terminal to STDOUT.
@@ -292,7 +304,10 @@ impl PaletteParser {
     }
 
     /// Save the parsed palette true colours as TOML in the Tattoy config directory.
-    fn save(palette: &Palette) -> Result<()> {
+    async fn save(
+        state: &std::sync::Arc<crate::shared_state::SharedState>,
+        palette: &Palette,
+    ) -> Result<()> {
         print!("If the palettes look the same press 'y' to save: ");
         std::io::stdout().flush()?;
         let mut answer = String::new();
@@ -303,13 +318,26 @@ impl PaletteParser {
             println!("Aborted");
         }
 
-        let path = crate::config::Config::directory()?.join("palette.toml");
-
+        let path = Self::palette_config_path(state).await;
         let data = toml::to_string(&palette)?;
         std::fs::write(path.clone(), data)?;
 
         println!("Palette saved to: {}", path.display());
         Ok(())
+    }
+
+    /// Convert a palette index to a Termwiz-compatible true colour.
+    pub fn true_colour_from_index(palette: &Palette, index: u8) -> termwiz::color::ColorAttribute {
+        #[expect(
+            clippy::expect_used,
+            reason = "Unreachable because a palette should only have 256 colours"
+        )]
+        let true_colour = palette
+            .get(&index.to_string())
+            .expect("Palette contains less than 256 colours");
+        let srgba: termwiz::color::SrgbaTuple =
+            termwiz::color::RgbColor::new_8bpc(true_colour.0, true_colour.1, true_colour.2).into();
+        termwiz::color::ColorAttribute::TrueColorWithPaletteFallback(srgba, index)
     }
 }
 

@@ -53,22 +53,23 @@ pub(crate) enum Protocol {
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let cli_args = setup(state_arc).await?;
 
+    crate::config::Config::update_shared_state(state_arc).await?;
+
     if cli_args.capture_palette {
-        crate::palette_parser::PaletteParser::run(None)?;
+        crate::palette_parser::PaletteParser::run(state_arc, None).await?;
         return Ok(());
     }
 
     if let Some(screenshot) = cli_args.parse_palette {
-        crate::palette_parser::PaletteParser::run(Some(&screenshot))?;
+        crate::palette_parser::PaletteParser::run(state_arc, Some(&screenshot)).await?;
         return Ok(());
     }
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
-
-    let input_thread_handle = Input::start(protocol_tx.clone());
-
     let (surfaces_tx, surfaces_rx) = mpsc::channel(8192);
 
+    let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
+    let input_thread_handle = Input::start(protocol_tx.clone());
     let tattoys_handle = Loader::start(
         cli_args.enabled_tattoys,
         Arc::clone(state_arc),
@@ -79,7 +80,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let renderer = Renderer::start(Arc::clone(state_arc), surfaces_rx, protocol_tx.clone());
     let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     crate::terminal_proxy::TerminalProxy::start(
-        Arc::clone(state_arc),
+        state_arc,
         surfaces_tx,
         protocol_tx.clone(),
         shadow_terminal::shadow_terminal::Config {
@@ -109,6 +110,9 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
 
     tracing::trace!("Awaiting renderer task");
     renderer.await??;
+
+    tracing::trace!("Awaiting config watcher task");
+    config_handle.await??;
 
     tracing::trace!("Leaving Tattoy's main `run()` function");
     Ok(())
@@ -149,10 +153,14 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
 
     tracing::info!("Starting Tattoy");
 
+    let cli_args = CliArgs::parse();
+
+    crate::config::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
+
     let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     state
         .set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)
         .await;
 
-    Ok(CliArgs::parse())
+    Ok(cli_args)
 }

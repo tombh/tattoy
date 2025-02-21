@@ -41,6 +41,7 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [x] Palette detection.
 * [x] Ask for consent before taking screen shot.
 * [x] Support manually providing a screenshot of the palette.
+* [ ] Pasting is buggy
 * [ ] `tmux` mouse events cause runaway behaviour in `htop`.
 * [ ] Double width characters aren't passed through, eg "🦀".
 * [ ] How should smokey_cursor particles respond to resizing?

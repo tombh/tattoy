@@ -213,7 +213,7 @@ impl Renderer {
             }
         }
 
-        let new_frame = self.composite()?;
+        let new_frame = self.composite().await?;
 
         composited_terminal.draw_from_screen(&new_frame, 0, 0);
 
@@ -230,7 +230,7 @@ impl Renderer {
     }
 
     /// Composite all the tattoys and the PTY together into a single surface (frame).
-    fn composite(&mut self) -> Result<TermwizSurface> {
+    async fn composite(&mut self) -> Result<TermwizSurface> {
         let mut surface = TermwizSurface::new(self.width.into(), self.height.into());
         let mut frame = surface.screen_cells();
 
@@ -238,6 +238,7 @@ impl Renderer {
         self.render_tattoys_below(&mut frame)?;
         self.render_pty(&mut frame)?;
         self.render_tattoys_above(&mut frame)?;
+        self.colour_grade(&mut frame).await?;
 
         Ok(surface)
     }
@@ -340,7 +341,51 @@ impl Renderer {
             return Ok(());
         }
 
-        crate::opaque_cell::OpaqueCell(composited_cell).blend(cell_above);
+        let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None);
+        opaque.blend(cell_above);
+
+        Ok(())
+    }
+
+    /// Apply colour changes, like saturation, hue, contrast, etc.
+    //
+    // TODO: consider including this in the final compositing layer, just for the performance
+    // gain of not having to iterate over every cell again.
+    async fn colour_grade(&self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
+        let config = self.state.config.read().await;
+
+        let saturation: f64 = config.color.saturation.into();
+        let light: f64 = config.color.brightness.into();
+        let hue: f64 = config.color.hue.into();
+        drop(config);
+
+        for line in &mut frame.iter_mut() {
+            for cell in line.iter_mut() {
+                let foreground = cell.attrs().foreground();
+                if let Some(mut gradable) =
+                    crate::opaque_cell::OpaqueCell::extract_colour(foreground)
+                {
+                    gradable = gradable.saturate(saturation);
+                    gradable = gradable.lighten(light);
+                    gradable = gradable.adjust_hue_fixed(hue);
+                    cell.attrs_mut().set_foreground(
+                        termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(gradable),
+                    );
+                }
+
+                let background = cell.attrs().background();
+                if let Some(mut gradable) =
+                    crate::opaque_cell::OpaqueCell::extract_colour(background)
+                {
+                    gradable = gradable.saturate(saturation);
+                    gradable = gradable.lighten(light);
+                    gradable = gradable.adjust_hue_fixed(hue);
+                    cell.attrs_mut().set_background(
+                        termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(gradable),
+                    );
+                }
+            }
+        }
 
         Ok(())
     }
@@ -355,8 +400,8 @@ impl Renderer {
 mod test {
     use super::*;
 
-    #[test]
-    fn blending() {
+    #[tokio::test]
+    async fn blending() {
         let mut renderer = Renderer {
             width: 1,
             height: 1,
@@ -380,7 +425,7 @@ mod test {
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
-        let mut new_frame = renderer.composite().unwrap();
+        let mut new_frame = renderer.composite().await.unwrap();
         let cell = &new_frame.screen_cells()[0][0];
 
         assert_eq!(cell.str(), "a");
@@ -398,8 +443,8 @@ mod test {
         );
     }
 
-    #[test]
-    fn blending_with_default_bg_below() {
+    #[tokio::test]
+    async fn blending_with_default_bg_below() {
         let mut renderer = Renderer {
             width: 1,
             height: 1,
@@ -417,7 +462,7 @@ mod test {
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
-        let mut new_frame = renderer.composite().unwrap();
+        let mut new_frame = renderer.composite().await.unwrap();
         let cell = &new_frame.screen_cells()[0][0];
 
         assert_eq!(

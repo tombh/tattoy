@@ -33,7 +33,7 @@ mod e2e {
             .to_string()
     }
 
-    async fn start_tattoy() -> SteppableTerminal {
+    async fn start_tattoy(maybe_config_path: Option<String>) -> SteppableTerminal {
         let shell = "bash";
         let prompt = "tattoy $ ";
 
@@ -45,7 +45,7 @@ mod e2e {
         };
         let mut stepper = SteppableTerminal::start(config).await.unwrap();
 
-        let command = generate_tattoy_command(shell, prompt);
+        let command = generate_tattoy_command(shell, prompt, maybe_config_path);
         stepper.send_command(&command).unwrap();
         stepper.wait_for_string(prompt, None).await.unwrap();
         assert_random_walker_moves(&mut stepper).await;
@@ -53,7 +53,11 @@ mod e2e {
     }
 
     // We use the minimum possible ENV to support reproducibility of tests.
-    fn generate_tattoy_command(shell: &str, prompt: &str) -> String {
+    fn generate_tattoy_command(
+        shell: &str,
+        prompt: &str,
+        maybe_temp_dir: Option<String>,
+    ) -> String {
         let pwd = std::env::current_dir().unwrap();
         #[expect(
             clippy::option_if_let_else,
@@ -62,6 +66,14 @@ mod e2e {
         let rust_log = match std::env::var_os("RUST_LOG") {
             Some(value) => format!("RUST_LOG=\"{value:?}\""),
             None => String::new(),
+        };
+
+        let config_path = match maybe_temp_dir {
+            None => {
+                let temp_dir = tempfile::tempdir().unwrap();
+                temp_dir.path().display().to_string()
+            }
+            Some(path) => path,
         };
 
         let minimum_env = format!(
@@ -79,10 +91,12 @@ mod e2e {
             unset $(env | cut -d= -f1) && \
             {} {} \
             --use random_walker \
-            --command 'bash --norc --noprofile'\
+            --command 'bash --norc --noprofile' \
+            --config-dir {} \
             ",
             minimum_env,
-            tattoy_binary_path()
+            tattoy_binary_path(),
+            config_path
         )
     }
 
@@ -114,7 +128,7 @@ mod e2e {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn basic_interactivity() {
-        let mut tattoy = start_tattoy().await;
+        let mut tattoy = start_tattoy(None).await;
 
         assert_random_walker_moves(&mut tattoy).await;
 
@@ -126,7 +140,7 @@ mod e2e {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn resizing() {
-        let mut tattoy = start_tattoy().await;
+        let mut tattoy = start_tattoy(None).await;
         tattoy.send_command("nano --restricted").unwrap();
         tattoy.wait_for_string("GNU nano", None).await.unwrap();
 
@@ -206,7 +220,7 @@ mod e2e {
         let mouse_up = "\x1b[<64;14;2M";
         let mouse_down = "\x1b[<65;15;5M";
 
-        let mut tattoy = start_tattoy().await;
+        let mut tattoy = start_tattoy(None).await;
 
         tattoy
             .send_command("cat resources/LOREM_IPSUM.txt")
@@ -225,5 +239,29 @@ mod e2e {
 
         tattoy.send_input(escape).unwrap();
         assert_scrolling_off(&mut tattoy).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn palette_to_true_colour() {
+        let config_dir = tempfile::tempdir().unwrap();
+        let config_path = config_dir.path();
+        std::fs::copy("resources/palette.toml", config_path.join("palette.toml")).unwrap();
+
+        let mut tattoy = start_tattoy(Some(config_path.display().to_string())).await;
+
+        tattoy
+            .send_command("echo -e \"\\033[0;31m$((1000-1))\\033[m\"")
+            .unwrap();
+        tattoy.wait_for_string("999", None).await.unwrap();
+
+        let cell = tattoy.get_cell_at(0, 1).unwrap().unwrap();
+
+        assert_eq!(cell.str(), "9");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(0.96862745, 0.4627451, 0.5568628, 1.0)
+            ),
+        );
     }
 }
