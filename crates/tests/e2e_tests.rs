@@ -102,8 +102,8 @@ mod e2e {
 
     async fn assert_random_walker_moves(tattoy: &mut SteppableTerminal) {
         let iterations = 1000;
-        tattoy.wait_for_string("▄", Some(iterations)).await.unwrap();
-        let coords = tattoy.get_coords_of_cell_by_content("▄").unwrap();
+        tattoy.wait_for_string("▀", Some(iterations)).await.unwrap();
+        let coords = tattoy.get_coords_of_cell_by_content("▀").unwrap();
         for i in 0..=iterations {
             tattoy.render_all_output();
             assert!(
@@ -111,8 +111,8 @@ mod e2e {
                 "Random walker didn't move in a {iterations} iterations."
             );
 
-            tattoy.wait_for_string("▄", Some(iterations)).await.unwrap();
-            let next_coords = tattoy.get_coords_of_cell_by_content("▄").unwrap();
+            tattoy.wait_for_string("▀", Some(iterations)).await.unwrap();
+            let next_coords = tattoy.get_coords_of_cell_by_content("▀").unwrap();
             if coords != next_coords {
                 break;
             }

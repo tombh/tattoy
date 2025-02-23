@@ -147,6 +147,10 @@ impl TerminalProxy {
             _ => (),
         }
 
+        let mut pty_sequence = self.state.pty_sequence.write().await;
+        *pty_sequence += 1;
+        drop(pty_sequence);
+
         Ok(())
     }
 

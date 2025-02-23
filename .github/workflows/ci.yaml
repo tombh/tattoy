@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.85.0
 
 jobs:
   build-test:
@@ -18,7 +19,7 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get install libxcb1-dev libdbus-1-dev
       - uses: actions/checkout@v4
-      - run: rustup toolchain install 1.84.0 --profile minimal
+      - run: rustup toolchain install $RUST_VERSION --profile minimal
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
@@ -26,7 +27,7 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Run tests
-        run: cargo nextest run --no-fail-fast --retries 1
+        run: cargo nextest run --no-fail-fast --retries 2
       - name: Output e2e test logs (on failure)
         if: failure()
         run: cat crates/tests/tattoy.log
@@ -39,7 +40,7 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get install libdbus-1-dev
       - uses: actions/checkout@v4
-      - run: rustup toolchain install 1.84.0 --profile minimal
+      - run: rustup toolchain install $RUST_VERSION --profile minimal
       - uses: Swatinem/rust-cache@v2
 
       - name: Lint

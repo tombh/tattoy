@@ -6,7 +6,7 @@ use color_eyre::eyre::Result;
 
 use crate::shared_state::SharedState;
 
-use super::{random_walker::RandomWalker, smokey_cursor::main::SmokeyCursor};
+use super::{minimap::Minimap, random_walker::RandomWalker, smokey_cursor::main::SmokeyCursor};
 
 /// The trait that all tattoys must follow
 #[async_trait::async_trait]
@@ -40,6 +40,7 @@ pub(crate) async fn create_instance(
         "scrollbar" => Ok(Box::new(
             super::scrollbar::Scrollbar::new(state_clone).await?,
         )),
+        "minimap" => Ok(Box::new(Minimap::new(state_clone).await?)),
         _ => Err(color_eyre::eyre::eyre!(
             "The tattoy, `{tattoy}` was not found"
         )),

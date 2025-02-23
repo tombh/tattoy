@@ -54,31 +54,35 @@ impl Surface {
             x: TermwizPosition::Absolute(col),
             y: TermwizPosition::Absolute(row),
         });
-        let block = match y.rem_euclid(2) {
-            0 => "▀", // even
-            _ => "▄", // odd
-        };
-        let bg_default = Self::make_default_bg_colour();
-        let bg = Self::make_bg_colour(colour);
-        let fg = Self::make_fg_colour(colour);
 
-        let existing = self.get_existing_cell_string(col, row)?;
-        let mut content = existing.clone();
-        match (existing.as_str(), block) {
-            ("▄", "▀") | ("▀", "▄") => {
-                self.surface.add_change(bg);
+        if y.rem_euclid(2) == 0 {
+            let fg_colour_change = Self::make_fg_colour(colour);
+            let bg_colour_attribute = self.get_cell_bg(col, row)?;
+            let changes = vec![
+                fg_colour_change,
+                TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
+                    bg_colour_attribute,
+                )),
+            ];
+            self.surface.add_changes(changes);
+        } else {
+            let mut fg_colour_attribute = self.get_cell_fg(col, row)?;
+            if matches!(fg_colour_attribute, termwiz::color::ColorAttribute::Default) {
+                fg_colour_attribute = termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                    crate::opaque_cell::DEFAULT_BACKGROUND_TRUE_COLOUR,
+                );
             }
-            ("▄", "▄") | ("▀", "▀") => {
-                self.surface.add_change(fg);
-            }
-            _ => {
-                self.surface.add_changes(vec![bg_default, fg]);
-                block.clone_into(&mut content);
-            }
+            let bg_colour_change = Self::make_bg_colour(colour);
+            let changes = vec![
+                bg_colour_change,
+                TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
+                    fg_colour_attribute,
+                )),
+            ];
+            self.surface.add_changes(changes);
         }
 
-        self.surface.add_change(content);
-
+        self.surface.add_change("▀");
         Ok(())
     }
 
@@ -144,25 +148,38 @@ impl Surface {
     /// Safely convert pixel coordinates to TTY col/row
     fn coords_to_tty(&self, x: usize, y: usize) -> Result<(usize, usize)> {
         let col = x;
-        let row = (y + 1).div_ceil(2) - 1;
-        if col + 1 > self.width {
+        let row = y.div_euclid(2);
+        if col >= self.width {
             bail!("Tried to add particle to column: {col}")
         }
-        if row > self.height {
+        if row >= self.height {
             bail!("Tried to add particle to row: {row}")
         }
         Ok((col, row))
     }
 
-    /// Get the string contents of the existing TTY cell where we want to put the new pixel
-    fn get_existing_cell_string(&mut self, col: usize, row: usize) -> Result<String> {
+    /// Get the cell's foreground colour.
+    fn get_cell_fg(&mut self, col: usize, row: usize) -> Result<termwiz::color::ColorAttribute> {
+        let cell = self.get_cell_at(col, row)?;
+        Ok(cell.attrs().foreground())
+    }
+
+    /// Get the cell's background colour.
+    fn get_cell_bg(&mut self, col: usize, row: usize) -> Result<termwiz::color::ColorAttribute> {
+        let cell = self.get_cell_at(col, row)?;
+        Ok(cell.attrs().background())
+    }
+
+    /// Get thell at the given column and row.
+    fn get_cell_at(&mut self, col: usize, row: usize) -> Result<termwiz::cell::Cell> {
         let cells = self.surface.screen_cells();
-        let cell = &cells
+        let cell = cells
             .get(row)
             .context("No cell row")?
             .get(col)
             .context("No cell column")?;
-        Ok(cell.str().to_owned())
+        // TODO: avoid this clone!
+        Ok(cell.clone())
     }
 }
 
@@ -173,33 +190,71 @@ mod test {
 
     const GREY: Colour = (0.5, 0.5, 0.5, 1.0);
 
-    fn add_pixel_on_fresh_surface(x: usize, y: usize) -> Vec<Vec<termwiz::cell::Cell>> {
-        let mut cells_copy: Vec<Vec<termwiz::cell::Cell>> = Vec::default();
-        let mut surface = Surface::new("test".into(), 2, 1, -1);
-        surface.add_pixel(x, y, WHITE).unwrap();
-        let cells = surface.surface.screen_cells();
-        for (i, line) in cells.iter().enumerate() {
-            cells_copy.push(Vec::default());
-            for cell in line.iter() {
-                cells_copy[i].push(cell.clone());
-            }
-        }
-        cells_copy
+    #[expect(clippy::shadow_unrelated, reason = "Tests aren't so strict")]
+    #[test]
+    fn add_new_pixels() {
+        let mut surface = Surface::new("test".into(), 2, 2, -1);
+
+        let cell = &surface.surface.screen_cells()[0][0];
+        assert_eq!(cell.str(), " ");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::Default
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+
+        surface.add_pixel(0, 0, WHITE).unwrap();
+        let cell = &surface.surface.screen_cells()[0][0];
+
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            Surface::make_colour_attribute(WHITE)
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+
+        surface.add_pixel(1, 0, WHITE).unwrap();
+        let cell = &surface.surface.screen_cells()[0][1];
+        assert_eq!(cell.str(), "▀");
+
+        surface.add_pixel(1, 2, WHITE).unwrap();
+        let cell = &surface.surface.screen_cells()[1][1];
+        assert_eq!(cell.str(), "▀");
+
+        surface.add_pixel(1, 3, WHITE).unwrap();
+        let cell = &surface.surface.screen_cells()[1][1];
+        assert_eq!(cell.str(), "▀");
+
+        let result = surface.add_pixel(1, 4, WHITE).unwrap_err();
+        assert_eq!(
+            format!("{}", result.root_cause()),
+            "Tried to add particle to row: 2"
+        );
     }
 
     #[test]
-    fn add_new_pixels() {
-        let cells1 = add_pixel_on_fresh_surface(0, 0);
-        assert_eq!(cells1[0][0].str(), "▀");
+    fn add_new_pixel_at_bottom_of_cell() {
+        let mut surface = Surface::new("test".into(), 1, 1, -1);
 
-        let cells2 = add_pixel_on_fresh_surface(0, 1);
-        assert_eq!(cells2[0][0].str(), "▄");
-
-        let cells3 = add_pixel_on_fresh_surface(1, 0);
-        assert_eq!(cells3[0][1].str(), "▀");
-
-        let cells4 = add_pixel_on_fresh_surface(1, 1);
-        assert_eq!(cells4[0][1].str(), "▄");
+        surface.add_pixel(0, 1, WHITE).unwrap();
+        let cell = &surface.surface.screen_cells()[0][0];
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                crate::opaque_cell::DEFAULT_BACKGROUND_TRUE_COLOUR,
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            Surface::make_colour_attribute(WHITE)
+        );
     }
 
     #[test]
@@ -207,14 +262,14 @@ mod test {
         let mut surface = Surface::new("test".into(), 2, 1, -1);
         surface.add_pixel(0, 0, WHITE).unwrap();
 
-        let bg = Surface::make_colour_attribute(GREY);
         let fg = Surface::make_colour_attribute(WHITE);
+        let bg = Surface::make_colour_attribute(GREY);
 
         surface.add_pixel(0, 1, GREY).unwrap();
         let cells = surface.surface.screen_cells();
         let first_cell = cells[0][0].clone();
         assert_eq!(first_cell.str(), "▀");
-        assert_eq!(first_cell.attrs().background(), bg);
         assert_eq!(first_cell.attrs().foreground(), fg);
+        assert_eq!(first_cell.attrs().background(), bg);
     }
 }

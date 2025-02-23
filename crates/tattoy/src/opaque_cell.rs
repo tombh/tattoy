@@ -5,12 +5,12 @@ use termwiz::cell::Cell;
 
 use crate::palette_parser::PaletteParser;
 
-/// This is the default colour for when an opaque cell is over a "blank" cell. In Tattoy, a blank cell
-/// is any cell that has the default terminal colour. Most terminals use a dark theme, so let's say
-/// that, when alpha blending, the default colour is pure black.
+/// This is the default colour for when an opaque cell is over a "blank" cell.
 ///
+/// In Tattoy, a blank cell is any cell that has the default terminal colour. Most terminals use a
+/// dark theme, so let's say that, when alpha blending, the default colour is pure black.
 /// TODO: support light theme terminals.
-const DEFAULT_BACKGROUND_TRUE_COLOUR: termwiz::color::SrgbaTuple =
+pub const DEFAULT_BACKGROUND_TRUE_COLOUR: termwiz::color::SrgbaTuple =
     termwiz::color::SrgbaTuple(0.0, 0.0, 0.0, 1.0);
 
 /// This might be a big assumption, but I think the convention is that text uses this colour from
@@ -110,7 +110,7 @@ impl<'cell> OpaqueCell<'cell> {
         self.convert_bg_to_true_colour(palette);
     }
 
-    /// Convert text palette indexes to treu colour values.
+    /// Convert text palette indexes to true colour values.
     fn convert_fg_to_true_colour(&mut self, palette: &crate::palette_parser::Palette) {
         if matches!(
             self.cell.attrs().foreground(),

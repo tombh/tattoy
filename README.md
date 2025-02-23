@@ -52,8 +52,11 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [ ] Don't log to file by default
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
 * [ ] Allow scrolling witrh keys.
+* [ ] Extra minimap features: https://www.youtube.com/shorts/t5vXCNIBVYw
 * [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.
+* [ ] Show a nice notification when the user tries to enable a tattoy that requires a parsed palette, but they haven't parsed their palette yet. And of course also don't try to even render such palettes.
 * [ ] Make flakey tests reliable.
+* [ ] How to test the minimap?
 * [ ] When scrolling the Shadow Terminal itself should refuse all input. Currently Tattoy is the one surpressing input.
 * [ ] Doesn't work on Nushell. Just freezes.
 

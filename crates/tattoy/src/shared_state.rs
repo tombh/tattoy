@@ -45,6 +45,9 @@ pub(crate) struct SharedState {
     ///   screen state. So we have to emulate and proxy actual alternate screen behaviour down to the
     ///   shadow terminal.
     pub is_alternate_screen: tokio::sync::RwLock<bool>,
+    /// A counter for every change to the underlying PTY output. Useful for triggering behaviour on
+    /// screen state changes.
+    pub pty_sequence: tokio::sync::RwLock<usize>,
 }
 
 impl SharedState {
