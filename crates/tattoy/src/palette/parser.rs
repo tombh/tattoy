@@ -12,16 +12,10 @@
 
 use std::io::Write as _;
 
-use color_eyre::{eyre::ContextCompat as _, Result};
+use color_eyre::Result;
 
 /// Convenience type for screenshot image.
 type Screenshot = xcap::image::ImageBuffer<xcap::image::Rgba<u8>, std::vec::Vec<u8>>;
-
-/// A single palette colour.
-type PaletteColour = (u8, u8, u8);
-
-/// Convenience type for the palette hash.
-pub type Palette = std::collections::HashMap<String, PaletteColour>;
 
 /// Reset any OSC colour codes
 const RESET_COLOUR: &str = "\x1b[m";
@@ -29,17 +23,14 @@ const RESET_COLOUR: &str = "\x1b[m";
 /// OSC code to clear the terminal
 const CLEAR_SCREEN: &str = "\x1b[2J";
 
-/// The number of palette colours we put in each row of our "QR code".
-const ROW_SIZE: u8 = 16;
-
 /// A pure blue used for signalling in the our "QR Code" of the palette.
 const PURE_BLUE: &xcap::image::Rgba<u8> = &xcap::image::Rgba::<u8>([0, 0, 255, 255]);
 
 /// A parser for converting default terminal palette colours to true colours.
-pub(crate) struct PaletteParser;
+pub(crate) struct Parser;
 
 /// A state machine for parsing a QR Code-like grid of colours.
-enum ParserState {
+enum State {
     /// The first colour to look for is a pure(ish) red, which indicates the start of the colour grid.
     /// Reds are also used to indicate the beginnings of new rows of colours. However, we increment
     /// the green channel of the red by 1 for every new row. Hence the extra `u8` in this enum
@@ -59,7 +50,10 @@ enum ParserState {
     clippy::print_stdout,
     reason = "We need to print the terminal's palette"
 )]
-impl PaletteParser {
+impl Parser {
+    /// The number of palette colours we put in each row of our "QR code".
+    pub const ROW_SIZE: u8 = 16;
+
     /// Main entrypoint
     pub async fn run(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
@@ -91,7 +85,7 @@ impl PaletteParser {
                 color_eyre::eyre::bail!("Palette parsing failed.");
             }
         };
-        Self::print_true_colour_palette(&palette)?;
+        palette.print_true_colour_palette()?;
         Self::save(state, &palette).await?;
 
         Ok(())
@@ -111,7 +105,7 @@ impl PaletteParser {
         println!("These are all the colours in your terminal's palette:");
         Self::print_generic_palette(|palette_index| -> Result<()> {
             let background_colour = palette_index;
-            let foreground_colour = palette_index + ROW_SIZE;
+            let foreground_colour = palette_index + Self::ROW_SIZE;
             print!("\x1b[48;5;{background_colour}m\x1b[38;5;{foreground_colour}m▄{RESET_COLOUR}");
             Ok(())
         })?;
@@ -119,25 +113,9 @@ impl PaletteParser {
         Ok(())
     }
 
-    /// Print all the true colour versions of the terminal's palette as found in the screenshot.
-    fn print_true_colour_palette(palette: &Palette) -> Result<()> {
-        println!();
-        println!("These colours should match the colours above:");
-        Self::print_generic_palette(|palette_index| -> Result<()> {
-            let bg = palette
-                .get(&palette_index.to_string())
-                .context("Palette colour not found")?;
-            let fg = palette
-                .get(&(palette_index + ROW_SIZE).to_string())
-                .context("Palette colour not found")?;
-            Self::print_2_true_colours_in_1((bg.0, bg.1, bg.2), (fg.0, fg.1, fg.2));
-            Ok(())
-        })
-    }
-
     /// Print out all the colours of a terminal palette in a sqaure, that both looks pretty and
     /// conforms to the QR Code-like requirements of parsing.
-    fn print_generic_palette<F: Fn(u8) -> Result<()>>(callback: F) -> Result<()> {
+    pub fn print_generic_palette<F: Fn(u8) -> Result<()>>(callback: F) -> Result<()> {
         let pure_blue = (0, 0, 255);
         println!("╭──────────────────╮");
         for y in 0u8..8 {
@@ -148,8 +126,8 @@ impl PaletteParser {
             // Print the pure blue that helps us avoid false positives.
             Self::print_2_true_colours_in_1(pure_blue, pure_blue);
 
-            for x in 0..ROW_SIZE {
-                let palette_index = (y * ROW_SIZE * 2) + x;
+            for x in 0..Self::ROW_SIZE {
+                let palette_index = (y * Self::ROW_SIZE * 2) + x;
                 callback(palette_index)?;
             }
             print!("│");
@@ -162,7 +140,7 @@ impl PaletteParser {
     }
 
     /// Use the UTF-8 half block trick to print 2 colours in one cell.
-    fn print_2_true_colours_in_1(top: (u8, u8, u8), bottom: (u8, u8, u8)) {
+    pub fn print_2_true_colours_in_1(top: (u8, u8, u8), bottom: (u8, u8, u8)) {
         print!(
             "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄{RESET_COLOUR}",
             top.0, top.1, top.2, bottom.0, bottom.1, bottom.2,
@@ -216,15 +194,17 @@ impl PaletteParser {
     //
     /// Parse the raw pixels of a screenshot looking for our QR Code-like print out of all the
     /// colours from the current terminal's palette.
-    fn parse_screenshot(image: &Screenshot) -> Result<Palette> {
+    fn parse_screenshot(image: &Screenshot) -> Result<crate::palette::converter::Palette> {
         tracing::debug!(
             "Starting palette parse of image with {} pixels",
             image.pixels().len()
         );
 
-        let mut palette: Palette = std::collections::HashMap::new();
+        let mut palette = crate::palette::converter::Palette {
+            map: std::collections::HashMap::new(),
+        };
 
-        let mut state = ParserState::LookingForRedish(0);
+        let mut state = State::LookingForRedish(0);
         tracing::debug!("Looking for first redish palette row start");
         let mut palette_index = 0u8;
         let mut row_index = 0u8;
@@ -233,49 +213,49 @@ impl PaletteParser {
         for pixel in image.enumerate_pixels() {
             let previous_colour = current_colour;
             current_colour = pixel.2;
-            let is_in_palette = !matches!(state, ParserState::LookingForRedish(_));
+            let is_in_palette = !matches!(state, State::LookingForRedish(_));
             if is_in_palette && current_colour == previous_colour {
                 continue;
             }
 
             match state {
-                ParserState::LookingForRedish(row_marker) => {
+                State::LookingForRedish(row_marker) => {
                     let redish_row_start = &xcap::image::Rgba::<u8>([255, row_marker, 0, 255]);
                     if current_colour == redish_row_start {
                         tracing::debug!("Potential palette row found: {row_marker}");
 
-                        state = ParserState::LookingForBlue;
+                        state = State::LookingForBlue;
                     }
                 }
-                ParserState::LookingForBlue => {
+                State::LookingForBlue => {
                     if current_colour == PURE_BLUE {
                         tracing::debug!("Pure blue row signal found");
 
-                        state = ParserState::LookingForFirstColourInRow;
+                        state = State::LookingForFirstColourInRow;
                     } else {
                         tracing::debug!("False positive palette start, restarting row search");
 
-                        state = ParserState::LookingForRedish(row_index);
+                        state = State::LookingForRedish(row_index);
                     }
                 }
-                ParserState::LookingForFirstColourInRow => {
+                State::LookingForFirstColourInRow => {
                     tracing::info!("Palette colour found! ID: {palette_index} {current_colour:?}");
 
-                    state = ParserState::CollectingRow(0);
+                    state = State::CollectingRow(0);
 
                     // TODO: I feel like there should be a way to get this (inserting of a palette
                     // colour) into the [`ParserState::CollectingRow`] step 🤔
-                    palette.insert(
+                    palette.map.insert(
                         palette_index.to_string(),
                         (current_colour[0], current_colour[1], current_colour[2]),
                     );
                     palette_index += 1;
                 }
-                ParserState::CollectingRow(column_index) => {
+                State::CollectingRow(column_index) => {
                     let new_column = column_index + 1;
-                    if new_column >= ROW_SIZE {
+                    if new_column >= Self::ROW_SIZE {
                         row_index += 1;
-                        state = ParserState::LookingForRedish(row_index);
+                        state = State::LookingForRedish(row_index);
 
                         tracing::debug!("Looking for redish palette row start: {row_index}");
                     } else {
@@ -283,7 +263,7 @@ impl PaletteParser {
                             "Palette colour found! ID: {palette_index} {current_colour:?}"
                         );
 
-                        palette.insert(
+                        palette.map.insert(
                             palette_index.to_string(),
                             (current_colour[0], current_colour[1], current_colour[2]),
                         );
@@ -292,7 +272,7 @@ impl PaletteParser {
                         }
                         palette_index += 1;
 
-                        state = ParserState::CollectingRow(new_column);
+                        state = State::CollectingRow(new_column);
                     }
                 }
             }
@@ -306,7 +286,7 @@ impl PaletteParser {
     /// Save the parsed palette true colours as TOML in the Tattoy config directory.
     async fn save(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
-        palette: &Palette,
+        palette: &crate::palette::converter::Palette,
     ) -> Result<()> {
         print!("If the palettes look the same press 'y' to save: ");
         std::io::stdout().flush()?;
@@ -319,25 +299,11 @@ impl PaletteParser {
         }
 
         let path = Self::palette_config_path(state).await;
-        let data = toml::to_string(&palette)?;
+        let data = toml::to_string(&palette.map)?;
         std::fs::write(path.clone(), data)?;
 
         println!("Palette saved to: {}", path.display());
         Ok(())
-    }
-
-    /// Convert a palette index to a Termwiz-compatible true colour.
-    pub fn true_colour_from_index(palette: &Palette, index: u8) -> termwiz::color::ColorAttribute {
-        #[expect(
-            clippy::expect_used,
-            reason = "Unreachable because a palette should only have 256 colours"
-        )]
-        let true_colour = palette
-            .get(&index.to_string())
-            .expect("Palette contains less than 256 colours");
-        let srgba: termwiz::color::SrgbaTuple =
-            termwiz::color::RgbColor::new_8bpc(true_colour.0, true_colour.1, true_colour.2).into();
-        termwiz::color::ColorAttribute::TrueColorWithPaletteFallback(srgba, index)
     }
 }
 
@@ -348,11 +314,11 @@ mod test {
 
     fn assert_screenshot(path: std::path::PathBuf) {
         let screenshot = xcap::image::open(path).unwrap();
-        let palette = PaletteParser::parse_screenshot(&screenshot.into_rgba8()).unwrap();
+        let palette = Parser::parse_screenshot(&screenshot.into_rgba8()).unwrap();
 
-        assert_eq!(palette["0"], (14, 13, 21));
-        assert_eq!(palette["128"], (175, 0, 215));
-        assert_eq!(palette["255"], (238, 238, 238));
+        assert_eq!(palette.map["0"], (14, 13, 21));
+        assert_eq!(palette.map["128"], (175, 0, 215));
+        assert_eq!(palette.map["255"], (238, 238, 238));
     }
 
     #[test]

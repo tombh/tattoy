@@ -16,8 +16,10 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 portable-pty = "0.8.1"
 termwiz.workspace = true
-wezterm-term = { git = "https://github.com/wez/wezterm.git", ref = "e5ac32f297cf3dd8f6ea280c130103f3cac4dddb" }
 snafu = "0.8.5"
+
+# Waiting on: https://github.com/wezterm/wezterm/pull/6734
+wezterm-term = { git = "https://github.com/tombh/wezterm.git", branch = "add-clone-derive-to-termwiz-surface" }
 
 [lints]
 workspace = true

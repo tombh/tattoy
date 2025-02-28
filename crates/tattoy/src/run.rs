@@ -30,16 +30,18 @@ pub(crate) enum FrameUpdate {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub(crate) enum Protocol {
-    /// The entire application is exiting
+    /// Output from the PTY.
+    Output(shadow_terminal::output::Output),
+    /// The entire application is exiting.
     End,
     /// User's TTY is resized.
     Resize {
-        /// Width of new terminal
+        /// Width of new terminal.
         width: u16,
-        /// Height of new terminal
+        /// Height of new terminal.
         height: u16,
     },
-    /// Parsed input from STDIN
+    /// Parsed input from STDIN.
     Input(crate::input::ParsedInput),
     /// The visibility of the end user's cursor.
     CursorVisibility(bool),
@@ -56,12 +58,12 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     crate::config::Config::update_shared_state(state_arc).await?;
 
     if cli_args.capture_palette {
-        crate::palette_parser::PaletteParser::run(state_arc, None).await?;
+        crate::palette::parser::Parser::run(state_arc, None).await?;
         return Ok(());
     }
 
     if let Some(screenshot) = cli_args.parse_palette {
-        crate::palette_parser::PaletteParser::run(state_arc, Some(&screenshot)).await?;
+        crate::palette::parser::Parser::run(state_arc, Some(&screenshot)).await?;
         return Ok(());
     }
 

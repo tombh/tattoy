@@ -17,6 +17,8 @@ pub struct Scrollbar {
     width: u16,
     /// TTY height
     height: u16,
+    /// Our own copy of the scrollback. Saves taking costly read locks.
+    scrollback: shadow_terminal::output::CompleteScrollback,
     /// Whether the user is scolling, primarily used to detect when the shared scrolling state changes.
     is_scrolling: bool,
 }
@@ -37,8 +39,29 @@ impl Tattoyer for Scrollbar {
             state,
             width,
             height,
-            is_scrolling: false,
+            ..Default::default()
         })
+    }
+
+    fn handle_pty_output(&mut self, output: shadow_terminal::output::Output) {
+        match output {
+            shadow_terminal::output::Output::Diff(
+                shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff),
+            ) => {
+                self.scrollback
+                    .surface
+                    .resize(scrollback_diff.size.0, scrollback_diff.height);
+                self.scrollback.surface.add_changes(scrollback_diff.changes);
+                self.scrollback.position = scrollback_diff.position;
+            }
+            shadow_terminal::output::Output::Complete(
+                shadow_terminal::output::CompleteSurface::Scrollback(scrollback),
+            ) => self.scrollback = scrollback,
+
+            shadow_terminal::output::Output::Diff(_)
+            | shadow_terminal::output::Output::Complete(_)
+            | _ => (),
+        }
     }
 
     fn set_tty_size(&mut self, width: u16, height: u16) {
@@ -67,12 +90,7 @@ impl Tattoyer for Scrollbar {
         }
         self.is_scrolling = true;
 
-        let scrollback = self.state.shadow_tty_scrollback.read().await;
-        let scrollback_position = scrollback.position;
-        let scrollback_height = scrollback.surface.dimensions().1;
-        drop(scrollback);
-
-        let (start, end) = self.get_start_end(scrollback_position, scrollback_height);
+        let (start, end) = self.get_start_end();
         if start > end {
             tracing::error!("Bad scrollbar dimensions: {start:?} {end:?}");
             return Ok(None);
@@ -104,17 +122,15 @@ impl Scrollbar {
         clippy::cast_possible_truncation,
         reason = "It's just a scrollbar"
     )]
-    fn get_start_end(
-        &self,
-        scrollback_position: usize,
-        scrollback_height: usize,
-    ) -> (usize, usize) {
+    fn get_start_end(&self) -> (usize, usize) {
+        let scrollback_height = self.scrollback.surface.dimensions().1;
+
         let top_of_terminal_position =
-            scrollback_height - scrollback_position - self.height as usize;
+            scrollback_height - self.scrollback.position - self.height as usize;
         let top_of_terminal_fraction = top_of_terminal_position as f32 / scrollback_height as f32;
         let mut scrollbar_start = (top_of_terminal_fraction * self.height as f32) as usize;
 
-        let bottom_of_terminal_position = scrollback_height - scrollback_position;
+        let bottom_of_terminal_position = scrollback_height - self.scrollback.position;
         let bottom_of_terminal_fraction =
             bottom_of_terminal_position as f32 / scrollback_height as f32;
         let mut scrollbar_end = (bottom_of_terminal_fraction * self.height as f32) as usize;

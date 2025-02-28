@@ -30,11 +30,14 @@ pub(crate) struct SharedState {
     pub config: tokio::sync::RwLock<crate::config::Config>,
     /// Just the size of the user's terminal. All the tattoys and shadow TTY should follow this
     pub tty_size: tokio::sync::RwLock<TTYSize>,
+
+    // TODO: rename to `shadow_alternate_screen`?
     /// This is a view onto the active screen of the shadow terminal. It's what you would see if
     /// you had some kind of VNC viewer, let's say.
     pub shadow_tty_screen: tokio::sync::RwLock<termwiz::surface::Surface>,
+    // TODO: rename to `shadow_primary_screen`
     /// This is the entire scrollback history of the shadow terminal.
-    pub shadow_tty_scrollback: tokio::sync::RwLock<shadow_terminal::shadow_terminal::Scrollback>,
+    pub shadow_tty_scrollback: tokio::sync::RwLock<shadow_terminal::output::CompleteScrollback>,
     /// Is the user scrolling the scrollback?
     pub is_scrolling: tokio::sync::RwLock<bool>,
     /// Is the underlying shadow terminal in the so-called alternate screen state?

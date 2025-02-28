@@ -14,7 +14,7 @@ pub struct ActiveTerminal {
     pub task_handle: tokio::task::JoinHandle<()>,
     /// A Tokio channel that receives [`termwiz::surface::Surface`] updates of the underlying
     /// terminal.
-    pub surface_output_rx: tokio::sync::mpsc::Receiver<crate::shadow_terminal::Surface>,
+    pub surface_output_rx: tokio::sync::mpsc::Receiver<crate::output::Output>,
     /// A Tokio channel that forwards bytes to the underlying PTY's STDIN.
     pub pty_input_tx: tokio::sync::mpsc::Sender<crate::pty::BytesFromSTDIN>,
     /// A Tokio broadcast sender to send protocol messages that control the shadow terminal and

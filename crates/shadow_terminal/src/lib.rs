@@ -22,6 +22,7 @@ pub use wezterm_term;
 
 pub mod active_terminal;
 mod errors;
+pub mod output;
 mod pty;
 pub mod shadow_terminal;
 pub mod steppable_terminal;
@@ -39,8 +40,6 @@ pub enum Protocol {
         /// Height of the shadow terminal
         height: u16,
     },
-    /// Signals the terminal switching between normal and alternate screen
-    IsAlternateScreen(bool),
     /// Scrolling of the terminal scrollback
     Scroll(Scroll),
 }

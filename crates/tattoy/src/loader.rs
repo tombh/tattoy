@@ -103,6 +103,14 @@ impl Loader {
                             tattoy.set_tty_size(width, height);
                         }
                     }
+                    Protocol::Output(output) => {
+                        tracing::trace!(
+                            "Tattoys loader loop received message for new output from PTY"
+                        );
+                        for tattoy in &mut self.tattoys {
+                            tattoy.handle_pty_output(output.clone());
+                        }
+                    }
                     _ => (),
                 }
             }

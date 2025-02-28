@@ -180,12 +180,13 @@ impl Config {
     /// Load the terminal's palette as true colour values.
     pub async fn load_palette(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
-    ) -> Result<Option<crate::palette_parser::Palette>> {
-        let path = crate::palette_parser::PaletteParser::palette_config_path(state).await;
+    ) -> Result<Option<crate::palette::converter::Palette>> {
+        let path = crate::palette::parser::Parser::palette_config_path(state).await;
         if path.exists() {
             tracing::info!("Loading the terminal palette's true colours from config");
             let data = std::fs::read_to_string(path)?;
-            let palette = toml::from_str::<crate::palette_parser::Palette>(&data)?;
+            let map = toml::from_str::<crate::palette::converter::PaletteHashMap>(&data)?;
+            let palette = crate::palette::converter::Palette { map };
             Ok(Some(palette))
         } else {
             tracing::debug!("Terminal palette colours config file not found in config directory");

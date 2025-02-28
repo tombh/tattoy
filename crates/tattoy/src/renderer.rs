@@ -32,17 +32,16 @@ pub(crate) struct Renderer {
 impl Renderer {
     /// Create a renderer to render to a user's terminal
     pub fn new(state: Arc<SharedState>) -> Result<Self> {
-        let mut renderer = Self {
-            state,
-            width: Default::default(),
-            height: Default::default(),
-            tattoys: std::collections::HashMap::default(),
-            pty: TermwizSurface::default(),
-        };
-
         let size = Self::get_users_tty_size()?;
-        renderer.width = size.cols.try_into()?;
-        renderer.height = size.rows.try_into()?;
+        let width = size.cols.try_into()?;
+        let height = size.rows.try_into()?;
+        let renderer = Self {
+            state,
+            width,
+            height,
+            tattoys: std::collections::HashMap::default(),
+            pty: TermwizSurface::new(width.into(), height.into()),
+        };
 
         Ok(renderer)
     }
@@ -209,7 +208,7 @@ impl Renderer {
             }
             FrameUpdate::PTYSurface => {
                 tracing::trace!("Rendering PTY frame update");
-                self.get_updated_pty_frame().await?;
+                self.get_updated_pty_frame().await;
             }
         }
 
@@ -300,21 +299,17 @@ impl Renderer {
     }
 
     /// Fetch the freshly made PTY frame from the shared state.
-    async fn get_updated_pty_frame(&mut self) -> Result<()> {
+    async fn get_updated_pty_frame(&mut self) {
+        self.pty.resize(self.width.into(), self.height.into());
         let surface = self.state.shadow_tty_screen.read().await;
-
-        let size = surface.dimensions();
-        self.pty.resize(size.0, size.1);
         let (cursor_x, cursor_y) = surface.cursor_position();
-        self.pty.draw_from_screen(&surface, 0, 0);
+        self.pty = surface.clone();
         drop(surface);
 
         self.pty.add_change(TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(cursor_x),
             y: TermwizPosition::Absolute(cursor_y),
         });
-
-        Ok(())
     }
 
     /// Add a single cell to the compositor frame.

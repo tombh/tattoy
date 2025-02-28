@@ -21,6 +21,8 @@ pub struct Minimap {
     width: u16,
     /// TTY height
     height: u16,
+    /// Our own copy of the scrollback. Saves taking costly read locks.
+    scrollback: shadow_terminal::output::CompleteScrollback,
     /// Whether the user is scolling, primarily used to detect when the shared scrolling state changes.
     is_scrolling: bool,
     /// Keep track of the underlying PTY sequence counter
@@ -47,6 +49,26 @@ impl Tattoyer for Minimap {
         })
     }
 
+    fn handle_pty_output(&mut self, output: shadow_terminal::output::Output) {
+        match output {
+            shadow_terminal::output::Output::Diff(
+                shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff),
+            ) => {
+                self.scrollback
+                    .surface
+                    .resize(scrollback_diff.size.0, scrollback_diff.height);
+                self.scrollback.surface.add_changes(scrollback_diff.changes);
+            }
+            shadow_terminal::output::Output::Complete(
+                shadow_terminal::output::CompleteSurface::Scrollback(scrollback),
+            ) => self.scrollback = scrollback,
+
+            shadow_terminal::output::Output::Diff(_)
+            | shadow_terminal::output::Output::Complete(_)
+            | _ => (),
+        }
+    }
+
     fn set_tty_size(&mut self, width: u16, height: u16) {
         self.width = width;
         self.height = height;
@@ -63,9 +85,8 @@ impl Tattoyer for Minimap {
         self.pty_sequence = *pty_sequence;
         drop(pty_sequence);
 
-        let mut scrollback = self.state.shadow_tty_scrollback.write().await;
-        let scrollback_width = scrollback.surface.dimensions().0;
-        let scrollback_height = scrollback.surface.dimensions().1;
+        let scrollback_width = self.scrollback.surface.dimensions().0;
+        let scrollback_height = self.scrollback.surface.dimensions().1;
         let current_is_scrolling = self.state.get_is_scrolling().await;
 
         if scrollback_width == 0 || scrollback_height == 0 {
@@ -94,21 +115,8 @@ impl Tattoyer for Minimap {
             .as_mut_rgba8()
             .context("Couldn't get mutable reference to scrollback image")?;
 
-        // TODO:
-        // Consider performance. Already at 1000 lines, this makes the renderer think for a
-        // moment when rebuilding the surface.
-        //
-        // 1. Supporting screen/scrollback diffs. The diffs can even be applied the raw image
-        //    buffer, so no need to recreate the image everytime.
-        // 2. Consider only ever displaying a fixed section of the scrollback, say 1000 lines.
-        // 3. ⚠️  STOP PRESS ⚠️  I just realised we're holding a write lock the whole time, because
-        //    `surface.screen_cells()` can only return a mutable reference 🥺.
-        //
-        // If after implementing both of these, and there are still performance issues, then we
-        // might have some locking contention, or we be clobbering the Tokio scheduler with too
-        // much CPU.
         for (x, y, pixel) in image_buffer.enumerate_pixels_mut() {
-            let cells = scrollback.surface.screen_cells();
+            let cells = self.scrollback.surface.screen_cells();
             let line = cells
                 .get(usize::try_from(y)?.div_euclid(2))
                 .context("Couldn't get surface line")?;
@@ -157,9 +165,6 @@ impl Tattoyer for Minimap {
             }
         }
 
-        // WOAH TODO EVEN MAKING A COPY OF THE SCREEN CELLS IS PREFERABLE TO TAKING A WRITE, A
-        // WRRRRIITE LOCK, FOR THIS LONG 🤦.
-        drop(scrollback);
         Ok(Some(surface))
     }
 }

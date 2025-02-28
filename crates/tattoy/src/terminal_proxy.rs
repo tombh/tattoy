@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use color_eyre::eyre::Result;
 
-use crate::{palette_parser::PaletteParser, shared_state::SharedState};
+use crate::shared_state::SharedState;
 
 /// A proxy for signals and data to and from an in-memory shadow terminal.
 pub(crate) struct TerminalProxy {
@@ -18,7 +18,7 @@ pub(crate) struct TerminalProxy {
     /// The Tattoy protocol
     tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     /// A hash map linking palette indexes to true colour values.
-    palette: Option<crate::palette_parser::Palette>,
+    palette: Option<crate::palette::converter::Palette>,
 }
 
 impl TerminalProxy {
@@ -50,7 +50,6 @@ impl TerminalProxy {
     ) -> Result<()> {
         let shadow_terminal = shadow_terminal::active_terminal::ActiveTerminal::start(config);
 
-        let mut shadow_terminal_events = shadow_terminal.control_tx.subscribe();
         let mut tattoy_protocol_rx = tattoy_protocol.subscribe();
         let mut proxy = Self::new(state, shadow_terminal, surfaces_tx, tattoy_protocol).await?;
 
@@ -69,18 +68,155 @@ impl TerminalProxy {
                     }
                     break;
                 }
-                Some(surface) = proxy.shadow_terminal.surface_output_rx.recv() => {
-                    tracing::trace!("Received surface from Shadow Terminal");
-                    proxy.update_shared_state_with_new_surface(surface).await?;
-                    proxy.send_pty_surface_notification().await;
-                }
-                Ok(event) = shadow_terminal_events.recv() => {
-                    proxy.handle_shadow_terminal_event(&event).await;
+                Some(output) = proxy.shadow_terminal.surface_output_rx.recv() => {
+                    proxy.handle_output(output).await?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Handle output from the Shadow Terminal.
+    async fn handle_output(&self, mut output: shadow_terminal::output::Output) -> Result<()> {
+        tracing::trace!("Received output from Shadow Terminal: {output:?}");
+        self.convert_cells_to_true_colour(&mut output);
+
+        match output.clone() {
+            shadow_terminal::output::Output::Diff(diff) => {
+                self.reconstruct_surface_from_diff(diff).await?;
+            }
+            shadow_terminal::output::Output::Complete(complete_surface) => match complete_surface {
+                shadow_terminal::output::CompleteSurface::Scrollback(scrollback) => {
+                    let mut shadow_tty_scrollback = self.state.shadow_tty_scrollback.write().await;
+                    *shadow_tty_scrollback = scrollback;
+                    drop(shadow_tty_scrollback);
+                    self.copy_scrollback_bottom_to_screen().await;
+                    self.state.set_is_alternate_screen(false).await;
+                }
+                shadow_terminal::output::CompleteSurface::Screen(surface) => {
+                    let mut shadow_tty_screen = self.state.shadow_tty_screen.write().await;
+                    *shadow_tty_screen = surface;
+                    drop(shadow_tty_screen);
+                    self.state.set_is_alternate_screen(true).await;
+                }
+                _ => (),
+            },
+            _ => (),
+        }
+
+        self.send_pty_surface_notification(output).await;
+
+        let mut pty_sequence = self.state.pty_sequence.write().await;
+        *pty_sequence += 1;
+        drop(pty_sequence);
+
+        Ok(())
+    }
+
+    /// Copy the very bottom of the scrollback to the our copy of the shadow terminal. We do this
+    /// so that we always have a canonical place where we can get the current contents of the
+    /// underlying PTY, regardless of whether it is displaying the primary or alternate screen.
+    async fn copy_scrollback_bottom_to_screen(&self) {
+        let tty_size = self.state.get_tty_size().await;
+        let shadow_tty_scrollback = self.state.shadow_tty_scrollback.read().await;
+        let offset = shadow_tty_scrollback.surface.dimensions().1
+            - usize::from(tty_size.height)
+            - shadow_tty_scrollback.position;
+        let (cursor_x, cursor_y) = shadow_tty_scrollback.surface.cursor_position();
+        let mut surface =
+            termwiz::surface::Surface::new(tty_size.width.into(), tty_size.height.into());
+
+        let mut changes = surface.diff_region(
+            0,
+            0,
+            tty_size.width.into(),
+            tty_size.height.into(),
+            &shadow_tty_scrollback.surface,
+            0,
+            offset,
+        );
+        drop(shadow_tty_scrollback);
+
+        let mut shadow_tty_screen = self.state.shadow_tty_screen.write().await;
+        changes.push(termwiz::surface::Change::CursorPosition {
+            x: termwiz::surface::Position::Absolute(cursor_x),
+            y: termwiz::surface::Position::Absolute(cursor_y),
+        });
+        surface.add_changes(changes);
+        *shadow_tty_screen = surface;
+    }
+
+    /// Reconstruct full surfaces from diffs.
+    async fn reconstruct_surface_from_diff(
+        &self,
+        diff: shadow_terminal::output::SurfaceDiff,
+    ) -> Result<()> {
+        match diff {
+            shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff) => {
+                self.handle_scrolling_output(&scrollback_diff).await?;
+                self.reconstruct_scrollback_diff(scrollback_diff).await?;
+                self.copy_scrollback_bottom_to_screen().await;
+                self.state.set_is_alternate_screen(false).await;
+            }
+            shadow_terminal::output::SurfaceDiff::Screen(screen_diff) => {
+                self.reconstruct_screen_diff(screen_diff).await;
+                self.state.set_is_alternate_screen(true).await;
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// Reconstruct the scrollback surface from a diff of changes.
+    async fn reconstruct_scrollback_diff(
+        &self,
+        diff: shadow_terminal::output::ScrollbackDiff,
+    ) -> Result<()> {
+        let mut shadow_tty_scrollback = self.state.shadow_tty_scrollback.write().await;
+
+        if shadow_tty_scrollback.surface.dimensions() != diff.size {
+            shadow_tty_scrollback
+                .surface
+                .resize(diff.size.0, diff.height);
+        }
+
+        shadow_tty_scrollback.surface.add_changes(diff.changes);
+        shadow_tty_scrollback.position = diff.position;
+
+        drop(shadow_tty_scrollback);
+
+        Ok(())
+    }
+
+    /// Handle new scrolling state from Shadow Terminal.
+    async fn handle_scrolling_output(
+        &self,
+        diff: &shadow_terminal::output::ScrollbackDiff,
+    ) -> Result<()> {
+        let current_scrolling_state = self.state.get_is_scrolling().await;
+        let new_is_scrolling_state = diff.position != 0;
+        if current_scrolling_state != new_is_scrolling_state {
+            self.state.set_is_scrolling(new_is_scrolling_state).await;
+            self.tattoy_protocol
+                .send(crate::run::Protocol::CursorVisibility(
+                    !new_is_scrolling_state,
+                ))?;
+        }
+
+        Ok(())
+    }
+
+    /// Reconstruct the alternate screen surface from a diff of changes.
+    async fn reconstruct_screen_diff(&self, diff: shadow_terminal::output::ScreenDiff) {
+        let mut shadow_tty_screen = self.state.shadow_tty_screen.write().await;
+        let size = self.state.get_tty_size().await;
+
+        if shadow_tty_screen.dimensions() != diff.size {
+            shadow_tty_screen.resize(size.width.into(), size.height.into());
+        }
+        shadow_tty_screen.add_changes(diff.changes);
     }
 
     /// Handle protocol messages from Tattoy.
@@ -102,81 +238,73 @@ impl TerminalProxy {
         Ok(())
     }
 
+    // TODO: It is a bit odd that we send 2 notifications about new PTY output. I'm sure the
+    // receiver of the `Protocol::Output` message could do everything that the receiver of the
+    // `FrameUpdate::PTYSurface` message does. But we also use the `FrameUpdate::PTYSurface`
+    // channel for tattoy frame updates, so let's keep the `FrameUpdate` channel for now.
     /// Notify the Tattoy renderer that there's a new frame of data from the shadow terminal.
-    async fn send_pty_surface_notification(&self) {
-        let result = self
+    async fn send_pty_surface_notification(&self, output: shadow_terminal::output::Output) {
+        let frame_update_result = self
             .surfaces_tx
             .send(crate::run::FrameUpdate::PTYSurface)
             .await;
-        if let Err(err) = result {
+        if let Err(err) = frame_update_result {
             tracing::error!("Couldn't notify frame update channel about new PTY surface: {err:?}");
         }
-    }
 
-    /// Update the shared state with a new surface from the shadow terminal. Could the scrollback
-    /// contents or the currently visible screen.
-    async fn update_shared_state_with_new_surface(
-        &self,
-        surface: shadow_terminal::shadow_terminal::Surface,
-    ) -> Result<()> {
-        match surface {
-            shadow_terminal::shadow_terminal::Surface::Scrollback(mut scrollback) => {
-                self.convert_cells_to_true_colour(&mut scrollback.surface);
-
-                // TODO: could most of this live in its own function?
-                let mut shadow_tty_scrollback = self.state.shadow_tty_scrollback.write().await;
-                *shadow_tty_scrollback = scrollback;
-
-                let current_scrolling_state = self.state.get_is_scrolling().await;
-                let new_scrolling_state = shadow_tty_scrollback.position != 0;
-                drop(shadow_tty_scrollback);
-
-                if current_scrolling_state != new_scrolling_state {
-                    self.state.set_is_scrolling(new_scrolling_state).await;
-                    self.tattoy_protocol
-                        .send(crate::run::Protocol::CursorVisibility(!new_scrolling_state))?;
-                }
-            }
-            shadow_terminal::shadow_terminal::Surface::Screen(mut screen) => {
-                self.convert_cells_to_true_colour(&mut screen);
-
-                let mut shadow_tty = self.state.shadow_tty_screen.write().await;
-                *shadow_tty = screen;
-                drop(shadow_tty);
-            }
-            _ => (),
+        let output_update_result = self
+            .tattoy_protocol
+            .send(crate::run::Protocol::Output(output));
+        if let Err(err) = output_update_result {
+            tracing::error!("Couldn't notify protocol channel about new PTY output: {err:?}");
         }
-
-        let mut pty_sequence = self.state.pty_sequence.write().await;
-        *pty_sequence += 1;
-        drop(pty_sequence);
-
-        Ok(())
     }
 
     /// Convert palette indexes into their true colour values.
-    fn convert_cells_to_true_colour(&self, surface: &mut termwiz::surface::Surface) {
+    fn convert_cells_to_true_colour(&self, output: &mut shadow_terminal::output::Output) {
         let Some(palette) = &self.palette else {
             return;
         };
 
-        let default_colour_attribute = PaletteParser::true_colour_from_index(palette, 0);
-        let default_colour =
-            crate::opaque_cell::OpaqueCell::extract_colour(default_colour_attribute);
+        match output {
+            shadow_terminal::output::Output::Diff(surface_diff) => {
+                let changes = match surface_diff {
+                    shadow_terminal::output::SurfaceDiff::Scrollback(diff) => &mut diff.changes,
+                    shadow_terminal::output::SurfaceDiff::Screen(diff) => &mut diff.changes,
+                    _ => {
+                        tracing::error!(
+                            "Unrecognised surface diff when converting cells to true colour"
+                        );
+                        &mut Vec::new()
+                    }
+                };
 
-        for line in &mut surface.screen_cells() {
-            for cell in line.iter_mut() {
-                let mut opaque_cell = crate::opaque_cell::OpaqueCell::new(cell, default_colour);
-                opaque_cell.convert_to_true_colour(palette);
+                for change in changes {
+                    if let termwiz::surface::change::Change::AllAttributes(attributes) = change {
+                        palette.cell_attributes_to_true_colour(attributes);
+                    }
+                }
             }
-        }
-    }
-
-    /// Handle signals from the Wezterm shadow terminal.
-    async fn handle_shadow_terminal_event(&self, event: &shadow_terminal::Protocol) {
-        tracing::debug!("Shadow Terminal event: {event:?}");
-        if let shadow_terminal::Protocol::IsAlternateScreen(state) = event {
-            self.state.set_is_alternate_screen(*state).await;
+            shadow_terminal::output::Output::Complete(complete_surface) => {
+                let cells = match complete_surface {
+                    shadow_terminal::output::CompleteSurface::Scrollback(scrollback) => {
+                        scrollback.surface.screen_cells()
+                    }
+                    shadow_terminal::output::CompleteSurface::Screen(surface) => {
+                        surface.screen_cells()
+                    }
+                    _ => {
+                        tracing::error!("Unhandled surface from Shadow Terminal");
+                        Vec::new()
+                    }
+                };
+                for line in cells {
+                    for cell in line {
+                        palette.cell_attributes_to_true_colour(cell.attrs_mut());
+                    }
+                }
+            }
+            _ => (),
         }
     }
 
@@ -184,7 +312,7 @@ impl TerminalProxy {
     async fn handle_input(&self, input: &crate::input::ParsedInput) -> Result<()> {
         if self.is_tattoy_input_event(&input.event).await {
             tracing::trace!("Tattoy input event: {:?}", input.event);
-            self.handle_scrolling(&input.event).await?;
+            self.handle_scrolling_input(&input.event).await?;
         } else if !self.state.get_is_scrolling().await {
             let result = self.shadow_terminal.send_input(input.bytes).await;
             if let Err(error) = result {
@@ -230,7 +358,7 @@ impl TerminalProxy {
     /// Because Tattoy is a wrapper around a headless, in-memory terminal, it can't rely on the
     /// user's actual terminal (Kitty, Alacritty, iTerm, etc) to do scrolling. So Tattoy forwards
     /// scrolling events to the shadow terminal and renders its own scrollbars etc.
-    async fn handle_scrolling(&self, event: &termwiz::input::InputEvent) -> Result<()> {
+    async fn handle_scrolling_input(&self, event: &termwiz::input::InputEvent) -> Result<()> {
         if self.state.get_is_alternate_screen().await {
             return Ok(());
         }

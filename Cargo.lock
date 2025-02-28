@@ -396,9 +396,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cfg_aliases"
-version = "0.1.1"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
+checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "clap"
@@ -756,7 +756,7 @@ dependencies = [
 [[package]]
 name = "filedescriptor"
 version = "0.8.3"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "libc",
  "thiserror 1.0.69",
@@ -1547,11 +1547,11 @@ dependencies = [
 
 [[package]]
 name = "mac_address"
-version = "1.1.7"
+version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8836fae9d0d4be2c8b4efcdd79e828a2faa058a90d005abf42f91cac5493a08e"
+checksum = "c0aeb26bf5e836cc1c341c8106051b573f1766dfa05aa87f0b98be5e51b02303"
 dependencies = [
- "nix 0.28.0",
+ "nix 0.29.0",
  "winapi",
 ]
 
@@ -1675,9 +1675,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
  "bitflags 2.8.0",
  "cfg-if",
@@ -2098,7 +2098,7 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
 dependencies = [
- "siphasher 1.0.1",
+ "siphasher",
 ]
 
 [[package]]
@@ -2677,12 +2677,6 @@ dependencies = [
 
 [[package]]
 name = "siphasher"
-version = "0.3.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
-
-[[package]]
-name = "siphasher"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
@@ -2875,11 +2869,11 @@ dependencies = [
 
 [[package]]
 name = "termwiz"
-version = "0.22.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+version = "0.23.1"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bitflags 2.8.0",
  "fancy-regex",
  "filedescriptor 0.8.3",
@@ -2891,7 +2885,7 @@ dependencies = [
  "libc",
  "log",
  "memmem",
- "nix 0.28.0",
+ "nix 0.29.0",
  "num-derive",
  "num-traits",
  "ordered-float",
@@ -2900,8 +2894,7 @@ dependencies = [
  "phf",
  "sha2",
  "signal-hook",
- "siphasher 0.3.11",
- "tempfile",
+ "siphasher",
  "terminfo",
  "termios 0.3.3",
  "thiserror 1.0.69",
@@ -3320,12 +3313,12 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.12.1"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3758f5e68192bb96cc8f9b7e2c2cfdabb435499a28499a42f8f984092adad4b"
+checksum = "bd8dcafa1ca14750d8d7a05aa05988c17aab20886e1f3ae33a40223c58d92ef7"
 dependencies = [
  "atomic",
- "getrandom 0.2.15",
+ "getrandom 0.3.1",
 ]
 
 [[package]]
@@ -3360,7 +3353,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vtparse"
 version = "0.6.2"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "utf8parse",
 ]
@@ -3466,7 +3459,7 @@ checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
 [[package]]
 name = "wezterm-bidi"
 version = "0.2.3"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "log",
  "wezterm-dynamic",
@@ -3474,12 +3467,11 @@ dependencies = [
 
 [[package]]
 name = "wezterm-blob-leases"
-version = "0.1.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+version = "0.1.1"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
- "getrandom 0.2.15",
+ "getrandom 0.3.1",
  "mac_address",
- "once_cell",
  "sha2",
  "thiserror 1.0.69",
  "uuid",
@@ -3488,7 +3480,7 @@ dependencies = [
 [[package]]
 name = "wezterm-color-types"
 version = "0.3.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "csscolorparser",
  "deltae",
@@ -3498,8 +3490,8 @@ dependencies = [
 
 [[package]]
 name = "wezterm-dynamic"
-version = "0.2.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+version = "0.2.1"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "log",
  "ordered-float",
@@ -3510,8 +3502,8 @@ dependencies = [
 
 [[package]]
 name = "wezterm-dynamic-derive"
-version = "0.1.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+version = "0.1.1"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3521,18 +3513,19 @@ dependencies = [
 [[package]]
 name = "wezterm-input-types"
 version = "0.1.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "bitflags 1.3.2",
  "euclid",
  "lazy_static",
+ "serde",
  "wezterm-dynamic",
 ]
 
 [[package]]
 name = "wezterm-term"
 version = "0.1.0"
-source = "git+https://github.com/wez/wezterm.git#4bf0007cefff7f1ad139d89b54f074d5ad7d2184"
+source = "git+https://github.com/tombh/wezterm.git?branch=add-clone-derive-to-termwiz-surface#9d543a76885d4b9fce9624a043f32509b281fbba"
 dependencies = [
  "anyhow",
  "bitflags 1.3.2",

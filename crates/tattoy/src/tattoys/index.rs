@@ -24,6 +24,17 @@ pub(crate) trait Tattoyer {
     /// Tell the tattoy that the user's terminal has changed size.
     fn set_tty_size(&mut self, width: u16, height: u16);
 
+    /// Handle new output from the underlying PTY, whether diffs or the entire scrollback/screen.
+    /// Implementing this is optional.
+    #[expect(
+        unused_variables,
+        reason = "
+            Implementing this method is optional, but we don't want to pass on an underscored
+            variable name that Clippy would complain about if you didn't use it.
+        "
+    )]
+    fn handle_pty_output(&mut self, output: shadow_terminal::output::Output) {}
+
     /// Run one frame of the tattoy
     async fn tick(&mut self) -> Result<Option<crate::surface::Surface>>;
 }

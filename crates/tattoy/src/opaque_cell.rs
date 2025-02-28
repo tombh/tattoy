@@ -3,8 +3,6 @@
 
 use termwiz::cell::Cell;
 
-use crate::palette_parser::PaletteParser;
-
 /// This is the default colour for when an opaque cell is over a "blank" cell.
 ///
 /// In Tattoy, a blank cell is any cell that has the default terminal colour. Most terminals use a
@@ -12,10 +10,6 @@ use crate::palette_parser::PaletteParser;
 /// TODO: support light theme terminals.
 pub const DEFAULT_BACKGROUND_TRUE_COLOUR: termwiz::color::SrgbaTuple =
     termwiz::color::SrgbaTuple(0.0, 0.0, 0.0, 1.0);
-
-/// This might be a big assumption, but I think the convention is that text uses this colour from
-/// the palette when no other index or true colour is specified.
-const DEFAULT_TEXT_PALETTE_INDEX: u8 = 15;
 
 /// Just a convenience wrapper around Termwiz's `[Cell]`. Compositing cells is a bit tricky, so
 /// having a dedicated module hopefully makes things a bit simpler.
@@ -102,47 +96,5 @@ impl<'cell> OpaqueCell<'cell> {
             self.blend_backgrounds(cell_above_colour);
             self.blend_foreground(cell_above_colour);
         }
-    }
-
-    /// Convert any palette index-defined cells to their true colour values.
-    pub fn convert_to_true_colour(&mut self, palette: &crate::palette_parser::Palette) {
-        self.convert_fg_to_true_colour(palette);
-        self.convert_bg_to_true_colour(palette);
-    }
-
-    /// Convert text palette indexes to true colour values.
-    fn convert_fg_to_true_colour(&mut self, palette: &crate::palette_parser::Palette) {
-        if matches!(
-            self.cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::Default
-        ) {
-            let colour_attribute =
-                PaletteParser::true_colour_from_index(palette, DEFAULT_TEXT_PALETTE_INDEX);
-            self.cell.attrs_mut().set_foreground(colour_attribute);
-            return;
-        }
-
-        let termwiz::color::ColorAttribute::PaletteIndex(index) = self.cell.attrs().foreground()
-        else {
-            return;
-        };
-
-        let colour_attribute = PaletteParser::true_colour_from_index(palette, index);
-        self.cell.attrs_mut().set_foreground(colour_attribute);
-    }
-
-    /// Convert the background palette index to a true colour. Note that we don't handle the
-    /// default colour variant because that's currently used to help with the compositing of render
-    /// layers, namely knowing when to let a lower layer's content pass through to higher layers.
-    /// But it might turn out to be a better idea to also make transparent cells use true colour,
-    /// because they could easily be defined with a `0.0` alpha channel.
-    fn convert_bg_to_true_colour(&mut self, palette: &crate::palette_parser::Palette) {
-        let termwiz::color::ColorAttribute::PaletteIndex(index) = self.cell.attrs().background()
-        else {
-            return;
-        };
-
-        let colour_attribute = PaletteParser::true_colour_from_index(palette, index);
-        self.cell.attrs_mut().set_background(colour_attribute);
     }
 }

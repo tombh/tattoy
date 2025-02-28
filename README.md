@@ -41,9 +41,9 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [x] Palette detection.
 * [x] Ask for consent before taking screen shot.
 * [x] Support manually providing a screenshot of the palette.
+* [x] Double width characters aren't passed through, eg "🦀".
+* [x] `tmux` mouse events cause runaway behaviour in `htop`.
 * [ ] Pasting is buggy
-* [ ] `tmux` mouse events cause runaway behaviour in `htop`.
-* [ ] Double width characters aren't passed through, eg "🦀".
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.
@@ -51,7 +51,7 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [ ] Bug: `atuin` can't get the cursor position. Maybe I need to intercept '\e[6n'?
 * [ ] Don't log to file by default
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
-* [ ] Allow scrolling witrh keys.
+* [ ] Allow scrolling with keys.
 * [ ] Extra minimap features: https://www.youtube.com/shorts/t5vXCNIBVYw
 * [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.
 * [ ] Show a nice notification when the user tries to enable a tattoy that requires a parsed palette, but they haven't parsed their palette yet. And of course also don't try to even render such palettes.
