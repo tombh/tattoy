@@ -14,6 +14,9 @@ use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
 use crate::run::FrameUpdate;
 use crate::shared_state::SharedState;
 
+/// The number of microseconds in a second.
+pub const ONE_MICROSECOND: u64 = 1_000_000;
+
 /// `Render`
 #[derive(Default)]
 pub(crate) struct Renderer {
@@ -261,9 +264,9 @@ impl Renderer {
         let mut tattoys: Vec<&mut crate::surface::Surface> = self
             .tattoys
             .values_mut()
-            .filter(|tattoy| tattoy.ordering.cmp(&0) == comparator)
+            .filter(|tattoy| tattoy.layer.cmp(&0) == comparator)
             .collect();
-        tattoys.sort_by_key(|tattoy| tattoy.ordering);
+        tattoys.sort_by_key(|tattoy| tattoy.layer);
 
         for tattoy in &mut tattoys {
             let tattoy_frame_size = tattoy.surface.dimensions();

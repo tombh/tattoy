@@ -55,6 +55,12 @@ impl Simulation {
         }
     }
 
+    /// Is the simulation ready?
+    #[must_use]
+    pub fn is_ready(&self) -> bool {
+        self.width > 0.0 && self.height > 0.0
+    }
+
     /// A tick of a graphical frame render
     pub fn tick(&mut self, cursor: (usize, usize), pty: &[&mut [termwiz::cell::Cell]]) {
         if is_random_trigger(1) {

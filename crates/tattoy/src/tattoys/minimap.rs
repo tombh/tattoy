@@ -1,111 +1,106 @@
-//! Display a scrollbar when scrolling
-
-use std::sync::Arc;
+//! Display a minimap of the scrollback history.
 
 use color_eyre::eyre::{ContextCompat as _, Result};
 
-use crate::shared_state::SharedState;
-
-use super::index::Tattoyer;
+use super::tattoyer::Tattoyer;
 
 /// The max width of the minimap (in units of terminal columns). The image resizer may choose a
 /// slimmer minimap in order to maintain the original ratio.
 const MAX_WIDTH: u16 = 10;
 
-/// `RandomWalker`
-#[derive(Default)]
+/// `Minimap`
 pub struct Minimap {
-    /// Global Tattoy state
-    state: Arc<SharedState>,
-    /// TTY width
-    width: u16,
-    /// TTY height
-    height: u16,
-    /// Our own copy of the scrollback. Saves taking costly read locks.
-    scrollback: shadow_terminal::output::CompleteScrollback,
-    /// Whether the user is scolling, primarily used to detect when the shared scrolling state changes.
-    is_scrolling: bool,
-    /// Keep track of the underlying PTY sequence counter
-    pty_sequence: usize,
+    /// The base Tattoy struct
+    tattoy: Tattoyer,
+    /// If the PTY output has changed.
+    output_changed: bool,
+    /// The current state of any UI transitions; fading, sliding, etc.
+    animation: bool,
 }
 
-#[async_trait::async_trait]
-impl Tattoyer for Minimap {
-    fn id() -> String {
-        "minimap".into()
-    }
-
+impl Minimap {
     /// Instantiate
-    async fn new(state: Arc<SharedState>) -> Result<Self> {
-        let tty_size = state.get_tty_size().await;
-        let width = tty_size.width;
-        let height = tty_size.height;
-
-        Ok(Self {
-            state,
-            width,
-            height,
-            ..Default::default()
-        })
-    }
-
-    fn handle_pty_output(&mut self, output: shadow_terminal::output::Output) {
-        match output {
-            shadow_terminal::output::Output::Diff(
-                shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff),
-            ) => {
-                self.scrollback
-                    .surface
-                    .resize(scrollback_diff.size.0, scrollback_diff.height);
-                self.scrollback.surface.add_changes(scrollback_diff.changes);
-            }
-            shadow_terminal::output::Output::Complete(
-                shadow_terminal::output::CompleteSurface::Scrollback(scrollback),
-            ) => self.scrollback = scrollback,
-
-            shadow_terminal::output::Output::Diff(_)
-            | shadow_terminal::output::Output::Complete(_)
-            | _ => (),
+    fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
+        let tattoy = Tattoyer::new("minimap".to_owned(), 90, output_channel);
+        Self {
+            tattoy,
+            output_changed: true,
+            animation: false,
         }
     }
 
-    fn set_tty_size(&mut self, width: u16, height: u16) {
-        self.width = width;
-        self.height = height;
+    /// Our main entrypoint.
+    pub(crate) async fn start(
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+        output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+    ) -> Result<()> {
+        let mut minimap = Self::new(output);
+        let mut protocol = protocol_tx.subscribe();
+
+        #[expect(
+            clippy::integer_division_remainder_used,
+            reason = "This is caused by the `tokio::select!`"
+        )]
+        loop {
+            tokio::select! {
+                () = minimap.tattoy.sleep_until_next_frame_tick(), if minimap.needs_rendering() => {
+                    minimap.render().await?;
+                },
+                result = protocol.recv() => {
+                    if matches!(result, Ok(crate::run::Protocol::End)) {
+                        break;
+                    }
+                    minimap.handle_protocol_message(result)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle messages from the main Tattoy app.
+    fn handle_protocol_message(
+        &mut self,
+        result: std::result::Result<crate::run::Protocol, tokio::sync::broadcast::error::RecvError>,
+    ) -> Result<()> {
+        match result {
+            Ok(message) => {
+                self.check_if_scrollback_has_changed(&message);
+                self.tattoy.handle_common_protocol_messages(message)?;
+            }
+            Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
+        }
+
+        Ok(())
+    }
+
+    /// Whether the minimap needs re-rendering.
+    const fn needs_rendering(&self) -> bool {
+        self.output_changed || self.animation
+    }
+
+    /// Check if the scrollback output has changed such that we need to trigger a re-render.
+    fn check_if_scrollback_has_changed(&mut self, message: &crate::run::Protocol) {
+        if self.tattoy.is_scrolling_end() || Tattoyer::is_scrollback_output_changed(message) {
+            self.output_changed = true;
+        }
     }
 
     /// Tick the render
-    async fn tick(&mut self) -> Result<Option<crate::surface::Surface>> {
-        let pty_sequence = self.state.pty_sequence.read().await;
-
-        if *pty_sequence == self.pty_sequence {
-            return Ok(None);
+    async fn render(&mut self) -> Result<()> {
+        if self.tattoy.is_scrolling_end() {
+            self.tattoy.send_blank_output().await?;
+            return Ok(());
         }
 
-        self.pty_sequence = *pty_sequence;
-        drop(pty_sequence);
-
-        let scrollback_width = self.scrollback.surface.dimensions().0;
-        let scrollback_height = self.scrollback.surface.dimensions().1;
-        let current_is_scrolling = self.state.get_is_scrolling().await;
-
-        if scrollback_width == 0 || scrollback_height == 0 {
-            return Ok(None);
+        if !self.tattoy.is_ready() || !self.tattoy.is_scrolling() {
+            return Ok(());
         }
 
-        let mut surface =
-            crate::surface::Surface::new(Self::id(), self.width.into(), self.height.into(), 100);
+        self.tattoy.initialise_surface();
 
-        if current_is_scrolling != self.is_scrolling {
-            self.is_scrolling = current_is_scrolling;
-            if !self.is_scrolling {
-                return Ok(Some(surface));
-            }
-        }
-
-        if !self.is_scrolling {
-            return Ok(None);
-        }
+        let scrollback_width = self.tattoy.scrollback.surface.dimensions().0;
+        let scrollback_height = self.tattoy.scrollback.surface.dimensions().1;
 
         let mut scrollback_image = image::DynamicImage::new_rgba8(
             scrollback_width.try_into()?,
@@ -116,7 +111,7 @@ impl Tattoyer for Minimap {
             .context("Couldn't get mutable reference to scrollback image")?;
 
         for (x, y, pixel) in image_buffer.enumerate_pixels_mut() {
-            let cells = self.scrollback.surface.screen_cells();
+            let cells = self.tattoy.scrollback.surface.screen_cells();
             let line = cells
                 .get(usize::try_from(y)?.div_euclid(2))
                 .context("Couldn't get surface line")?;
@@ -137,7 +132,7 @@ impl Tattoyer for Minimap {
                     colour
                 } else {
                     tracing::warn!("Using Minimap without a parsed palette");
-                    return Ok(None);
+                    return Ok(());
                 }
             };
 
@@ -146,7 +141,7 @@ impl Tattoyer for Minimap {
 
         let minimap_as_rgb255 = scrollback_image.resize(
             MAX_WIDTH.into(),
-            (self.height * 2).into(),
+            (self.tattoy.height * 2).into(),
             image::imageops::Lanczos3,
         );
 
@@ -159,14 +154,19 @@ impl Tattoyer for Minimap {
                     .context(format!("Couldn't get pixel: {x_pixel}x{y_pixel}"))?
                     .0;
 
-                let x_cell: usize = (u32::from(self.width) - dimensions.0 + x_pixel).try_into()?;
-                let y_cell = (u32::from(self.height * 2) - dimensions.1 + y_pixel).try_into()?;
-                surface.add_pixel(x_cell, y_cell, pixel.into())?;
+                let x_cell: usize =
+                    (u32::from(self.tattoy.width) - dimensions.0 + x_pixel).try_into()?;
+                let y_cell =
+                    (u32::from(self.tattoy.height * 2) - dimensions.1 + y_pixel).try_into()?;
+                self.tattoy
+                    .surface
+                    .add_pixel(x_cell, y_cell, pixel.into())?;
             }
         }
 
-        Ok(Some(surface))
+        self.tattoy.send_output().await?;
+        self.output_changed = false;
+
+        Ok(())
     }
 }
-
-impl Minimap {}

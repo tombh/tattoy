@@ -8,7 +8,6 @@ use tokio::sync::mpsc;
 
 use crate::cli_args::CliArgs;
 use crate::input::Input;
-use crate::loader::Loader;
 use crate::renderer::Renderer;
 use crate::shared_state::SharedState;
 
@@ -72,9 +71,8 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
 
     let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
     let input_thread_handle = Input::start(protocol_tx.clone());
-    let tattoys_handle = Loader::start(
+    let tattoys_handle = crate::loader::start_tattoys(
         cli_args.enabled_tattoys,
-        Arc::clone(state_arc),
         protocol_tx.clone(),
         surfaces_tx.clone(),
     );

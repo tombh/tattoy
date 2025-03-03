@@ -1,67 +1,92 @@
 //! The cursor gives off a gas that floats up and interacts with the history
 
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
 use color_eyre::eyre::Result;
 
 use super::simulation::Simulation;
-use crate::{shared_state::SharedState, tattoys::index::Tattoyer};
 
 /// `SmokeyCursor`
-#[derive(Default)]
 pub(crate) struct SmokeyCursor {
-    /// TTY width
-    width: u16,
-    /// TTY height
-    height: u16,
-    /// Shared app state
-    state: Arc<SharedState>,
+    /// The base Tattoy struct
+    tattoy: crate::tattoys::tattoyer::Tattoyer,
     /// All the particles of gas
     simulation: Simulation,
     /// Timestamp of last tick
     durations: VecDeque<f64>,
 }
 
-#[async_trait::async_trait]
-impl Tattoyer for SmokeyCursor {
-    fn id() -> String {
-        "smokey_cursor".into()
-    }
+impl SmokeyCursor {
+    /// Instatiate
+    fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
+        let tattoy = crate::tattoys::tattoyer::Tattoyer::new(
+            "smokey_cursor".to_owned(),
+            -10,
+            output_channel,
+        );
 
-    /// Instantiate
-    async fn new(state: Arc<SharedState>) -> Result<Self> {
-        let tty_size = state.get_tty_size().await;
-
-        Ok(Self {
-            width: tty_size.width,
-            height: tty_size.height,
-            state,
-            simulation: Simulation::new(tty_size.width.into(), (tty_size.height * 2).into()),
+        Self {
+            tattoy,
+            simulation: Simulation::new(0, 0),
             durations: VecDeque::default(),
-        })
+        }
     }
 
-    fn set_tty_size(&mut self, width: u16, height: u16) {
-        self.width = width;
-        self.height = height;
+    /// Initialise the simulation, because we don't have the dimensions when instantiating Self.
+    fn initialise(&mut self) {
+        self.simulation = Simulation::new(
+            self.tattoy.width.into(),
+            usize::from(self.tattoy.height) * 2,
+        );
+        tracing::debug!("Simulation initialised.");
+    }
+
+    /// Our main entrypoint.
+    pub(crate) async fn start(
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+        output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+    ) -> Result<()> {
+        let mut random_walker = Self::new(output);
+        let mut protocol = protocol_tx.subscribe();
+
+        #[expect(
+            clippy::integer_division_remainder_used,
+            reason = "This is caused by the `tokio::select!`"
+        )]
+        loop {
+            tokio::select! {
+                () = random_walker.tattoy.sleep_until_next_frame_tick() => {
+                    random_walker.render().await?;
+                },
+                Ok(message) = protocol.recv() => {
+                    if matches!(message, crate::run::Protocol::End) {
+                        break;
+                    }
+                    random_walker.tattoy.handle_common_protocol_messages(message)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// One frame of the tattoy
-    async fn tick(&mut self) -> Result<Option<crate::surface::Surface>> {
+    async fn render(&mut self) -> Result<()> {
+        if !self.tattoy.is_ready() {
+            return Ok(());
+        }
+
+        if !self.simulation.is_ready() {
+            self.initialise();
+        }
+
         let start = std::time::Instant::now();
 
-        let mut surface = crate::surface::Surface::new(
-            Self::id(),
-            usize::from(self.width),
-            usize::from(self.height),
-            -10,
-        );
-        let mut pty = self.state.shadow_tty_screen.write().await;
-        let cursor = pty.cursor_position();
-        let cells = pty.screen_cells();
+        self.tattoy.initialise_surface();
 
+        let cursor = self.tattoy.screen.cursor_position();
+        let cells = self.tattoy.screen.screen_cells();
         self.simulation.tick(cursor, &cells);
-        drop(pty);
 
         for particle in &mut self.simulation.particles {
             let position = particle.position_unscaled();
@@ -72,14 +97,21 @@ impl Tattoyer for SmokeyCursor {
                 clippy::as_conversions,
                 reason = "We're just rendering to a terminal grid"
             )]
-            surface.add_pixel(position.x as usize, position.y as usize, particle.colour)?;
+            self.tattoy.surface.add_pixel(
+                position.x as usize,
+                position.y as usize,
+                particle.colour,
+            )?;
         }
 
-        let text_coloumn = usize::from(self.width - 20);
+        let text_coloumn = usize::from(self.tattoy.width - 20);
         let count = self.simulation.particles.len();
-        surface.add_text(text_coloumn, 0, format!("Particles: {count}"), None, None);
+        self.tattoy
+            .surface
+            .add_text(text_coloumn, 0, format!("Particles: {count}"), None, None);
 
         #[expect(
+            clippy::as_conversions,
             clippy::cast_precision_loss,
             clippy::default_numeric_fallback,
             reason = "This is just debugging output"
@@ -87,13 +119,16 @@ impl Tattoyer for SmokeyCursor {
         {
             let average_tick = self.durations.iter().sum::<f64>() / self.durations.len() as f64;
             let fps = 1.0 / average_tick;
-            surface.add_text(text_coloumn, 1, format!("FPS: {fps:.3}"), None, None);
+            self.tattoy
+                .surface
+                .add_text(text_coloumn, 1, format!("FPS: {fps:.3}"), None, None);
         };
 
         self.durations.push_front(start.elapsed().as_secs_f64());
         if self.durations.len() > 30 {
             self.durations.pop_back();
         }
-        Ok(Some(surface))
+
+        self.tattoy.send_output().await
     }
 }

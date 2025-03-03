@@ -19,6 +19,7 @@ pub const BLACK: Colour = (0.0, 0.0, 0.0, 1.0);
 pub const RED: Colour = (1.0, 0.0, 0.0, 1.0);
 
 /// `Surface`
+#[derive(Clone)]
 pub(crate) struct Surface {
     /// The unique ID of the tattoy to which this surface belongs.
     pub id: String,
@@ -27,9 +28,9 @@ pub(crate) struct Surface {
     /// The terminal's height
     pub height: usize,
     /// The order in which the tattoy should be rendered. The PTY is always layer 0, so any
-    /// ordering value below 0 will make the tattoy appear below the user's terminal content,
+    /// layering value below 0 will make the tattoy appear below the user's terminal content,
     /// and any value above 0 will make it appear above the user's terminal content.
-    pub ordering: i16,
+    pub layer: i16,
     /// A surface of terminal cells
     pub surface: termwiz::surface::Surface,
 }
@@ -37,12 +38,12 @@ pub(crate) struct Surface {
 impl Surface {
     /// Create a Compositor/Tattoy
     #[must_use]
-    pub fn new(id: String, width: usize, height: usize, ordering: i16) -> Self {
+    pub fn new(id: String, width: usize, height: usize, layer: i16) -> Self {
         Self {
             id,
             width,
             height,
-            ordering,
+            layer,
             surface: termwiz::surface::Surface::new(width, height),
         }
     }

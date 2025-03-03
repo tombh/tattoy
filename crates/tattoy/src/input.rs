@@ -79,7 +79,7 @@ impl Input {
 
     /// The callback for when the input parser detects known keyboard/mouse events.
     fn parsed_bytes_callback(&self, event: termwiz::input::InputEvent, bytes: BytesFromSTDIN) {
-        tracing::trace!("Parsed input event: {event:?} ({bytes:x?})",);
+        tracing::trace!("Parsed input event: {event:?}");
 
         let result = self
             .protocol_tx

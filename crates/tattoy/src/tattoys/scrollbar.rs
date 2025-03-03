@@ -1,118 +1,105 @@
 //! Display a scrollbar when scrolling
 
-use std::sync::Arc;
-
 use color_eyre::eyre::Result;
 
-use crate::shared_state::SharedState;
-
-use super::index::Tattoyer;
-
-/// `RandomWalker`
-#[derive(Default)]
-pub struct Scrollbar {
-    /// Global Tattoy state
-    state: Arc<SharedState>,
-    /// TTY width
-    width: u16,
-    /// TTY height
-    height: u16,
-    /// Our own copy of the scrollback. Saves taking costly read locks.
-    scrollback: shadow_terminal::output::CompleteScrollback,
-    /// Whether the user is scolling, primarily used to detect when the shared scrolling state changes.
-    is_scrolling: bool,
+/// `Scrollbar`
+pub(crate) struct Scrollbar {
+    /// The base Tattoy struct
+    tattoy: super::tattoyer::Tattoyer,
 }
 
-#[async_trait::async_trait]
-impl Tattoyer for Scrollbar {
-    fn id() -> String {
-        "scrollbar".into()
+impl Scrollbar {
+    /// Instantiate
+    fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
+        let tattoy = super::tattoyer::Tattoyer::new("scrollbar".to_owned(), 100, output_channel);
+        Self { tattoy }
     }
 
-    /// Instatiate
-    async fn new(state: Arc<SharedState>) -> Result<Self> {
-        let tty_size = state.get_tty_size().await;
-        let width = tty_size.width;
-        let height = tty_size.height;
+    /// Our main entrypoint.
+    pub(crate) async fn start(
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+        output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+    ) -> Result<()> {
+        let mut scrollbar = Self::new(output);
+        let mut protocol = protocol_tx.subscribe();
 
-        Ok(Self {
-            state,
-            width,
-            height,
-            ..Default::default()
-        })
-    }
-
-    fn handle_pty_output(&mut self, output: shadow_terminal::output::Output) {
-        match output {
-            shadow_terminal::output::Output::Diff(
-                shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff),
-            ) => {
-                self.scrollback
-                    .surface
-                    .resize(scrollback_diff.size.0, scrollback_diff.height);
-                self.scrollback.surface.add_changes(scrollback_diff.changes);
-                self.scrollback.position = scrollback_diff.position;
+        #[expect(
+            clippy::integer_division_remainder_used,
+            reason = "This is caused by the `tokio::select!`"
+        )]
+        loop {
+            tokio::select! {
+                result = protocol.recv() => {
+                    if matches!(result, Ok(crate::run::Protocol::End)) {
+                        break;
+                    }
+                    scrollbar.handle_protocol_message(result).await?;
+                }
             }
-            shadow_terminal::output::Output::Complete(
-                shadow_terminal::output::CompleteSurface::Scrollback(scrollback),
-            ) => self.scrollback = scrollback,
-
-            shadow_terminal::output::Output::Diff(_)
-            | shadow_terminal::output::Output::Complete(_)
-            | _ => (),
         }
+
+        Ok(())
     }
 
-    fn set_tty_size(&mut self, width: u16, height: u16) {
-        self.width = width;
-        self.height = height;
+    /// Handle messages from the main Tattoy app.
+    async fn handle_protocol_message(
+        &mut self,
+        result: std::result::Result<crate::run::Protocol, tokio::sync::broadcast::error::RecvError>,
+    ) -> Result<()> {
+        match result {
+            Ok(message) => {
+                self.tattoy.handle_common_protocol_messages(message)?;
+                if self.tattoy.last_scroll_position != self.tattoy.scrollback.position {
+                    self.render().await?;
+                }
+            }
+            Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
+        }
+
+        Ok(())
     }
 
     /// Tick the render
-    async fn tick(&mut self) -> Result<Option<crate::surface::Surface>> {
-        let current_is_scrolling = self.state.get_is_scrolling().await;
-        if !current_is_scrolling {
-            // Cleanup
-            if self.is_scrolling && !current_is_scrolling {
-                let surface = crate::surface::Surface::new(
-                    Self::id(),
-                    self.width.into(),
-                    self.height.into(),
-                    100,
-                );
-                self.is_scrolling = false;
-                return Ok(Some(surface));
-            }
-
-            // Nothing to do here
-            return Ok(None);
+    async fn render(&mut self) -> Result<()> {
+        if self.tattoy.is_scrolling_end() {
+            tracing::debug!("Scrolling finished.");
+            self.tattoy.send_blank_output().await?;
+            return Ok(());
         }
-        self.is_scrolling = true;
+
+        if !self.tattoy.is_ready() {
+            tracing::debug!("Scrolling tattoy not ready.");
+            return Ok(());
+        }
+
+        if !self.tattoy.is_scrolling() {
+            tracing::trace!("Not rendering scrollbar because we're not scrolling yet.");
+            return Ok(());
+        }
+
+        // TODO: only render on scroll position change.
 
         let (start, end) = self.get_start_end();
         if start > end {
             tracing::error!("Bad scrollbar dimensions: {start:?} {end:?}");
-            return Ok(None);
+            return Ok(());
         }
 
-        let mut surface =
-            crate::surface::Surface::new(Self::id(), self.width.into(), self.height.into(), 100);
+        self.tattoy.initialise_surface();
 
         for y in start..end {
-            surface.add_text(
-                (self.width - 1).into(),
+            self.tattoy.surface.add_text(
+                (self.tattoy.width - 1).into(),
                 y,
                 " ".into(),
                 Some((1.0, 1.0, 1.0, 0.5)),
                 None,
             );
         }
-        Ok(Some(surface))
-    }
-}
 
-impl Scrollbar {
+        self.tattoy.send_output().await
+    }
+
     /// Get the start and end y coordinates of the scrollbar
     #[expect(
         clippy::as_conversions,
@@ -123,20 +110,20 @@ impl Scrollbar {
         reason = "It's just a scrollbar"
     )]
     fn get_start_end(&self) -> (usize, usize) {
-        let scrollback_height = self.scrollback.surface.dimensions().1;
+        let scrollback_height = self.tattoy.scrollback.surface.dimensions().1;
 
         let top_of_terminal_position =
-            scrollback_height - self.scrollback.position - self.height as usize;
+            scrollback_height - self.tattoy.scrollback.position - self.tattoy.height as usize;
         let top_of_terminal_fraction = top_of_terminal_position as f32 / scrollback_height as f32;
-        let mut scrollbar_start = (top_of_terminal_fraction * self.height as f32) as usize;
+        let mut scrollbar_start = (top_of_terminal_fraction * self.tattoy.height as f32) as usize;
 
-        let bottom_of_terminal_position = scrollback_height - self.scrollback.position;
+        let bottom_of_terminal_position = scrollback_height - self.tattoy.scrollback.position;
         let bottom_of_terminal_fraction =
             bottom_of_terminal_position as f32 / scrollback_height as f32;
-        let mut scrollbar_end = (bottom_of_terminal_fraction * self.height as f32) as usize;
+        let mut scrollbar_end = (bottom_of_terminal_fraction * self.tattoy.height as f32) as usize;
 
-        scrollbar_start = scrollbar_start.clamp(0, (self.height - 1).into());
-        scrollbar_end = scrollbar_end.clamp(0, (self.height - 1).into());
+        scrollbar_start = scrollbar_start.clamp(0, (self.tattoy.height - 1).into());
+        scrollbar_end = scrollbar_end.clamp(0, (self.tattoy.height - 1).into());
 
         (scrollbar_start, scrollbar_end)
     }

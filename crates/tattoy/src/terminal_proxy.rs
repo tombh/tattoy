@@ -105,7 +105,7 @@ impl TerminalProxy {
             _ => (),
         }
 
-        self.send_pty_surface_notification(output).await;
+        self.send_pty_surface_notifications(output).await;
 
         let mut pty_sequence = self.state.pty_sequence.write().await;
         *pty_sequence += 1;
@@ -156,8 +156,12 @@ impl TerminalProxy {
             shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff) => {
                 self.handle_scrolling_output(&scrollback_diff).await?;
                 self.reconstruct_scrollback_diff(scrollback_diff).await?;
-                self.copy_scrollback_bottom_to_screen().await;
                 self.state.set_is_alternate_screen(false).await;
+
+                // TODO: Just apply the diff to the screen.
+                // We can't as is, because the changes use coordinates relative to the scrollback,
+                // which is likely higher than the screen.
+                self.copy_scrollback_bottom_to_screen().await;
             }
             shadow_terminal::output::SurfaceDiff::Screen(screen_diff) => {
                 self.reconstruct_screen_diff(screen_diff).await;
@@ -238,12 +242,15 @@ impl TerminalProxy {
         Ok(())
     }
 
-    // TODO: It is a bit odd that we send 2 notifications about new PTY output. I'm sure the
+    // TODO:
+    // It is a bit odd that we send 3 notifications about new PTY output. I'm sure the
     // receiver of the `Protocol::Output` message could do everything that the receiver of the
     // `FrameUpdate::PTYSurface` message does. But we also use the `FrameUpdate::PTYSurface`
     // channel for tattoy frame updates, so let's keep the `FrameUpdate` channel for now.
-    /// Notify the Tattoy renderer that there's a new frame of data from the shadow terminal.
-    async fn send_pty_surface_notification(&self, output: shadow_terminal::output::Output) {
+    //
+    /// Notify the Tattoy renderer and individial tattous that there's new frame data from the
+    /// shadow terminal.
+    async fn send_pty_surface_notifications(&self, output: shadow_terminal::output::Output) {
         let frame_update_result = self
             .surfaces_tx
             .send(crate::run::FrameUpdate::PTYSurface)
@@ -257,6 +264,26 @@ impl TerminalProxy {
             .send(crate::run::Protocol::Output(output));
         if let Err(err) = output_update_result {
             tracing::error!("Couldn't notify protocol channel about new PTY output: {err:?}");
+        }
+
+        // It's convenient for individual tattoys to have canonical place to always get the current
+        // contents of the underlying terminal, whether the terminal is in the primary screen or
+        // the alternate screen. So here, even though we're in primary screen mode, we send a copy
+        // of the screen, that we extracted earlier from the bottom of the scrollback.
+        //
+        // It's just a bit of cheap cloning, but I keep wondering if there's a better way to do
+        // this?
+        if !self.state.get_is_alternate_screen().await {
+            let screen = self.state.shadow_tty_screen.read().await.clone();
+            let screen_output = shadow_terminal::output::Output::Complete(
+                shadow_terminal::output::CompleteSurface::Screen(screen),
+            );
+            let screen_result = self
+                .tattoy_protocol
+                .send(crate::run::Protocol::Output(screen_output));
+            if let Err(err) = screen_result {
+                tracing::error!("Couldn't notify protocol channel about new PTY output: {err:?}");
+            }
         }
     }
 

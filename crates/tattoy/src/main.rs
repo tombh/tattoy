@@ -22,10 +22,10 @@ pub mod terminal_proxy;
 
 /// This is where all the various tattoys are kept
 pub mod tattoys {
-    pub mod index;
     pub mod minimap;
     pub mod random_walker;
     pub mod scrollbar;
+    pub mod tattoyer;
     pub mod utils;
 
     /// The smokey cursor Tattoy
