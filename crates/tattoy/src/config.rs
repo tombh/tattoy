@@ -17,6 +17,8 @@ static DEFAULT_CONFIG: &str = include_str!("../default_config.toml");
 pub(crate) struct Config {
     /// Colour grading
     pub color: Color,
+    /// The minimap
+    pub minimap: crate::tattoys::minimap::Config,
 }
 
 /// Final colour grading for the whole terminal render.

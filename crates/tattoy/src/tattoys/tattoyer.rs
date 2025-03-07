@@ -22,7 +22,7 @@ pub(crate) struct Tattoyer {
     /// Our own copy of the scrollback. Saves taking costly read locks.
     pub scrollback: shadow_terminal::output::CompleteScrollback,
     /// Our own copy of the screen. Saves taking costly read locks.
-    pub screen: termwiz::surface::Surface,
+    pub screen: shadow_terminal::output::CompleteScreen,
     /// The time at which the previous frame was rendererd.
     pub last_frame_tick: std::time::Instant,
     /// The last known position of an active scroll.
@@ -44,7 +44,7 @@ impl Tattoyer {
             width: 0,
             height: 0,
             scrollback: shadow_terminal::output::CompleteScrollback::default(),
-            screen: termwiz::surface::Surface::default(),
+            screen: shadow_terminal::output::CompleteScreen::default(),
             last_frame_tick: std::time::Instant::now(),
             last_scroll_position: 0,
         }
@@ -96,7 +96,7 @@ impl Tattoyer {
         Ok(())
     }
 
-    /// Whether the user is scolling, primarily used to detect when the shared scrolling state changes.
+    /// Whether the user is scolling.
     pub const fn is_scrolling(&self) -> bool {
         self.scrollback.position != 0
     }
@@ -104,6 +104,14 @@ impl Tattoyer {
     /// Has scolling just ended?
     pub const fn is_scrolling_end(&self) -> bool {
         self.last_scroll_position != 0 && !self.is_scrolling()
+    }
+
+    /// Is the underlying terminal in the alternate screen.
+    pub const fn is_alternate_screen(&self) -> bool {
+        matches!(
+            self.screen.mode,
+            shadow_terminal::output::ScreenMode::Alternate
+        )
     }
 
     /// Handle new output from the underlying PTY.
@@ -122,29 +130,27 @@ impl Tattoyer {
                     self.scrollback.position = scrollback_diff.position;
                 }
                 shadow_terminal::output::SurfaceDiff::Screen(screen_diff) => {
-                    self.screen.resize(screen_diff.size.0, screen_diff.size.1);
+                    self.screen
+                        .surface
+                        .resize(screen_diff.size.0, screen_diff.size.1);
                     self.set_tty_size(
                         screen_diff.size.0.try_into()?,
                         screen_diff.size.1.try_into()?,
                     );
-                    self.screen.add_changes(screen_diff.changes);
+                    self.screen.surface.add_changes(screen_diff.changes);
                 }
                 _ => (),
             },
             shadow_terminal::output::Output::Complete(complete) => match complete {
                 shadow_terminal::output::CompleteSurface::Scrollback(complete_scrollback) => {
-                    self.set_tty_size(
-                        complete_scrollback.surface.dimensions().0.try_into()?,
-                        complete_scrollback.surface.dimensions().1.try_into()?,
-                    );
                     self.scrollback = complete_scrollback;
                 }
-                shadow_terminal::output::CompleteSurface::Screen(screen) => {
+                shadow_terminal::output::CompleteSurface::Screen(complete_screen) => {
                     self.set_tty_size(
-                        screen.dimensions().0.try_into()?,
-                        screen.dimensions().1.try_into()?,
+                        complete_screen.surface.dimensions().0.try_into()?,
+                        complete_screen.surface.dimensions().1.try_into()?,
                     );
-                    self.screen = screen;
+                    self.screen = complete_screen;
                 }
                 _ => (),
             },
@@ -191,15 +197,45 @@ impl Tattoyer {
             crate::run::Protocol::Resize { .. } => return true,
             crate::run::Protocol::Output(output) => match output {
                 shadow_terminal::output::Output::Diff(
-                    shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff),
+                    shadow_terminal::output::SurfaceDiff::Scrollback(diff),
                 ) => {
                     // There is always one change to indicate the current position of the cursor.
-                    if scrollback_diff.changes.len() > 1 {
+                    if diff.changes.len() > 1 {
                         return true;
                     }
                 }
                 shadow_terminal::output::Output::Complete(
                     shadow_terminal::output::CompleteSurface::Scrollback(_),
+                ) => {
+                    return true;
+                }
+                _ => (),
+            },
+            _ => (),
+        }
+
+        false
+    }
+
+    /// Check if the screen output has changed.
+    pub fn is_screen_output_changed(message: &crate::run::Protocol) -> bool {
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "We only want to react to messages that cause output changes"
+        )]
+        match message {
+            crate::run::Protocol::Resize { .. } => return true,
+            crate::run::Protocol::Output(output) => match output {
+                shadow_terminal::output::Output::Diff(
+                    shadow_terminal::output::SurfaceDiff::Screen(diff),
+                ) => {
+                    // There is always one change to indicate the current position of the cursor.
+                    if diff.changes.len() > 1 {
+                        return true;
+                    }
+                }
+                shadow_terminal::output::Output::Complete(
+                    shadow_terminal::output::CompleteSurface::Screen(_),
                 ) => {
                     return true;
                 }

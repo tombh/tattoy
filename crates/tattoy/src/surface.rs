@@ -151,10 +151,10 @@ impl Surface {
         let col = x;
         let row = y.div_euclid(2);
         if col >= self.width {
-            bail!("Tried to add particle to column: {col}")
+            bail!("Tried to add pixel to column: {col}")
         }
         if row >= self.height {
-            bail!("Tried to add particle to row: {row}")
+            bail!("Tried to add pixel to row: {row}")
         }
         Ok((col, row))
     }
@@ -185,13 +185,16 @@ impl Surface {
 }
 
 #[cfg(test)]
-#[expect(clippy::indexing_slicing, reason = "Tests aren't so strict")]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::shadow_unrelated,
+    reason = "Tests aren't so strict"
+)]
 mod test {
     use super::*;
 
     const GREY: Colour = (0.5, 0.5, 0.5, 1.0);
 
-    #[expect(clippy::shadow_unrelated, reason = "Tests aren't so strict")]
     #[test]
     fn add_new_pixels() {
         let mut surface = Surface::new("test".into(), 2, 2, -1);
@@ -235,7 +238,7 @@ mod test {
         let result = surface.add_pixel(1, 4, WHITE).unwrap_err();
         assert_eq!(
             format!("{}", result.root_cause()),
-            "Tried to add particle to row: 2"
+            "Tried to add pixel to row: 2"
         );
     }
 
@@ -270,6 +273,13 @@ mod test {
         let cells = surface.surface.screen_cells();
         let first_cell = cells[0][0].clone();
         assert_eq!(first_cell.str(), "▀");
+        assert_eq!(first_cell.attrs().foreground(), fg);
+        assert_eq!(first_cell.attrs().background(), bg);
+
+        let fg = Surface::make_colour_attribute(RED);
+        surface.add_pixel(0, 0, RED).unwrap();
+        let cells = surface.surface.screen_cells();
+        let first_cell = cells[0][0].clone();
         assert_eq!(first_cell.attrs().foreground(), fg);
         assert_eq!(first_cell.attrs().background(), bg);
     }

@@ -43,9 +43,10 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [x] Support manually providing a screenshot of the palette.
 * [x] Double width characters aren't passed through, eg "🦀".
 * [x] `tmux` mouse events cause runaway behaviour in `htop`.
+* [x] Mouse events not being received in alternate screen.
 * [ ] Extra minimap features: https://www.youtube.com/shorts/t5vXCNIBVYw
-* [ ] Pixel top uses raw black not default colour.
 * [ ] Pasting is buggy
+* [ ] Make all config optional
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.
@@ -54,15 +55,21 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [ ] Don't log to file by default
 * [ ] Tattoy-specific keybinding to toggle all tattoys on and off.
 * [ ] Allow scrolling with keys.
-* [ ] Chafa sometimes emits an unknown char, but always work fine outside of Tattoy.
+* [ ] Chafa sometimes emits an unknown char, but for the same image it always work fine outside of Tattoy.
 * [ ] Chafa on large terminals often causes Tattoy to completely freeze.
 * [ ] Large terminal screens sometimes cause scrollback to stop rendering.
 * [ ] More profiling. I tried https://github.com/mstange/samply and https://github.com/flamegraph-rs/flamegrap but they had some obscure errors which I assumed were from my CPU architecture, Asahi M1 etc.
 * [ ] Show a nice notification when the user tries to enable a tattoy that requires a parsed palette, but they haven't parsed their palette yet. And of course also don't try to even render such palettes.
+* [ ] Make a website showcasing and providing docs.
 * [ ] Make flakey tests reliable.
 * [ ] How to test the minimap?
 * [ ] When scrolling the Shadow Terminal itself should refuse all input. Currently Tattoy is the one surpressing input.
 * [ ] Doesn't work on Nushell. Just freezes.
+* [ ] Pixel top uses raw black not default colour.
+
+## Brand and Lore
+* The terminal has a reputation of being dark and esoteric, which is good. But can we bring some lightness and folly to it, whilst retaining the Seriousness™️?
+* What _is_ a terminal? Where did it come from? What's it made from? Does it have physicality?
 
 ## Design
 

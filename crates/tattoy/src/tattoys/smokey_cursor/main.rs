@@ -84,8 +84,8 @@ impl SmokeyCursor {
 
         self.tattoy.initialise_surface();
 
-        let cursor = self.tattoy.screen.cursor_position();
-        let cells = self.tattoy.screen.screen_cells();
+        let cursor = self.tattoy.screen.surface.cursor_position();
+        let cells = self.tattoy.screen.surface.screen_cells();
         self.simulation.tick(cursor, &cells);
 
         for particle in &mut self.simulation.particles {

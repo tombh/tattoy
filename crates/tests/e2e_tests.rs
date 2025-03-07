@@ -10,6 +10,8 @@
 )]
 #[cfg(test)]
 mod e2e {
+    const ESCAPE: &str = "\x1b";
+
     use shadow_terminal::{shadow_terminal::Config, steppable_terminal::SteppableTerminal};
 
     fn workspace_dir() -> std::path::PathBuf {
@@ -37,6 +39,9 @@ mod e2e {
         let shell = "bash";
         let prompt = "tattoy $ ";
 
+        // TODO: this directory gets deleted at the end of the _function_, not the end of the test.
+        let temp_dir = tempfile::tempdir().unwrap();
+
         let config = Config {
             width: 50,
             height: 10,
@@ -45,7 +50,19 @@ mod e2e {
         };
         let mut stepper = SteppableTerminal::start(config).await.unwrap();
 
-        let command = generate_tattoy_command(shell, prompt, maybe_config_path);
+        let config_path = match maybe_config_path {
+            None => {
+                std::fs::copy(
+                    "resources/palette.toml",
+                    temp_dir.path().join("palette.toml"),
+                )
+                .unwrap();
+                temp_dir.path().display().to_string()
+            }
+            Some(path) => path,
+        };
+
+        let command = generate_tattoy_command(shell, prompt, config_path.as_ref());
         stepper.send_command(&command).unwrap();
         stepper.wait_for_string(prompt, None).await.unwrap();
         assert_random_walker_moves(&mut stepper).await;
@@ -53,11 +70,7 @@ mod e2e {
     }
 
     // We use the minimum possible ENV to support reproducibility of tests.
-    fn generate_tattoy_command(
-        shell: &str,
-        prompt: &str,
-        maybe_temp_dir: Option<String>,
-    ) -> String {
+    fn generate_tattoy_command(shell: &str, prompt: &str, config_dir: &str) -> String {
         let pwd = std::env::current_dir().unwrap();
         #[expect(
             clippy::option_if_let_else,
@@ -66,14 +79,6 @@ mod e2e {
         let rust_log = match std::env::var_os("RUST_LOG") {
             Some(value) => format!("RUST_LOG=\"{value:?}\""),
             None => String::new(),
-        };
-
-        let config_path = match maybe_temp_dir {
-            None => {
-                let temp_dir = tempfile::tempdir().unwrap();
-                temp_dir.path().display().to_string()
-            }
-            Some(path) => path,
         };
 
         let minimum_env = format!(
@@ -91,12 +96,13 @@ mod e2e {
             unset $(env | cut -d= -f1) && \
             {} {} \
             --use random_walker \
+            --use minimap \
             --command 'bash --norc --noprofile' \
             --config-dir {} \
             ",
             minimum_env,
             tattoy_binary_path(),
-            config_path
+            config_dir
         )
     }
 
@@ -124,6 +130,10 @@ mod e2e {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
+    }
+
+    fn move_mouse(x: u32, y: u32) -> String {
+        format!("{ESCAPE}[<35;{x};{y}M")
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -216,7 +226,6 @@ mod e2e {
         }
 
         setup_logging();
-        let escape = "\x1b";
         let mouse_up = "\x1b[<64;14;2M";
         let mouse_down = "\x1b[<65;15;5M";
 
@@ -237,17 +246,13 @@ mod e2e {
         tattoy.send_input(mouse_up).unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
-        tattoy.send_input(escape).unwrap();
+        tattoy.send_input(ESCAPE).unwrap();
         assert_scrolling_off(&mut tattoy).await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn palette_to_true_colour() {
-        let config_dir = tempfile::tempdir().unwrap();
-        let config_path = config_dir.path();
-        std::fs::copy("resources/palette.toml", config_path.join("palette.toml")).unwrap();
-
-        let mut tattoy = start_tattoy(Some(config_path.display().to_string())).await;
+        let mut tattoy = start_tattoy(None).await;
 
         tattoy
             .send_command("echo -e \"\\033[0;31m$((1000-1))\\033[m\"")
@@ -263,5 +268,22 @@ mod e2e {
                 termwiz::color::SrgbaTuple(0.96862745, 0.4627451, 0.5568628, 1.0)
             ),
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn minimap() {
+        let mut tattoy = start_tattoy(None).await;
+        let size = tattoy.shadow_terminal.terminal.get_size();
+        setup_logging();
+
+        tattoy
+            .send_command("cat resources/LOREM_IPSUM.txt")
+            .unwrap();
+        tattoy.wait_for_string("nulla", None).await.unwrap();
+        tattoy
+            .send_input(move_mouse(u32::try_from(size.cols).unwrap() - 1, 1).as_ref())
+            .unwrap();
+
+        tattoy.wait_for_string("co▀▀▀▀▀▀▀▀▀▀", None).await.unwrap();
     }
 }

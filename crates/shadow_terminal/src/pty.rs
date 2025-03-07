@@ -218,14 +218,7 @@ impl PTY {
                 let output = String::from_utf8_lossy(payload)
                     .to_string()
                     .replace('[', "\\[");
-                let maybe_sample = output.get(0..std::cmp::min(output.len() - 1, 1000));
-                if let Some(sample) = maybe_sample {
-                    tracing::trace!("Sent PTY output ({size}): '{}'...", sample);
-                } else {
-                    tracing::error!(
-                        "Not enough characters in sample output (should be impossible)"
-                    );
-                }
+                tracing::trace!("Sent PTY output ({size}), sample:\n{:.1000}...", output);
             }
             Err(err) => {
                 snafu::whatever!("Reading PTY stream: {err:?}");

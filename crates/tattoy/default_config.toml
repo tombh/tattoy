@@ -2,3 +2,7 @@
 saturation = 0.0
 brightness = 0.0
 hue = 0.0
+
+[minimap]
+max_width = 10
+animation_speed = 0.15

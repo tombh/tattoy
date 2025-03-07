@@ -207,6 +207,9 @@ impl Renderer {
     ) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => {
+                if surface.id != "random_walker" {
+                    tracing::trace!("Rendering {} frame update", surface.id);
+                }
                 self.tattoys.insert(surface.id.clone(), surface);
             }
             FrameUpdate::PTYSurface => {

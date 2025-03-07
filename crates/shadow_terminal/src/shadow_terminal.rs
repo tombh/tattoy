@@ -96,8 +96,6 @@ pub struct ShadowTerminal {
     pub config: Config,
     /// The various channels needed to run the shadow terminal and its PTY
     pub channels: Channels,
-    /// Whether the terminal is in the so-called "alternative" screen or not
-    pub is_alternative_screen: bool,
     /// The current position of the scollback buffer.
     pub scroll_position: usize,
     /// Metadata about the most recent sent output.
@@ -135,7 +133,6 @@ impl ShadowTerminal {
                 output_rx,
                 shadow_output,
             },
-            is_alternative_screen: false,
             scroll_position: 0,
             last_sent: LastSent {
                 pty_sequence: 0,
@@ -183,7 +180,7 @@ impl ShadowTerminal {
                 Some(bytes) = self.channels.output_rx.recv() => {
                     self.terminal.advance_bytes(bytes);
                     tracing::trace!("Wezterm shadow terminal advanced {} bytes", bytes.len());
-                    let result = self.send_output().await;
+                    let result = self.send_outputs().await;
                     if let Err(error) = result {
                         tracing::error!("{error:?}");
                     }
@@ -224,26 +221,45 @@ impl ShadowTerminal {
     //   * Make `self.build_current_surface()` able to detect new payloads as they happen
     //     so it can cancel itself and immediately start working on the new one.
     //
-    /// Send the current state of the shadow terminal as a Termwiz surface to whoever is externally
-    /// listening.
-    async fn send_output(&mut self) -> Result<(), crate::errors::ShadowTerminalError> {
-        let is_primary_screen = !self.is_alternative_screen;
-        let output = if is_primary_screen {
-            self.build_current_output(&crate::output::SurfaceKind::Scrollback)?
-        } else {
-            self.build_current_output(&crate::output::SurfaceKind::Screen)?
-        };
+    /// Send the current state of the shadow terminal as a Termwiz surface or changeset to whoever
+    /// is externally listening.
+    async fn send_outputs(&mut self) -> Result<(), crate::errors::ShadowTerminalError> {
+        let screen_output = self.build_current_output(&crate::output::SurfaceKind::Screen)?;
+        self.send_output(screen_output).await?;
 
-        let scrollback_result = self.channels.shadow_output.send(output).await;
-        if let Err(error) = scrollback_result {
-            tracing::error!("Sending shadow output scrollback: {error:?}");
-            return Ok(());
+        if !self.terminal.is_alt_screen_active() {
+            let scrollback_output =
+                self.build_current_output(&crate::output::SurfaceKind::Scrollback)?;
+            self.send_output(scrollback_output).await?;
         }
 
         self.last_sent = LastSent {
             pty_sequence: self.terminal.current_seqno(),
             pty_size: (self.terminal.get_size().cols, self.terminal.get_size().rows),
         };
+
+        Ok(())
+    }
+
+    /// Send an individual output: scrollback or screen.
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "
+            Weirdly, we get the following error when `mut` is not used:
+              rustc: future cannot be sent between threads safely
+              within `shadow_terminal::ShadowTerminal`, the trait `std::marker::Sync` is not implemented for `std::cell::RefCell<termwiz::escape::parser::ParseState>`
+              if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+        "
+    )]
+    async fn send_output(
+        &mut self,
+        output: crate::output::Output,
+    ) -> Result<(), crate::errors::ShadowTerminalError> {
+        let result = self.channels.shadow_output.send(output).await;
+        if let Err(error) = result {
+            tracing::error!("Sending shadow output: {error:?}");
+            return Ok(());
+        }
 
         Ok(())
     }
@@ -301,7 +317,7 @@ impl ShadowTerminal {
                     }
                 }
 
-                let result = self.send_output().await;
+                let result = self.send_outputs().await;
                 if let Err(error) = result {
                     tracing::error!("Couldn't send PTY output from shadow terminal: {error:?}");
                 }

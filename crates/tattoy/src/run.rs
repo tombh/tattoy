@@ -66,7 +66,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         return Ok(());
     }
 
-    let (protocol_tx, _) = tokio::sync::broadcast::channel(64);
+    let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
     let (surfaces_tx, surfaces_rx) = mpsc::channel(8192);
 
     let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
@@ -75,6 +75,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         cli_args.enabled_tattoys,
         protocol_tx.clone(),
         surfaces_tx.clone(),
+        Arc::clone(state_arc),
     );
 
     let renderer = Renderer::start(Arc::clone(state_arc), surfaces_rx, protocol_tx.clone());

@@ -90,15 +90,17 @@ impl TerminalProxy {
                 shadow_terminal::output::CompleteSurface::Scrollback(scrollback) => {
                     let mut shadow_tty_scrollback = self.state.shadow_tty_scrollback.write().await;
                     *shadow_tty_scrollback = scrollback;
-                    drop(shadow_tty_scrollback);
-                    self.copy_scrollback_bottom_to_screen().await;
-                    self.state.set_is_alternate_screen(false).await;
                 }
-                shadow_terminal::output::CompleteSurface::Screen(surface) => {
+                shadow_terminal::output::CompleteSurface::Screen(screen) => {
                     let mut shadow_tty_screen = self.state.shadow_tty_screen.write().await;
-                    *shadow_tty_screen = surface;
+                    *shadow_tty_screen = screen.surface;
                     drop(shadow_tty_screen);
-                    self.state.set_is_alternate_screen(true).await;
+
+                    let is_alternate_screen =
+                        matches!(screen.mode, shadow_terminal::output::ScreenMode::Alternate);
+                    self.state
+                        .set_is_alternate_screen(is_alternate_screen)
+                        .await;
                 }
                 _ => (),
             },
@@ -114,39 +116,6 @@ impl TerminalProxy {
         Ok(())
     }
 
-    /// Copy the very bottom of the scrollback to the our copy of the shadow terminal. We do this
-    /// so that we always have a canonical place where we can get the current contents of the
-    /// underlying PTY, regardless of whether it is displaying the primary or alternate screen.
-    async fn copy_scrollback_bottom_to_screen(&self) {
-        let tty_size = self.state.get_tty_size().await;
-        let shadow_tty_scrollback = self.state.shadow_tty_scrollback.read().await;
-        let offset = shadow_tty_scrollback.surface.dimensions().1
-            - usize::from(tty_size.height)
-            - shadow_tty_scrollback.position;
-        let (cursor_x, cursor_y) = shadow_tty_scrollback.surface.cursor_position();
-        let mut surface =
-            termwiz::surface::Surface::new(tty_size.width.into(), tty_size.height.into());
-
-        let mut changes = surface.diff_region(
-            0,
-            0,
-            tty_size.width.into(),
-            tty_size.height.into(),
-            &shadow_tty_scrollback.surface,
-            0,
-            offset,
-        );
-        drop(shadow_tty_scrollback);
-
-        let mut shadow_tty_screen = self.state.shadow_tty_screen.write().await;
-        changes.push(termwiz::surface::Change::CursorPosition {
-            x: termwiz::surface::Position::Absolute(cursor_x),
-            y: termwiz::surface::Position::Absolute(cursor_y),
-        });
-        surface.add_changes(changes);
-        *shadow_tty_screen = surface;
-    }
-
     /// Reconstruct full surfaces from diffs.
     async fn reconstruct_surface_from_diff(
         &self,
@@ -156,16 +125,16 @@ impl TerminalProxy {
             shadow_terminal::output::SurfaceDiff::Scrollback(scrollback_diff) => {
                 self.handle_scrolling_output(&scrollback_diff).await?;
                 self.reconstruct_scrollback_diff(scrollback_diff).await?;
-                self.state.set_is_alternate_screen(false).await;
-
-                // TODO: Just apply the diff to the screen.
-                // We can't as is, because the changes use coordinates relative to the scrollback,
-                // which is likely higher than the screen.
-                self.copy_scrollback_bottom_to_screen().await;
             }
             shadow_terminal::output::SurfaceDiff::Screen(screen_diff) => {
+                let is_alternate_screen = matches!(
+                    screen_diff.mode,
+                    shadow_terminal::output::ScreenMode::Alternate
+                );
+                self.state
+                    .set_is_alternate_screen(is_alternate_screen)
+                    .await;
                 self.reconstruct_screen_diff(screen_diff).await;
-                self.state.set_is_alternate_screen(true).await;
             }
             _ => (),
         }
@@ -265,26 +234,6 @@ impl TerminalProxy {
         if let Err(err) = output_update_result {
             tracing::error!("Couldn't notify protocol channel about new PTY output: {err:?}");
         }
-
-        // It's convenient for individual tattoys to have canonical place to always get the current
-        // contents of the underlying terminal, whether the terminal is in the primary screen or
-        // the alternate screen. So here, even though we're in primary screen mode, we send a copy
-        // of the screen, that we extracted earlier from the bottom of the scrollback.
-        //
-        // It's just a bit of cheap cloning, but I keep wondering if there's a better way to do
-        // this?
-        if !self.state.get_is_alternate_screen().await {
-            let screen = self.state.shadow_tty_screen.read().await.clone();
-            let screen_output = shadow_terminal::output::Output::Complete(
-                shadow_terminal::output::CompleteSurface::Screen(screen),
-            );
-            let screen_result = self
-                .tattoy_protocol
-                .send(crate::run::Protocol::Output(screen_output));
-            if let Err(err) = screen_result {
-                tracing::error!("Couldn't notify protocol channel about new PTY output: {err:?}");
-            }
-        }
     }
 
     /// Convert palette indexes into their true colour values.
@@ -317,8 +266,8 @@ impl TerminalProxy {
                     shadow_terminal::output::CompleteSurface::Scrollback(scrollback) => {
                         scrollback.surface.screen_cells()
                     }
-                    shadow_terminal::output::CompleteSurface::Screen(surface) => {
-                        surface.screen_cells()
+                    shadow_terminal::output::CompleteSurface::Screen(screen) => {
+                        screen.surface.screen_cells()
                     }
                     _ => {
                         tracing::error!("Unhandled surface from Shadow Terminal");

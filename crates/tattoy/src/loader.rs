@@ -3,6 +3,8 @@
 //! I want to base the plugin architecture on Nushell's, see:
 //! <https://www.nushell.sh/contributor-book/plugin_protocol_reference.html>
 
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
 
 use crate::run::{FrameUpdate, Protocol};
@@ -12,6 +14,7 @@ pub(crate) fn start_tattoys(
     enabled_tattoys: Vec<String>,
     input: tokio::sync::broadcast::Sender<Protocol>,
     output: tokio::sync::mpsc::Sender<FrameUpdate>,
+    state: Arc<crate::shared_state::SharedState>,
 ) -> std::thread::JoinHandle<Result<(), color_eyre::eyre::Error>> {
     let tokio_runtime = tokio::runtime::Handle::current();
     std::thread::spawn(move || -> Result<()> {
@@ -37,6 +40,7 @@ pub(crate) fn start_tattoys(
                 tattoy_futures.spawn(crate::tattoys::minimap::Minimap::start(
                     input.clone(),
                     output.clone(),
+                    Arc::clone(&state),
                 ));
             }
 
@@ -48,9 +52,13 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            while let Some(result) = tattoy_futures.join_next().await {
-                if let Err(error) = result {
-                    tracing::error!("Error running a tattoy: {error:?}");
+            while let Some(starting) = tattoy_futures.join_next().await {
+                match starting {
+                    Ok(result) => match result {
+                        Ok(()) => tracing::error!("A tattoy exited without error"),
+                        Err(error) => tracing::error!("A tattoy exited: {error:?}"),
+                    },
+                    Err(spawn_error) => tracing::error!("Error spawning a tattoy: {spawn_error:?}"),
                 }
             }
 
