@@ -1,5 +1,7 @@
 # Tattoy: Eye-candy for your terminal
 
+_Cross-Platform Terminal Compositor_
+
 Currently running with:
 
 ```
@@ -44,9 +46,10 @@ Scroll wheel scrolls the scrollback. `<ESC>` exits scrolling (TODO: enable other
 * [x] Double width characters aren't passed through, eg "🦀".
 * [x] `tmux` mouse events cause runaway behaviour in `htop`.
 * [x] Mouse events not being received in alternate screen.
-* [ ] Extra minimap features: https://www.youtube.com/shorts/t5vXCNIBVYw
+* [x] Extra minimap features: https://www.youtube.com/shorts/t5vXCNIBVYw
+* [x] Make all config optional
+* [ ] Shader tests, research lavapipe for CI software GPU.
 * [ ] Pasting is buggy
-* [ ] Make all config optional
 * [ ] How should smokey_cursor particles respond to resizing?
 * [ ] Detect alternate screen so to hide cursor
 * [ ] Up and down aren't detected in `less` or `htop`.

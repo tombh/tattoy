@@ -6,3 +6,7 @@ hue = 0.0
 [minimap]
 max_width = 10
 animation_speed = 0.15
+
+[shader]
+opacity = 0.75
+path = "shaders/point_lights.glsl"

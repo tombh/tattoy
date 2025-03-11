@@ -8,21 +8,30 @@ use notify::Watcher as _;
 /// they start Tattoy.
 static DEFAULT_CONFIG: &str = include_str!("../default_config.toml");
 
+/// Bundle an example shader with Tattoy.
+static EXAMPLE_SHADER: &str = include_str!("tattoys/shaders/point_lights.glsl");
+
+/// The name of the directory where shader files are kept.
+const SHADER_DIRECTORY_NAME: &str = "shaders";
+
 /// Managing user config.
 #[expect(
     clippy::unsafe_derive_deserialize,
     reason = "Are the unsafe methods on the `f32`s?"
 )]
 #[derive(Default, serde::Deserialize)]
+#[serde(default)]
 pub(crate) struct Config {
     /// Colour grading
     pub color: Color,
     /// The minimap
     pub minimap: crate::tattoys::minimap::Config,
+    /// The minimap
+    pub shader: crate::tattoys::shaders::main::Config,
 }
 
 /// Final colour grading for the whole terminal render.
-#[derive(Default, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 pub(crate) struct Color {
     /// Saturation
     pub saturation: f32,
@@ -30,6 +39,16 @@ pub(crate) struct Color {
     pub brightness: f32,
     /// Hue
     pub hue: f32,
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Self {
+            saturation: 0.0,
+            brightness: 0.0,
+            hue: 0.0,
+        }
+    }
 }
 
 impl Config {
@@ -58,6 +77,10 @@ impl Config {
         };
 
         std::fs::create_dir_all(path.clone())?;
+
+        let shaders_directory = path.join(SHADER_DIRECTORY_NAME);
+        std::fs::create_dir_all(shaders_directory)?;
+
         *state.config_path.write().await = path;
 
         Ok(())
@@ -67,20 +90,27 @@ impl Config {
     pub async fn main_config_path(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
     ) -> std::path::PathBuf {
-        let directory = state.config_path.read().await.clone();
+        let directory = Self::directory(state).await;
         directory.join("tattoy.toml")
     }
 
     /// Load the main config
     pub async fn load(state: &std::sync::Arc<crate::shared_state::SharedState>) -> Result<Self> {
-        let path = Self::main_config_path(state).await;
-        if !path.exists() {
-            tracing::info!("Copying default config to: {path:?}");
-            std::fs::write(path.clone(), DEFAULT_CONFIG)?;
+        let config_path = Self::main_config_path(state).await;
+        if !config_path.exists() {
+            tracing::info!("Copying default config to: {config_path:?}");
+            std::fs::write(config_path.clone(), DEFAULT_CONFIG)?;
+
+            let shader_path = Self::directory(state)
+                .await
+                .join(SHADER_DIRECTORY_NAME)
+                .join("point_lights.glsl");
+            tracing::info!("Copying example shader to: {shader_path:?}");
+            std::fs::write(shader_path, EXAMPLE_SHADER)?;
         }
 
-        tracing::info!("(Re)loading the main Tattoy config from: {path:?}");
-        let data = std::fs::read_to_string(path)?;
+        tracing::info!("(Re)loading the main Tattoy config from: {config_path:?}");
+        let data = std::fs::read_to_string(config_path)?;
         let config = toml::from_str::<Self>(&data)?;
         Ok(config)
     }

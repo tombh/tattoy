@@ -8,13 +8,22 @@ use shadow_terminal::output::SurfaceKind;
 use super::tattoyer::Tattoyer;
 
 /// User-configurable settings for the minimap
-#[derive(Default, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 pub(crate) struct Config {
     /// The max width of the minimap (in units of terminal columns). The image resizer may choose a
     /// slimmer minimap in order to maintain the original aspect ratio.
     max_width: u16,
     /// The speed of the minimap show/hide animation.
     animation_speed: f32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            max_width: 15,
+            animation_speed: 0.15,
+        }
+    }
 }
 
 /// The various states of the minimap UI.
@@ -244,21 +253,25 @@ impl Minimap {
                 // Draw the actual minimap pixels themselves.
                 } else {
                     // Draw the scrollback minimap.
-                    let pixel = if y < screen_minimap_offset || !self.tattoy.is_alternate_screen() {
-                        let y_image = y - empty_height;
-                        self.scrollback
-                            .get_pixel_checked(x_minimap, y_image)
-                            .context(format!("Couldn't get pixel: {x_minimap}x{y_image}"))?
-                            .0
+                    let mut pixel =
+                        if y < screen_minimap_offset || !self.tattoy.is_alternate_screen() {
+                            let y_image = y - empty_height;
+                            self.scrollback
+                                .get_pixel_checked(x_minimap, y_image)
+                                .context(format!("Couldn't get pixel: {x_minimap}x{y_image}"))?
+                                .0
 
-                    // Draw the screen minimap.
-                    } else {
-                        let y_image = y - screen_minimap_offset;
-                        self.screen
-                            .get_pixel_checked(x_minimap, y_image)
-                            .context(format!("Couldn't get pixel: {x_minimap}x{y_image}"))?
-                            .0
-                    };
+                        // Draw the screen minimap.
+                        } else {
+                            let y_image = y - screen_minimap_offset;
+                            self.screen
+                                .get_pixel_checked(x_minimap, y_image)
+                                .context(format!("Couldn't get pixel: {x_minimap}x{y_image}"))?
+                                .0
+                        };
+
+                    // TODO: make configurable
+                    pixel[3] = 0.95;
 
                     self.tattoy.surface.add_pixel(
                         x_surface + usize::try_from(x_offset)?,
@@ -356,10 +369,10 @@ impl Minimap {
                 .context("Couldn't get surface cell from line")?;
 
             let cell_colour = if cell.str() == " " {
-                crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background()).map_or(
-                    crate::opaque_cell::DEFAULT_BACKGROUND_TRUE_COLOUR,
-                    |background_colour| background_colour,
-                )
+                crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background())
+                    .map_or(crate::opaque_cell::DEFAULT_COLOUR, |background_colour| {
+                        background_colour
+                    })
             } else {
                 let maybe_colour =
                     crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().foreground());

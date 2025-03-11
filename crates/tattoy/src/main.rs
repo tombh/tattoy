@@ -28,6 +28,12 @@ pub mod tattoys {
     pub mod tattoyer;
     pub mod utils;
 
+    /// Shadertoy-like shaders
+    pub mod shaders {
+        pub mod gpu;
+        pub mod main;
+    }
+
     /// The smokey cursor Tattoy
     pub mod smokey_cursor {
         pub mod config;

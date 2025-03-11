@@ -17,6 +17,9 @@ use crate::shared_state::SharedState;
 /// The number of microseconds in a second.
 pub const ONE_MICROSECOND: u64 = 1_000_000;
 
+/// The number of milliseconds in a second.
+pub const MILLIS_PER_SECOND: f32 = 1_000.0;
+
 /// `Render`
 #[derive(Default)]
 pub(crate) struct Renderer {
@@ -207,7 +210,7 @@ impl Renderer {
     ) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => {
-                if surface.id != "random_walker" {
+                if surface.id != "random_walker" && surface.id != "shaders" {
                     tracing::trace!("Rendering {} frame update", surface.id);
                 }
                 self.tattoys.insert(surface.id.clone(), surface);
@@ -220,7 +223,13 @@ impl Renderer {
 
         let new_frame = self.composite().await?;
 
-        composited_terminal.draw_from_screen(&new_frame, 0, 0);
+        // Hide the cursor without flushing.
+        composited_terminal.add_change(TermwizChange::CursorVisibility(
+            termwiz::surface::CursorVisibility::Hidden,
+        ));
+
+        let changes = composited_terminal.diff_screens(&new_frame);
+        composited_terminal.add_changes(changes);
 
         let (cursor_x, cursor_y) = self.pty.cursor_position();
         composited_terminal.add_change(TermwizChange::CursorPosition {
@@ -228,8 +237,12 @@ impl Renderer {
             y: TermwizPosition::Absolute(cursor_y),
         });
 
+        // This avoids flickering at the cost of slower rendering for complex frame updates.
+        composited_terminal.ignore_high_repaint_cost(true);
+
         // This is where we actually render to the user's real terminal.
         composited_terminal.flush()?;
+        Self::cursor_visibility(composited_terminal, true)?;
 
         Ok(())
     }
@@ -335,15 +348,25 @@ impl Renderer {
             .context(format!("No y coord ({y}) for cell"))?
             .get(x)
             .context(format!("No x coord ({x}) for cell"))?;
-        let character_above = cell_above.str().to_owned();
 
-        if character_above != " " {
+        let character_above = cell_above.str().to_owned();
+        let is_character_above_text = !character_above.is_empty() && character_above != " ";
+        if is_character_above_text {
+            let old_background = composited_cell.attrs().background();
+            let old_foreground = composited_cell.attrs().foreground();
             *composited_cell = cell_above.clone();
-            return Ok(());
+            composited_cell.attrs_mut().set_background(old_background);
+            composited_cell.attrs_mut().set_foreground(old_foreground);
+        }
+
+        let character_here = composited_cell.str().to_owned();
+        let this_char_empty = character_here == " " || character_here.is_empty();
+        if this_char_empty {
+            *composited_cell = cell_above.clone();
         }
 
         let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None);
-        opaque.blend(cell_above);
+        opaque.blend_all(cell_above);
 
         Ok(())
     }
@@ -401,8 +424,38 @@ impl Renderer {
 mod test {
     use super::*;
 
+    async fn blend_pixels(
+        first: (usize, usize, crate::surface::Colour),
+        second: (usize, usize, crate::surface::Colour),
+    ) -> Cell {
+        let mut renderer = Renderer {
+            width: 1,
+            height: 1,
+            ..Renderer::default()
+        };
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
+        tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2);
+        tattoy_above
+            .add_pixel(second.0, second.1, second.2)
+            .unwrap();
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        let mut new_frame = renderer.composite().await.unwrap();
+        let cell = &new_frame.screen_cells()[0][0];
+        assert_eq!(cell.str(), "▀");
+
+        cell.clone()
+    }
+
     #[tokio::test]
-    async fn blending() {
+    async fn blending_text() {
         let mut renderer = Renderer {
             width: 1,
             height: 1,
@@ -445,7 +498,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn blending_with_default_bg_below() {
+    async fn blending_text_with_default_bg_below() {
         let mut renderer = Renderer {
             width: 1,
             height: 1,
@@ -470,6 +523,83 @@ mod test {
             cell.attrs().background(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
                 termwiz::color::SrgbaTuple(0.33333334, 0.33333334, 0.33333334, 1.0)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn fg_bg_pixels_in_same_cell_dont_blend() {
+        let cell = blend_pixels((0, 0, crate::surface::WHITE), (0, 1, crate::surface::RED)).await;
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.0, 0.0, 1.0)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn foreground_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels((0, 0, crate::surface::RED), (0, 0, crate::surface::WHITE)).await;
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn background_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels((0, 1, crate::surface::RED), (0, 1, crate::surface::WHITE)).await;
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::Default
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn foreground_pixels_with_alpha_blend() {
+        let cell = blend_pixels((0, 0, crate::surface::RED), (0, 0, (1.0, 1.0, 1.0, 0.5))).await;
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.33333334, 0.33333334, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn background_pixels_with_alpha_blend() {
+        let cell = blend_pixels((0, 1, crate::surface::RED), (0, 1, (1.0, 1.0, 1.0, 0.5))).await;
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::Default
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.33333334, 0.33333334, 1.0)
             )
         );
     }

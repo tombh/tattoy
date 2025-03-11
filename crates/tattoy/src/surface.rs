@@ -56,9 +56,11 @@ impl Surface {
             y: TermwizPosition::Absolute(row),
         });
 
+        // Add foreground colour, whilst retaining the background colour.
         if y.rem_euclid(2) == 0 {
             let fg_colour_change = Self::make_fg_colour(colour);
             let bg_colour_attribute = self.get_cell_bg(col, row)?;
+
             let changes = vec![
                 fg_colour_change,
                 TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
@@ -66,19 +68,17 @@ impl Surface {
                 )),
             ];
             self.surface.add_changes(changes);
+
+        // Add background colour, whilst retaining the foreground colour.
         } else {
-            let mut fg_colour_attribute = self.get_cell_fg(col, row)?;
-            if matches!(fg_colour_attribute, termwiz::color::ColorAttribute::Default) {
-                fg_colour_attribute = termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
-                    crate::opaque_cell::DEFAULT_BACKGROUND_TRUE_COLOUR,
-                );
-            }
             let bg_colour_change = Self::make_bg_colour(colour);
+
+            let fg_colour_attribute = self.get_cell_fg(col, row)?;
             let changes = vec![
-                bg_colour_change,
                 TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
                     fg_colour_attribute,
                 )),
+                bg_colour_change,
             ];
             self.surface.add_changes(changes);
         }
@@ -251,9 +251,7 @@ mod test {
         assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
-                crate::opaque_cell::DEFAULT_BACKGROUND_TRUE_COLOUR,
-            )
+            termwiz::color::ColorAttribute::Default
         );
         assert_eq!(
             cell.attrs().background(),

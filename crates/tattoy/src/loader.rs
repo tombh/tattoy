@@ -52,6 +52,15 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
+            if enabled_tattoys.contains(&"shaders".to_owned()) {
+                tracing::info!("Starting 'shaders' tattoy...");
+                tattoy_futures.spawn(crate::tattoys::shaders::main::Shaders::start(
+                    input.clone(),
+                    output.clone(),
+                    Arc::clone(&state),
+                ));
+            }
+
             while let Some(starting) = tattoy_futures.join_next().await {
                 match starting {
                     Ok(result) => match result {

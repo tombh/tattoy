@@ -8,8 +8,16 @@ use termwiz::cell::Cell;
 /// In Tattoy, a blank cell is any cell that has the default terminal colour. Most terminals use a
 /// dark theme, so let's say that, when alpha blending, the default colour is pure black.
 /// TODO: support light theme terminals.
-pub const DEFAULT_BACKGROUND_TRUE_COLOUR: termwiz::color::SrgbaTuple =
+pub const DEFAULT_COLOUR: termwiz::color::SrgbaTuple =
     termwiz::color::SrgbaTuple(0.0, 0.0, 0.0, 1.0);
+
+/// Whether we're acting on a foreground or background attribute.
+enum Kind {
+    /// A foreground attribute.
+    Foreground,
+    /// A background attribute.
+    Background,
+}
 
 /// Just a convenience wrapper around Termwiz's `[Cell]`. Compositing cells is a bit tricky, so
 /// having a dedicated module hopefully makes things a bit simpler.
@@ -17,7 +25,7 @@ pub(crate) struct OpaqueCell<'cell> {
     /// The normal underlying cell
     cell: &'cell mut Cell,
     /// The true colour value to use when the cell doesn't have a colour.
-    default_bg_colour: termwiz::color::SrgbaTuple,
+    default_colour: termwiz::color::SrgbaTuple,
 }
 
 impl<'cell> OpaqueCell<'cell> {
@@ -28,18 +36,18 @@ impl<'cell> OpaqueCell<'cell> {
     ) -> Self {
         let default_bg_colour = match maybe_default_bg_colour {
             Some(colour) => colour,
-            None => DEFAULT_BACKGROUND_TRUE_COLOUR,
+            None => DEFAULT_COLOUR,
         };
 
         Self {
             cell,
-            default_bg_colour,
+            default_colour: default_bg_colour,
         }
     }
 
     /// Convert a simple colour into a cell attribute, because to change the colour of a cell, you must do
     /// so with a wrapping colour atttribute.
-    const fn make_true_colour_attribute(
+    pub const fn make_true_colour_attribute(
         mut colour: termwiz::color::SrgbaTuple,
     ) -> termwiz::color::ColorAttribute {
         // There's some curious behaviour from `termwiz::BufferedTerminal`. When rendering a colour
@@ -63,38 +71,49 @@ impl<'cell> OpaqueCell<'cell> {
         }
     }
 
-    /// Blend the background colours of the 2 cells together.
-    pub fn blend_backgrounds(&mut self, cell_above_colour: termwiz::color::SrgbaTuple) {
-        let this_background_colour = match Self::extract_colour(self.cell.attrs().background()) {
-            Some(colour) => colour,
-            None => self.default_bg_colour,
+    /// Blend this cell's foreground colour with a new colour.
+    fn blend(&mut self, kind: &Kind, incoming_colour: termwiz::color::SrgbaTuple) {
+        let this_colour = match kind {
+            Kind::Foreground => self.cell.attrs().foreground(),
+            Kind::Background => self.cell.attrs().background(),
         };
 
-        let blended_colour =
-            this_background_colour.interpolate(cell_above_colour, cell_above_colour.3.into());
-
+        let maybe_colour = match Self::extract_colour(this_colour) {
+            Some(colour) => colour,
+            None => self.default_colour,
+        };
+        let blended_colour = maybe_colour.interpolate(incoming_colour, incoming_colour.3.into());
         let attribute = Self::make_true_colour_attribute(blended_colour);
 
-        self.cell.attrs_mut().set_background(attribute);
-    }
-
-    /// Blend the text colour of the cell _below_ with the background colour of the cell _above_.
-    pub fn blend_foreground(&mut self, cell_above_colour: termwiz::color::SrgbaTuple) {
-        if let Some(colour) = Self::extract_colour(self.cell.attrs().foreground()) {
-            let blended_colour = colour.interpolate(cell_above_colour, cell_above_colour.3.into());
-            let attribute = Self::make_true_colour_attribute(blended_colour);
-
-            self.cell.attrs_mut().set_foreground(attribute);
-        }
+        match kind {
+            Kind::Foreground => self.cell.attrs_mut().set_foreground(attribute),
+            Kind::Background => self.cell.attrs_mut().set_background(attribute),
+        };
     }
 
     /// Blend the cell's colours with the cell above.
-    pub fn blend(&mut self, cell_above: &Cell) {
-        let maybe_cell_above_colour = Self::extract_colour(cell_above.attrs().background());
-
-        if let Some(cell_above_colour) = maybe_cell_above_colour {
-            self.blend_backgrounds(cell_above_colour);
-            self.blend_foreground(cell_above_colour);
+    pub fn blend_all(&mut self, cell_above: &Cell) {
+        let character_above = cell_above.str();
+        let character_above_is_empty = character_above.is_empty() || character_above == " ";
+        if character_above_is_empty {
+            if let Some(colour) = Self::extract_colour(cell_above.attrs().background()) {
+                self.blend(&Kind::Background, colour);
+                self.blend(&Kind::Foreground, colour);
+            }
+        } else {
+            if let Some(colour) = Self::extract_colour(self.cell.attrs().foreground()) {
+                let is_blending_2_pixels = self.cell.str() == "▀" && cell_above.str() == "▀";
+                if !is_blending_2_pixels {
+                    // Blend this cell's own foreground colour with this cell's own background colour.
+                    self.blend(&Kind::Background, colour);
+                }
+            }
+            if let Some(colour) = Self::extract_colour(cell_above.attrs().foreground()) {
+                self.blend(&Kind::Foreground, colour);
+            }
+            if let Some(colour) = Self::extract_colour(cell_above.attrs().background()) {
+                self.blend(&Kind::Background, colour);
+            }
         }
     }
 }

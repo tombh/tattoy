@@ -11,6 +11,7 @@ categories = ["shell"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bytemuck = "1.22.0"
 clap = { version = "4.5.4", features = ["derive"] }
 color-eyre = "0.6.3"
 console-subscriber = "0.4.1"
@@ -30,6 +31,7 @@ toml = "0.8.20"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 xcap = "0.3.2"
+wgpu = { version = "24.0", default-features = false, features = [ "dx12", "metal", "glsl" ] }
 
 [lints]
 workspace = true
