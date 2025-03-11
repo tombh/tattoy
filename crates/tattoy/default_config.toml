@@ -5,7 +5,7 @@ term = "xterm-256color"
 
 # The command to run in Tattoy. Defaults to your current shell defined in the
 # `SHELL` env var.
-command = "/usr/bin/zsh"
+# command = "/usr/bin/zsh"
 
 # The log level, one of: "error", "warn", "info", "debug", "trace"
 log_level = "debug"
