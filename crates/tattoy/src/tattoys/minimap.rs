@@ -9,7 +9,10 @@ use super::tattoyer::Tattoyer;
 
 /// User-configurable settings for the minimap
 #[derive(serde::Deserialize)]
+#[serde(default)]
 pub(crate) struct Config {
+    /// Enable/disable the minimap
+    pub enabled: bool,
     /// The max width of the minimap (in units of terminal columns). The image resizer may choose a
     /// slimmer minimap in order to maintain the original aspect ratio.
     max_width: u16,
@@ -20,6 +23,7 @@ pub(crate) struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            enabled: true,
             max_width: 15,
             animation_speed: 0.15,
         }

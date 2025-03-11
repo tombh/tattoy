@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 use glam::Vec2;
 use rand::Rng as _;
 
-/// "Size", or more appro"area of influence" of a particle
+/// "Size", or more "area of influence" of a particle
 pub const PARTICLE_SIZE: f32 = 16.0;
 /// Just a cache for a frequently used calculation
 pub const PARTICLE_SIZE_SQUARED: f32 = PARTICLE_SIZE * PARTICLE_SIZE;

@@ -1,16 +1,16 @@
 //! All the variables that can be configured for the simulation
 
-use glam::Vec2;
-
-use super::particle::PARTICLE_SIZE;
-
 /// All the config for the simulation
+#[derive(serde::Deserialize)]
+#[serde(default)]
 #[non_exhaustive]
 pub struct Config {
+    /// Enable/disable the shaders on and off
+    pub enabled: bool,
     /// The gravitational exceleration of the system in metres per second
-    pub gravity: Vec2,
+    pub gravity: (f32, f32),
     /// The velocity of a particle when it is first added
-    pub initial_velocity: Vec2,
+    pub initial_velocity: (f32, f32),
     /// How much bigger a partical is compared to a rendered pixel
     pub scale: f32,
     /// The maximum number of particles in the simulation
@@ -20,9 +20,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            gravity: Vec2::new(0.0, -9.81),
-            initial_velocity: Vec2::ZERO,
-            scale: PARTICLE_SIZE * 0.75,
+            enabled: false,
+            gravity: (0.0, -9.81),
+            initial_velocity: (0.0, 0.0),
+            scale: 0.75,
             max_particles: 3000,
         }
     }

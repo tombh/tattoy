@@ -1,12 +1,44 @@
+# The terminal emulator environment variable. This is still a grey area to me.
+# Currently "xterm-256color" is the only values that avoids some input bugs.
+# Please play with this and report your findings!
+term = "xterm-256color"
+
+# The command to run in Tattoy. Defaults to your current shell defined in the
+# `SHELL` env var.
+command = "/usr/bin/zsh"
+
+# The log level, one of: "error", "warn", "info", "debug", "trace"
+log_level = "debug"
+# The path to the log file. Defaults to your OS's `XDG_STATE_DIR`.
+# See: https://specifications.freedesktop.org/basedir-spec/latest/
+# log_path = ""
+
 [color]
 saturation = 0.0
 brightness = 0.0
 hue = 0.0
 
 [minimap]
-max_width = 10
+enabled = false
 animation_speed = 0.15
 
+[smokey_cursor]
+enabled = false
+# The gravitational exceleration of the system in metres per second
+gravity = [0.0, -9.81]
+# The velocity of a particle when it is first added
+initial_velocity = [0.0, 0.0]
+# How much bigger a partical is compared to a rendered pixel
+scale = 0.75
+# The maximum number of particles in the simulation
+max_particles = 3000
+
 [shader]
+enabled = false
 opacity = 0.75
+# The maximum width of the minimap. It can be narrower when the scrollback is long
+# in order to maintain a consistent aspect ratio.
+max_width = 10
+# Path to a Shadertoy shader on your local filesystem. Is relative to the root of
+# Tattoy's config directory.
 path = "shaders/point_lights.glsl"

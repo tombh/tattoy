@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use clap::Parser as _;
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{ContextCompat as _, Result};
 use tokio::sync::mpsc;
+use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _, Layer as _};
 
 use crate::cli_args::CliArgs;
 use crate::input::Input;
@@ -54,8 +55,6 @@ pub(crate) enum Protocol {
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let cli_args = setup(state_arc).await?;
 
-    crate::config::Config::update_shared_state(state_arc).await?;
-
     if cli_args.capture_palette {
         crate::palette::parser::Parser::run(state_arc, None).await?;
         return Ok(());
@@ -72,7 +71,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
     let input_thread_handle = Input::start(protocol_tx.clone());
     let tattoys_handle = crate::loader::start_tattoys(
-        cli_args.enabled_tattoys,
+        cli_args.enabled_tattoys.clone(),
         protocol_tx.clone(),
         surfaces_tx.clone(),
         Arc::clone(state_arc),
@@ -87,7 +86,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         shadow_terminal::shadow_terminal::Config {
             width: users_tty_size.cols.try_into()?,
             height: users_tty_size.rows.try_into()?,
-            command: get_startup_command(cli_args.command)?,
+            command: get_startup_command(state_arc, cli_args).await?,
             ..Default::default()
         },
     )
@@ -119,15 +118,24 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     Ok(())
 }
 
-/// Get the command that Tattoy will use to startup, usuall something like `bash`.
-fn get_startup_command(maybe_command: Option<String>) -> Result<Vec<std::ffi::OsString>> {
-    if let Some(command) = maybe_command {
-        return Ok(command
-            .split_whitespace()
-            .map(std::convert::Into::into)
-            .collect());
-    }
-    Ok(vec![std::env::var("SHELL")?.into()])
+/// Get the command that Tattoy will use to startup, usually something like `bash`.
+async fn get_startup_command(
+    state: &std::sync::Arc<SharedState>,
+    cli_args: CliArgs,
+) -> Result<Vec<std::ffi::OsString>> {
+    let maybe_cli_command = cli_args.command;
+    let command = match maybe_cli_command {
+        Some(cli_command) => cli_command,
+        None => state.config.read().await.command.clone(),
+    };
+
+    let parts = command
+        .split_whitespace()
+        .map(std::convert::Into::into)
+        .collect();
+
+    tracing::debug!("Starting Tattoy with command: '{command:?}'");
+    Ok(parts)
 }
 
 /// Signal all task/thread loops to exit.
@@ -145,6 +153,12 @@ pub(crate) fn broadcast_protocol_end(protocol_tx: &tokio::sync::broadcast::Sende
 
 /// Prepare the application to start.
 async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
+    let cli_args = CliArgs::parse();
+    crate::config::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
+    crate::config::Config::update_shared_state(state).await?;
+
+    setup_logging(state).await?;
+
     // Assuming true colour makes Tattoy simpler.
     // * I think it's safe to assume that the vast majority of people using Tattoy will have a
     //   true color terminal anyway.
@@ -152,11 +166,13 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     //   render as true color and then downgrade later when Tattoy does its final output.
     std::env::set_var("COLORTERM", "truecolor");
 
+    // There's probably a better way of doing this, like just inheriting it from the user. But for
+    // now always defaulting to "xterm-256color" fixes some bugs, namely mouse input in `htop`.
+    let term = state.config.read().await.term.clone();
+    tracing::debug!("Setting `TERM` env to: '{term}'");
+    std::env::set_var("TERM", term);
+
     tracing::info!("Starting Tattoy");
-
-    let cli_args = CliArgs::parse();
-
-    crate::config::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
 
     let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     state
@@ -164,4 +180,37 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
         .await;
 
     Ok(cli_args)
+}
+
+/// Setup logging
+async fn setup_logging(state: &std::sync::Arc<SharedState>) -> Result<()> {
+    let path = state.config.read().await.log_path.clone();
+    let directory = path.parent().context("Couldn't get log path's parent")?;
+    std::fs::create_dir_all(directory)?;
+    let file = std::fs::File::create(path)?;
+
+    let level = state.config.read().await.log_level.clone();
+
+    let logfile_layer = tracing_subscriber::fmt::layer()
+        .with_writer(file)
+        .with_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                // We don't want any of the trace lines that make the `tokio-console` possible
+                .add_directive(format!("shadow_terminal={level}").parse()?)
+                .add_directive(format!("tattoy={level}").parse()?)
+                .add_directive(format!("tests={level}").parse()?)
+                .add_directive("tokio=debug".parse()?)
+                .add_directive("runtime=debug".parse()?),
+        );
+
+    let tracing_setup = tracing_subscriber::registry().with(logfile_layer);
+
+    if std::env::var_os("ENABLE_TOKIO_CONSOLE") == Some("1".into()) {
+        let console_layer = console_subscriber::spawn();
+        tracing_setup.with(console_layer).init();
+    } else {
+        tracing_setup.init();
+    }
+
+    Ok(())
 }

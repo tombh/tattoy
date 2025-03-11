@@ -35,7 +35,9 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            if enabled_tattoys.contains(&"minimap".to_owned()) {
+            if enabled_tattoys.contains(&"minimap".to_owned())
+                || state.config.read().await.minimap.enabled
+            {
                 tracing::info!("Starting 'minimap' tattoy...");
                 tattoy_futures.spawn(crate::tattoys::minimap::Minimap::start(
                     input.clone(),
@@ -44,7 +46,9 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            if enabled_tattoys.contains(&"smokey_cursor".to_owned()) {
+            if enabled_tattoys.contains(&"smokey_cursor".to_owned())
+                || state.config.read().await.smokey_cursor.enabled
+            {
                 tracing::info!("Starting 'smokey_cursor' tattoy...");
                 tattoy_futures.spawn(crate::tattoys::smokey_cursor::main::SmokeyCursor::start(
                     input.clone(),
@@ -52,7 +56,9 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            if enabled_tattoys.contains(&"shaders".to_owned()) {
+            if enabled_tattoys.contains(&"shaders".to_owned())
+                || state.config.read().await.shader.enabled
+            {
                 tracing::info!("Starting 'shaders' tattoy...");
                 tattoy_futures.spawn(crate::tattoys::shaders::main::Shaders::start(
                     input.clone(),

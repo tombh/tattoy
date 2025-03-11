@@ -9,6 +9,10 @@ pub struct CliArgs {
     #[arg(short, long("use"))]
     pub enabled_tattoys: Vec<String>,
 
+    // TODO: Currently only usesd by the e2e tests. I'd rather have a more general purpose flag
+    // that allowed overriding any config use a classic dot notation:
+    // `config.minimap.enabled = false`.
+    //
     /// The command to start Tattoy with. Default to `$SHELL`.
     #[arg(short, long)]
     pub command: Option<String>,

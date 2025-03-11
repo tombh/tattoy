@@ -9,6 +9,8 @@ use crate::tattoys::tattoyer::Tattoyer;
 #[derive(serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
+    /// Enable/disable the shaders on and off
+    pub enabled: bool,
     /// The path to a given GLSL shader file.
     pub path: std::path::PathBuf,
     /// The opacity of the rendered shader layer.
@@ -18,6 +20,7 @@ pub(crate) struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            enabled: false,
             path: "shaders/point_lights.glsl".into(),
             opacity: 0.75,
         }

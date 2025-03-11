@@ -43,12 +43,12 @@ impl Simulation {
     #[must_use]
     pub fn new(width: usize, height: usize) -> Self {
         let config = Config {
-            initial_velocity: Vec2::new(0.01, -0.1),
+            initial_velocity: Vec2::new(0.01, -0.1).into(),
             ..Default::default()
         };
         Self {
-            width: width as f32 * config.scale,
-            height: height as f32 * config.scale,
+            width: width as f32 * config.scale * super::particle::PARTICLE_SIZE,
+            height: height as f32 * config.scale * super::particle::PARTICLE_SIZE,
             particles: VecDeque::default(),
             neighbours: rstar::RTree::new(),
             config,
@@ -145,7 +145,7 @@ impl Simulation {
                 }
             });
 
-            let gravity = particle.force_from_gravity(self.config.gravity);
+            let gravity = particle.force_from_gravity(self.config.gravity.into());
             particle.force += gravity;
         });
     }
@@ -162,9 +162,9 @@ mod test {
 
     fn make_sim() -> Simulation {
         let mut sim = Simulation::new(100, 100);
-        sim.config.gravity = Vec2::ZERO;
-        sim.config.initial_velocity = Vec2::ZERO;
-        sim.config.scale = 1.0; // So we don't have to scale/unscale
+        sim.config.gravity = Vec2::ZERO.into();
+        sim.config.initial_velocity = Vec2::ZERO.into();
+        sim.config.scale = 1.0 * crate::tattoys::smokey_cursor::particle::PARTICLE_SIZE; // So we don't have to scale/unscale
         sim
     }
 
@@ -224,7 +224,7 @@ mod test {
     #[test]
     fn gravity_moves_particle() {
         let mut sim = make_sim();
-        sim.config.gravity = Vec2::new(0.0, -1.0);
+        sim.config.gravity = Vec2::new(0.0, -1.0).into();
         add_particle(&mut sim, Vec2::new(50.0, 50.0));
 
         for _ in 0usize..10 {

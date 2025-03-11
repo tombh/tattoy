@@ -31,7 +31,7 @@ impl Simulation {
         cursor: (usize, usize),
         pty: &[&mut [termwiz::cell::Cell]],
     ) -> usize {
-        let scale = self.config.scale;
+        let scale = self.config.scale * super::particle::PARTICLE_SIZE;
         let mut count: usize = 0;
 
         for (y, lines) in pty.iter().enumerate() {
@@ -84,8 +84,8 @@ impl Simulation {
     pub fn add_particle(&mut self, x: f32, y: f32) {
         if let Some((x_safe, y_safe)) = self.find_safe_place(x, y) {
             let particle = Particle::default_movable(
-                self.config.scale,
-                self.config.initial_velocity,
+                self.config.scale * super::particle::PARTICLE_SIZE,
+                self.config.initial_velocity.into(),
                 x_safe,
                 y_safe,
             );

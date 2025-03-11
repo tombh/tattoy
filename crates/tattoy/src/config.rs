@@ -19,15 +19,53 @@ const SHADER_DIRECTORY_NAME: &str = "shaders";
     clippy::unsafe_derive_deserialize,
     reason = "Are the unsafe methods on the `f32`s?"
 )]
-#[derive(Default, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
+    /// The `TERM` value to send to the underlying PTY. This may not actually be needed, but
+    /// currently "TERM=xterm-256color" is fixing some bugs for me.
+    pub term: String,
+    /// The command to run in the underlying PTY, defaults to the users shell as dedfined in the
+    /// `SHELL` env variable.
+    pub command: String,
+    /// The maximum log level
+    pub log_level: String,
+    /// The location of the log file.
+    pub log_path: std::path::PathBuf,
     /// Colour grading
     pub color: Color,
+    /// The smokey particles cursor
+    pub smokey_cursor: crate::tattoys::smokey_cursor::config::Config,
     /// The minimap
     pub minimap: crate::tattoys::minimap::Config,
-    /// The minimap
+    /// The shaders
     pub shader: crate::tattoys::shaders::main::Config,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let command = match std::env::var("SHELL") {
+            Ok(command) => command,
+            Err(_) => "/usr/bin/bash".into(),
+        };
+
+        let log_directory = match dirs::state_dir() {
+            Some(directory) => directory,
+            None => std::path::PathBuf::new().join("./"),
+        };
+        let log_path = log_directory.join("tattoy").join("tattoy.log");
+
+        Self {
+            term: "xterm-256color".to_owned(),
+            command,
+            log_level: "none".into(),
+            log_path,
+            color: Color::default(),
+            smokey_cursor: crate::tattoys::smokey_cursor::config::Config::default(),
+            minimap: crate::tattoys::minimap::Config::default(),
+            shader: crate::tattoys::shaders::main::Config::default(),
+        }
+    }
 }
 
 /// Final colour grading for the whole terminal render.
