@@ -359,12 +359,6 @@ impl Renderer {
             composited_cell.attrs_mut().set_foreground(old_foreground);
         }
 
-        let character_here = composited_cell.str().to_owned();
-        let this_char_empty = character_here == " " || character_here.is_empty();
-        if this_char_empty {
-            *composited_cell = cell_above.clone();
-        }
-
         let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None);
         opaque.blend_all(cell_above);
 
