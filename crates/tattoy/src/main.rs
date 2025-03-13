@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     if let Err(error) = result {
         tracing::error!("{error:?}");
         eprintln!("Error: {error}");
-        eprintln!("See {logpath:?} for more details");
+        eprintln!("See {} for more details", logpath.display());
     }
     Ok(())
 }
