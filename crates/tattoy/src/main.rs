@@ -58,9 +58,17 @@ async fn main() -> Result<()> {
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
     tracing::debug!("Tattoy is exiting 🙇");
     if let Err(error) = result {
-        tracing::error!("{error:?}");
-        eprintln!("Error: {error}");
-        eprintln!("See `./tattoy.log` for more details");
+        match std::env::var("XDG_STATE_HOME") {
+            Ok(data) => {
+                let log_file = format!("{data}/tattoy.log");
+                tracing::error!("Error: {error:?}");
+                eprintln!("See `{log_file}` for more details");
+            }
+            Err(_) => {
+                tracing::error!("Error: {error:?}");
+                eprintln!("The environment variable XDG_STATE_HOME is not set to a valid path");
+            }
+        }
     }
     Ok(())
 }
