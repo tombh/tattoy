@@ -56,11 +56,12 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
     let state_arc = shared_state::SharedState::init().await?;
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
+    let logpath = state_arc.config.read().await.log_path.clone();
     tracing::debug!("Tattoy is exiting 🙇");
     if let Err(error) = result {
         tracing::error!("{error:?}");
         eprintln!("Error: {error}");
-        eprintln!("See `./tattoy.log` for more details");
+        eprintln!("See {logpath:?} for more details");
     }
     Ok(())
 }
