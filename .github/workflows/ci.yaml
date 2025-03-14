@@ -1,5 +1,9 @@
 name: Rust
 
+# Note: when forking on GitHub, workflows are disabled-by-default; the jobs
+# won't run when pushing to the fork and there won't be a button to run
+# anything manually. Owners of the fork can, through the website, re-enable
+# these workflows to run as specified here.
 on:
   push:
     branches: [ "main" ]
