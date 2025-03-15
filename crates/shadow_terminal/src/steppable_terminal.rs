@@ -1,7 +1,6 @@
 //! A steppable terminal, useful for doing end to end testing of TUI applications.
 
 use std::fmt::Write as _;
-use std::io::Read as _;
 use std::sync::Arc;
 
 use snafu::{OptionExt as _, ResultExt as _};
@@ -9,6 +8,22 @@ use tracing::Instrument as _;
 
 /// The default time to wait looking for terminal screen content.
 const DEFAULT_TIMEOUT: u32 = 500;
+
+/// Handle various kinds of input.
+///
+/// Simulating STDIN has actually been quite hard. For one, it seems like terminal input parsers
+/// depend on delays to seperate key presses and ANSI escape code commands? For example, what's the
+/// difference between typing `^[` and beginning a sequence that inputs mouse movement: `^[<64;14;2M`?
+/// So these variants help when you know that you want to send a character or a known ANSI
+/// sequence.
+#[non_exhaustive]
+pub enum Input {
+    /// For sending 1 or few charactes. If you want to send a lot of characters, it's better to
+    /// use and ANSI "paste", where everything gets sent at once. In which case you'd use `Event`.
+    Characters(String),
+    /// For sending known ANSI sequences, like mouse movement, bracketed paste, etc.
+    Event(String),
+}
 
 /// This Steppable Terminal is likely more useful for running end to end tests.
 ///
@@ -40,7 +55,7 @@ impl SteppableTerminal {
         let shadow_terminal =
             crate::shadow_terminal::ShadowTerminal::new(config, surface_output_tx);
 
-        let (pty_input_tx, pty_input_rx) = tokio::sync::mpsc::channel(16);
+        let (pty_input_tx, pty_input_rx) = tokio::sync::mpsc::channel(2048);
         let pty_task_handle = shadow_terminal.start(pty_input_rx);
 
         let mut steppable = Self {
@@ -119,22 +134,42 @@ impl SteppableTerminal {
     /// # Errors
     /// If sending the string fails
     #[inline]
-    pub fn send_input(&self, string: &str) -> Result<(), crate::errors::PTYError> {
-        tracing::trace!(
-            "SteppableTerminal sending string: {}",
-            string.replace('\n', "\\n")
-        );
+    pub fn send_input(&self, input: Input) -> Result<(), crate::errors::PTYError> {
+        match input {
+            Input::Characters(characters) => {
+                for char in characters.chars() {
+                    let mut buffer: crate::pty::BytesFromSTDIN = [0; 128];
+                    char.encode_utf8(&mut buffer);
 
-        let mut reader = std::io::BufReader::new(string.as_bytes());
-        let mut buffer: crate::pty::BytesFromSTDIN = [0; 128];
-        while let Ok(n) = reader.read(&mut buffer[..]) {
-            if n == 0 {
-                break;
+                    self.pty_input_tx
+                        .try_send(buffer)
+                        .with_whatever_context(|err| {
+                            format!("Couldn't send character input ({char}): {err:?}")
+                        })?;
+
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
-            self.pty_input_tx
-                .try_send(buffer)
-                .with_whatever_context(|err| format!("Couldn't send string ({string}): {err:?}"))?;
-            buffer = [0; 128];
+
+            Input::Event(event) => {
+                for chunk in event.as_bytes().chunks(128) {
+                    let mut buffer: crate::pty::BytesFromSTDIN = [0; 128];
+                    for (i, chunk_byte) in chunk.iter().enumerate() {
+                        let buffer_byte = buffer
+                            .get_mut(i)
+                            .with_whatever_context(|| "Couldn't get byte from buffer")?;
+                        *buffer_byte = *chunk_byte;
+                    }
+
+                    self.pty_input_tx
+                        .try_send(buffer)
+                        .with_whatever_context(|err| {
+                            format!("Couldn't send input event ({event:?}): {err:?}")
+                        })?;
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
         }
 
         Ok(())
@@ -148,7 +183,7 @@ impl SteppableTerminal {
     #[inline]
     pub fn send_command(&self, command: &str) -> Result<(), crate::errors::PTYError> {
         self.paste_string(command)?;
-        self.send_input("\n")?;
+        self.send_input(Input::Characters("\n".to_owned()))?;
 
         Ok(())
     }
@@ -163,7 +198,7 @@ impl SteppableTerminal {
         let paste_end = "\x1b[201~";
         let pastable_string = format!("{paste_start}{string}{paste_end}");
 
-        self.send_input(pastable_string.as_ref())?;
+        self.send_input(Input::Event(pastable_string))?;
 
         Ok(())
     }
@@ -551,7 +586,7 @@ mod test {
         let question = "echo $((2*3*3*5*3607*3803))";
         let answer = "1234567890";
         stepper.send_command(question).unwrap();
-        stepper.wait_for_string(answer, None).await.unwrap();
+        stepper.wait_for_string(answer, Some(1000)).await.unwrap();
         let output = stepper.screen_as_string().unwrap();
         assert_eq!(
             output,

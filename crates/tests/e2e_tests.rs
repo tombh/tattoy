@@ -12,7 +12,10 @@
 mod e2e {
     const ESCAPE: &str = "\x1b";
 
-    use shadow_terminal::{shadow_terminal::Config, steppable_terminal::SteppableTerminal};
+    use shadow_terminal::{
+        shadow_terminal::Config,
+        steppable_terminal::{Input, SteppableTerminal},
+    };
 
     fn workspace_dir() -> std::path::PathBuf {
         let output = std::process::Command::new(env!("CARGO"))
@@ -30,7 +33,9 @@ mod e2e {
 
     fn tattoy_binary_path() -> String {
         workspace_dir()
-            .join("target/debug/tattoy")
+            .join("target")
+            .join("debug")
+            .join("tattoy")
             .display()
             .to_string()
     }
@@ -76,19 +81,21 @@ mod e2e {
             clippy::option_if_let_else,
             reason = "In this case `match` reads better that `map_or`"
         )]
-        let rust_log = match std::env::var_os("RUST_LOG") {
+        let rust_log_filters = match std::env::var_os("RUST_LOG") {
             Some(value) => format!("RUST_LOG=\"{value:?}\""),
             None => String::new(),
         };
 
+        let bin_paths = std::env::var("PATH").unwrap();
+
         let minimum_env = format!(
             "\
-            TERM=xterm-256color \
             SHELL='{shell}' \
-            PATH=/usr/bin:/bin:/sbin:/usr/local/bin:/usr/sbin \
+            TATTOY_UNDER_TEST=1 \
+            PATH={bin_paths} \
             PWD={pwd:?} \
             PS1='{prompt}' \
-            {rust_log} \
+            {rust_log_filters} \
             "
         );
         format!(
@@ -99,6 +106,7 @@ mod e2e {
             --use minimap \
             --command 'bash --norc --noprofile' \
             --config-dir {} \
+            --log-path ./tests.log \
             ",
             minimum_env,
             tattoy_binary_path(),
@@ -132,8 +140,8 @@ mod e2e {
             .init();
     }
 
-    fn move_mouse(x: u32, y: u32) -> String {
-        format!("{ESCAPE}[<35;{x};{y}M")
+    fn move_mouse(x: u32, y: u32) -> Input {
+        Input::Event(format!("{ESCAPE}[<35;{x};{y}M"))
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -218,7 +226,7 @@ mod e2e {
                 .wait_for_bg_color_at(
                     Some((0.33333334, 0.33333334, 0.33333334, 1.0)),
                     right,
-                    bottom - 3,
+                    bottom - 2,
                     None,
                 )
                 .await
@@ -236,17 +244,25 @@ mod e2e {
             .unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
-        tattoy.send_input(mouse_up).unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_up.to_owned()))
+            .unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
-        tattoy.send_input(mouse_down).unwrap();
-        tattoy.send_input(mouse_down).unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_down.to_owned()))
+            .unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_down.to_owned()))
+            .unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
-        tattoy.send_input(mouse_up).unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_up.to_owned()))
+            .unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
-        tattoy.send_input(ESCAPE).unwrap();
+        tattoy.send_input(Input::Event(ESCAPE.to_owned())).unwrap();
         assert_scrolling_off(&mut tattoy).await;
     }
 
@@ -281,7 +297,7 @@ mod e2e {
             .unwrap();
         tattoy.wait_for_string("nulla", None).await.unwrap();
         tattoy
-            .send_input(move_mouse(u32::try_from(size.cols).unwrap() - 1, 1).as_ref())
+            .send_input(move_mouse(u32::try_from(size.cols).unwrap() - 1, 1))
             .unwrap();
 
         tattoy.wait_for_string("co▀▀▀▀▀▀▀▀▀▀", None).await.unwrap();
