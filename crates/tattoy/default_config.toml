@@ -21,6 +21,9 @@ hue = 0.0
 [minimap]
 enabled = false
 animation_speed = 0.15
+# The maximum width of the minimap. It can be narrower when the scrollback is long
+# in order to maintain a consistent aspect ratio.
+max_width = 10
 
 [smokey_cursor]
 enabled = false
@@ -36,9 +39,6 @@ max_particles = 3000
 [shader]
 enabled = false
 opacity = 0.75
-# The maximum width of the minimap. It can be narrower when the scrollback is long
-# in order to maintain a consistent aspect ratio.
-max_width = 10
 # Path to a Shadertoy shader on your local filesystem. Is relative to the root of
 # Tattoy's config directory.
 path = "shaders/point_lights.glsl"

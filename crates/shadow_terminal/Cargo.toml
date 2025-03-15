@@ -18,8 +18,8 @@ portable-pty = "0.8.1"
 termwiz.workspace = true
 snafu = "0.8.5"
 
-# Waiting on: https://github.com/wezterm/wezterm/pull/6734
 wezterm-term = { git = "https://github.com/tombh/wezterm.git", branch = "add-surface-repaint-override" }
+# wezterm-term = { path = "../../../wezterm/term/" }
 
 [lints]
 workspace = true

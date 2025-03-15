@@ -91,15 +91,16 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         },
     )
     .await?;
-    tracing::debug!("Left PTY thread, exiting Tattoy...");
+    tracing::debug!("🏁 left PTY thread, exiting Tattoy...");
     broadcast_protocol_end(&protocol_tx);
 
-    tracing::trace!("Joining tattoys loader thread");
+    tracing::trace!("Joining tattoys loader thread 🔴");
     tattoys_handle
         .join()
         .map_err(|err| color_eyre::eyre::eyre!("Tattoys handle: {err:?}"))??;
+    tracing::trace!("Left tattoys loader thread 🟢");
 
-    tracing::trace!("Joining input thread");
+    tracing::trace!("Joining input thread 🔴");
     if input_thread_handle.is_finished() {
         // The STDIN loop doesn't listen to the global Tattoy protocol, so it can't exit its loop.
         // Therefore we should only join it if it finished because of its own error.
@@ -107,12 +108,15 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
             .join()
             .map_err(|err| color_eyre::eyre::eyre!("STDIN handle: {err:?}"))??;
     }
+    tracing::trace!("Left input thread 🟢");
 
-    tracing::trace!("Awaiting renderer task");
+    tracing::trace!("Awaiting renderer task 🔴");
     renderer.await??;
+    tracing::trace!("Left renderer task 🟢");
 
-    tracing::trace!("Awaiting config watcher task");
+    tracing::trace!("Awaiting config watcher task 🔴");
     config_handle.await??;
+    tracing::trace!("Left config watcher task 🟢");
 
     tracing::trace!("Leaving Tattoy's main `run()` function");
     Ok(())
@@ -157,7 +161,7 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     crate::config::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
     crate::config::Config::update_shared_state(state).await?;
 
-    setup_logging(state).await?;
+    setup_logging(cli_args.clone(), state).await?;
 
     // Assuming true colour makes Tattoy simpler.
     // * I think it's safe to assume that the vast majority of people using Tattoy will have a
@@ -183,25 +187,39 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
 }
 
 /// Setup logging
-async fn setup_logging(state: &std::sync::Arc<SharedState>) -> Result<()> {
-    let path = state.config.read().await.log_path.clone();
+async fn setup_logging(cli_args: CliArgs, state: &std::sync::Arc<SharedState>) -> Result<()> {
+    let mut path = state.config.read().await.log_path.clone();
+
+    if let Some(cli_override_path) = cli_args.log_path {
+        path = cli_override_path;
+    }
+
     let directory = path.parent().context("Couldn't get log path's parent")?;
     std::fs::create_dir_all(directory)?;
     let file = std::fs::File::create(path)?;
 
-    let level = state.config.read().await.log_level.clone();
+    let are_log_filters_manually_set = std::env::var("RUST_LOG").is_ok();
+    let filters = if are_log_filters_manually_set {
+        // When defining your own filters with a `RUST_LOG` set to debug or trace,
+        // you'll very likely want `tokio=debug,runtime=debug`. They're very noisy
+        // and most of it is just for the Tokio console, which aren't needed
+        // anyway as they're parsed internally.
+        tracing_subscriber::EnvFilter::builder()
+            .with_default_directive("error".parse()?)
+            .from_env_lossy()
+    } else {
+        let level = state.config.read().await.log_level.clone();
+        tracing_subscriber::EnvFilter::builder()
+            .with_default_directive("off".parse()?)
+            .from_env_lossy()
+            .add_directive(format!("shadow_terminal={level}").parse()?)
+            .add_directive(format!("tattoy={level}").parse()?)
+            .add_directive(format!("tests={level}").parse()?)
+    };
 
     let logfile_layer = tracing_subscriber::fmt::layer()
         .with_writer(file)
-        .with_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                // We don't want any of the trace lines that make the `tokio-console` possible
-                .add_directive(format!("shadow_terminal={level}").parse()?)
-                .add_directive(format!("tattoy={level}").parse()?)
-                .add_directive(format!("tests={level}").parse()?)
-                .add_directive("tokio=debug".parse()?)
-                .add_directive("runtime=debug".parse()?),
-        );
+        .with_filter(filters);
 
     let tracing_setup = tracing_subscriber::registry().with(logfile_layer);
 

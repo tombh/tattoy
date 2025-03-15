@@ -11,7 +11,7 @@ pub type BytesFromSTDIN = [u8; 128];
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedInput {
     /// The raw bytes that made up the parsed event
-    pub bytes: BytesFromSTDIN,
+    pub bytes: Vec<u8>,
     /// The parsed event
     pub event: termwiz::input::InputEvent,
 }
@@ -50,21 +50,36 @@ impl Input {
         let stdin = std::io::stdin();
         let mut reader = std::io::BufReader::new(stdin);
         let mut parser = termwiz::input::InputParser::new();
+        let mut accumulated: Vec<u8> = Vec::new();
+        let mut is_accumulating = false;
 
         loop {
             let mut buffer: BytesFromSTDIN = [0; 128];
             match reader.read(&mut buffer[..]) {
-                Ok(n) => {
-                    if let Some(bytes) = buffer.get(0..n) {
-                        let sample = String::from_utf8_lossy(&buffer);
-                        tracing::trace!("Received STDIN input: {sample} ({bytes:x?})");
+                Ok(size) => {
+                    accumulated = if size < 128 {
+                        if is_accumulating {
+                            [accumulated.clone(), buffer.to_vec()].concat()
+                        } else {
+                            buffer.to_vec()
+                        }
+                    } else {
+                        is_accumulating = true;
+                        buffer.to_vec()
+                    };
 
+                    if let Some(bytes) = buffer.get(0..size) {
+                        let sample = String::from_utf8_lossy(&buffer);
+                        tracing::trace!("Received STDIN input: {sample} ({bytes:?})");
+
+                        let wait_for_more = is_accumulating;
                         parser.parse(
                             bytes,
                             |event| {
-                                self.parsed_bytes_callback(event, buffer);
+                                self.parsed_bytes_callback(event, accumulated.clone());
+                                is_accumulating = false;
                             },
-                            false,
+                            wait_for_more,
                         );
                     } else {
                         tracing::warn!("Couldn't get bytes from STDIN input buffer");
@@ -78,7 +93,7 @@ impl Input {
     }
 
     /// The callback for when the input parser detects known keyboard/mouse events.
-    fn parsed_bytes_callback(&self, event: termwiz::input::InputEvent, bytes: BytesFromSTDIN) {
+    fn parsed_bytes_callback(&self, event: termwiz::input::InputEvent, bytes: Vec<u8>) {
         tracing::trace!("Parsed input event: {event:?}");
 
         let result = self

@@ -15,8 +15,8 @@ tracing = "0.1.40"
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 indoc = "2.0.5"
 
-# Waiting on: https://github.com/wezterm/wezterm/pull/6734
 termwiz = { git = "https://github.com/tombh/wezterm.git", branch = "add-surface-repaint-override" }
+# termwiz = { path = "../wezterm/termwiz" }
 
 # Canonical lints for whole crate
 #
