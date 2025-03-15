@@ -8,35 +8,28 @@
         overflow, so we'll know about it soon enough.
     "
 )]
+#[cfg(not(target_os = "windows"))]
 #[cfg(test)]
 mod e2e {
     const ESCAPE: &str = "\x1b";
 
-    use shadow_terminal::{shadow_terminal::Config, steppable_terminal::SteppableTerminal};
-
-    fn workspace_dir() -> std::path::PathBuf {
-        let output = std::process::Command::new(env!("CARGO"))
-            .arg("locate-project")
-            .arg("--workspace")
-            .arg("--message-format=plain")
-            .output()
-            .unwrap()
-            .stdout;
-        let cargo_path = std::path::Path::new(std::str::from_utf8(&output).unwrap().trim());
-        let workspace_dir = cargo_path.parent().unwrap().to_path_buf();
-        tracing::debug!("Using workspace directory: {workspace_dir:?}");
-        workspace_dir
-    }
+    use shadow_terminal::{
+        shadow_terminal::Config,
+        steppable_terminal::{Input, SteppableTerminal},
+    };
 
     fn tattoy_binary_path() -> String {
-        workspace_dir()
-            .join("target/debug/tattoy")
+        shadow_terminal::tests::helpers::workspace_dir()
+            .join("target")
+            .join("debug")
+            .join("tattoy")
             .display()
             .to_string()
     }
 
     async fn start_tattoy(maybe_config_path: Option<String>) -> SteppableTerminal {
-        let shell = "bash";
+        let shell = shadow_terminal::steppable_terminal::get_canonical_shell();
+
         let prompt = "tattoy $ ";
 
         // TODO: this directory gets deleted at the end of the _function_, not the end of the test.
@@ -45,7 +38,7 @@ mod e2e {
         let config = Config {
             width: 50,
             height: 10,
-            command: vec![shell.into()],
+            command: shell.clone(),
             ..Config::default()
         };
         let mut stepper = SteppableTerminal::start(config).await.unwrap();
@@ -62,7 +55,7 @@ mod e2e {
             Some(path) => path,
         };
 
-        let command = generate_tattoy_command(shell, prompt, config_path.as_ref());
+        let command = generate_tattoy_command(&shell, prompt, config_path.as_ref());
         stepper.send_command(&command).unwrap();
         stepper.wait_for_string(prompt, None).await.unwrap();
         assert_random_walker_moves(&mut stepper).await;
@@ -70,28 +63,36 @@ mod e2e {
     }
 
     // We use the minimum possible ENV to support reproducibility of tests.
-    fn generate_tattoy_command(shell: &str, prompt: &str, config_dir: &str) -> String {
+    fn generate_tattoy_command(
+        shell_as_vec: &[std::ffi::OsString],
+        prompt: &str,
+        config_dir: &str,
+    ) -> String {
         let pwd = std::env::current_dir().unwrap();
         #[expect(
             clippy::option_if_let_else,
             reason = "In this case `match` reads better that `map_or`"
         )]
-        let rust_log = match std::env::var_os("RUST_LOG") {
-            Some(value) => format!("RUST_LOG=\"{value:?}\""),
+        let rust_log_filters = match std::env::var_os("RUST_LOG") {
+            Some(value) => format!("RUST_LOG={value:?}"),
             None => String::new(),
         };
 
+        let bin_paths = std::env::var("PATH").unwrap();
+
+        let seperator = std::ffi::OsString::from(" ".to_owned());
+        let shell = shell_as_vec.join(&seperator);
         let minimum_env = format!(
             "\
-            TERM=xterm-256color \
-            SHELL='{shell}' \
-            PATH=/usr/bin:/bin:/sbin:/usr/local/bin:/usr/sbin \
-            PWD={pwd:?} \
+            SHELL='{shell:?}' \
+            PATH='{bin_paths}' \
+            TATTOY_UNDER_TEST=1 \
+            PWD='{pwd:?}' \
             PS1='{prompt}' \
-            {rust_log} \
+            {rust_log_filters} \
             "
         );
-        format!(
+        let command = format!(
             "\
             unset $(env | cut -d= -f1) && \
             {} {} \
@@ -99,11 +100,15 @@ mod e2e {
             --use minimap \
             --command 'bash --norc --noprofile' \
             --config-dir {} \
+            --log-path ./tests.log \
             ",
             minimum_env,
             tattoy_binary_path(),
             config_dir
-        )
+        );
+
+        tracing::debug!("Full command: {}", command);
+        command
     }
 
     async fn assert_random_walker_moves(tattoy: &mut SteppableTerminal) {
@@ -132,8 +137,8 @@ mod e2e {
             .init();
     }
 
-    fn move_mouse(x: u32, y: u32) -> String {
-        format!("{ESCAPE}[<35;{x};{y}M")
+    fn move_mouse(x: u32, y: u32) -> Input {
+        Input::Event(format!("{ESCAPE}[<35;{x};{y}M"))
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -159,6 +164,8 @@ mod e2e {
         let size = tattoy.shadow_terminal.terminal.get_size();
         let bottom = size.rows - 1;
         let right = size.cols - 1;
+        assert_eq!(bottom, 9);
+        assert_eq!(right, 49);
         tattoy
             .wait_for_string_at("Paste", right - 10, bottom, None)
             .await
@@ -174,6 +181,8 @@ mod e2e {
         let resized_size = tattoy.shadow_terminal.terminal.get_size();
         let resized_bottom = resized_size.rows - 1;
         let resized_right = resized_size.cols - 1;
+        assert_eq!(resized_bottom, 12);
+        assert_eq!(resized_right, 52);
         tattoy
             .wait_for_string_at("^X Exit", 0, resized_bottom, Some(1000))
             .await
@@ -218,7 +227,7 @@ mod e2e {
                 .wait_for_bg_color_at(
                     Some((0.33333334, 0.33333334, 0.33333334, 1.0)),
                     right,
-                    bottom - 3,
+                    bottom - 2,
                     None,
                 )
                 .await
@@ -236,17 +245,25 @@ mod e2e {
             .unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
-        tattoy.send_input(mouse_up).unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_up.to_owned()))
+            .unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
-        tattoy.send_input(mouse_down).unwrap();
-        tattoy.send_input(mouse_down).unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_down.to_owned()))
+            .unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_down.to_owned()))
+            .unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
-        tattoy.send_input(mouse_up).unwrap();
+        tattoy
+            .send_input(Input::Event(mouse_up.to_owned()))
+            .unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
-        tattoy.send_input(ESCAPE).unwrap();
+        tattoy.send_input(Input::Event(ESCAPE.to_owned())).unwrap();
         assert_scrolling_off(&mut tattoy).await;
     }
 
@@ -281,7 +298,7 @@ mod e2e {
             .unwrap();
         tattoy.wait_for_string("nulla", None).await.unwrap();
         tattoy
-            .send_input(move_mouse(u32::try_from(size.cols).unwrap() - 1, 1).as_ref())
+            .send_input(move_mouse(u32::try_from(size.cols).unwrap() - 1, 1))
             .unwrap();
 
         tattoy.wait_for_string("co▀▀▀▀▀▀▀▀▀▀", None).await.unwrap();

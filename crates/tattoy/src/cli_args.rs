@@ -29,4 +29,8 @@ pub struct CliArgs {
     /// files.
     #[arg(long, value_name = "Path to config directory")]
     pub config_dir: Option<std::path::PathBuf>,
+
+    /// Path to the log file, overrides the setting in config.
+    #[arg(long, value_name = "Path to log file")]
+    pub log_path: Option<std::path::PathBuf>,
 }

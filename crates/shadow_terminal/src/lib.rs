@@ -27,6 +27,11 @@ mod pty;
 pub mod shadow_terminal;
 pub mod steppable_terminal;
 
+/// asdasdad
+pub mod tests {
+    pub mod helpers;
+}
+
 /// All the control signals
 #[derive(Debug, Clone)]
 #[non_exhaustive]

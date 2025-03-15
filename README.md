@@ -26,19 +26,20 @@ Roadmap milestones for public release: https://github.com/tombh/tattoy/milestone
 ## Live Streamed Development on Twitch
 Come join us at: https://www.twitch.tv/tom__bh
 
-## Known Major Issues
-* Currently not working on Windows, see this issue for updates: https://github.com/tombh/tattoy/issues/22
+## Windows
+Tattoy largely works on Windows, but I don't have a local Windows machine to easily test on, so would appreciate feeedback. See this issue for more details: https://github.com/tombh/tattoy/issues/42
 
 ## Installation
 * Have a Rust installed already: https://www.rust-lang.org/tools/install
 * Clone the repo: `git clone https://github.com/tombh/tattoy`
 * On Linux you may need these dependencies, eg (for Debian/Ubuntu): `sudo apt install libxcb1-dev libdbus-1-dev pkg-config`.
-* Soon upi'll be able to skip instalation once pre-built binaries are available.
+* Soon you'll be able to skip installation once pre-built binaries are available.
 
 ## Usage
 * Parse your palette: `cargo run --release -- --capture-palette` or `cargo run --release -- --parse-palette path_to_screenshot.png`
-* Once you've parsed your pale, start with: `cargo run --release`
+* Once you've parsed your palette, start with: `cargo run --release`
 * Configurable through the automatically generated config file at `$XDG_CONFIG_DIR/tattoy/tattoy.toml` (not in the repo's `crates/tattoy/default_config.toml`).
+* Note that Tattoy replaces your terminal, it may even look exactly the same as your existing terminal at first. So it can't be exited with `CTRL+C`. You exit as you would exit a normal shell, therefore with `CTRL+D` or running the `exit` command.
 
 > [!WARNING]
 > Don't place `tattoy` in your `.bashrc` or `.zshrc`. It's not ready to be a default terminal yet.

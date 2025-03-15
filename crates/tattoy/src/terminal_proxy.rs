@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{ContextCompat as _, Result};
 
 use crate::shared_state::SharedState;
 
@@ -58,6 +58,7 @@ impl TerminalProxy {
             reason = "This is caused by the `tokio::select!`"
         )]
         loop {
+            // TODO: Be 100% sure that everything is cancellation safe here.
             tokio::select! {
                 Ok(message) = tattoy_protocol_rx.recv() => {
                     proxy.handle_tattoy_protocol_message(message).await?;
@@ -290,9 +291,24 @@ impl TerminalProxy {
             tracing::trace!("Tattoy input event: {:?}", input.event);
             self.handle_scrolling_input(&input.event).await?;
         } else if !self.state.get_is_scrolling().await {
-            let result = self.shadow_terminal.send_input(input.bytes).await;
-            if let Err(error) = result {
-                tracing::error!("Couldn't forward STDIN bytes on PTY input channel: {error:?}");
+            tracing::trace!(
+                "Terminal proxy received input bytes: {}",
+                String::from_utf8_lossy(&input.bytes)
+            );
+            for chunk in input.bytes.chunks(128) {
+                let mut buffer: crate::input::BytesFromSTDIN = [0; 128];
+                for (i, chunk_byte) in chunk.iter().enumerate() {
+                    let buffer_byte = buffer.get_mut(i).context("Couldn't get byte from buffer")?;
+                    *buffer_byte = *chunk_byte;
+                }
+                tracing::trace!(
+                    "Proxying input to shadow terminal from Tattoy: {}",
+                    String::from_utf8_lossy(&buffer)
+                );
+                let result = self.shadow_terminal.send_input(buffer).await;
+                if let Err(error) = result {
+                    tracing::error!("Couldn't forward STDIN bytes on PTY input channel: {error:?}");
+                }
             }
         } else {
             if let termwiz::input::InputEvent::Key(key_event) = &input.event {
