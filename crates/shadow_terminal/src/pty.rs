@@ -2,14 +2,10 @@
 //! It doesn't actually maintain a visual representation, that requires the [`Wezterm`] terminal
 //! to parse the PTY's output, see: [`ShadowTerminal`].
 
-use std::ffi::OsString;
-use std::os::fd::FromRawFd as _;
+use std::{ffi::OsString, io::Read as _};
 
 use snafu::{OptionExt as _, ResultExt as _};
-use tokio::{
-    io::{AsyncReadExt as _, AsyncWriteExt as _},
-    sync::mpsc,
-};
+use tokio::sync::mpsc;
 use tracing::Instrument as _;
 
 /// A single payload from the PTY output stream.
@@ -34,11 +30,8 @@ pub struct PTY {
 
 impl PTY {
     /// Function just to isolate the PTY setup
-    fn setup_pty(
-        &self,
-    ) -> Result<(tokio::fs::File, portable_pty::PtyPair), crate::errors::PTYError> {
+    fn setup_pty(&self) -> Result<portable_pty::PtyPair, crate::errors::PTYError> {
         tracing::debug!("Setting up PTY");
-
         let pty_system = portable_pty::native_pty_system();
         let pair = pty_system
             .openpty(Self::pty_size(self.width, self.height))
@@ -54,45 +47,91 @@ impl PTY {
             .slave
             .spawn_command(cmd)
             .with_whatever_context(|_| "Error spawning PTY command")?;
-        Self::kill_on_protocol_end(self.control_tx.subscribe(), spawn);
+        let killer = spawn.clone_killer();
+        Self::wait_for_pty_end(self.control_tx.clone(), spawn);
+        Self::kill_on_protocol_end(self.control_tx.subscribe(), killer);
 
-        // I originally used the raw file descriptor based on discussions here:
-        //   [Github comment](https://github.com/wez/wezterm/discussions/5151)
-        // But since then I use it more because `pair.master.try_clone_reader()` doesn't detect the
-        // end of the PTY process and so blocks the whole Tattoy app. Listening on the raw FD
-        // however, does detect the end of the PTY and so we can exit gracefully.
-        let master_fd = pair
-            .master
-            .as_raw_fd()
-            .with_whatever_context(|| "Couldn't get master file descriptor for PTY")?;
+        tracing::trace!("Returning PTY pair");
+        Ok(pair)
+    }
 
-        tracing::trace!("Returning PTY file descriptor");
-        Ok((
-            // SAFETY: Why is this unsafe? Is there another safe way to do this?
-            unsafe { tokio::fs::File::from_raw_fd(master_fd) },
-            pair,
-        ))
+    /// The PTY crate is not async, so here we're basically just listening to the PTY to be able to
+    /// broadcastr it's output on an async channel.
+    fn pty_reader_loop(
+        pty_reader: std::boxed::Box<dyn std::io::Read + std::marker::Send>,
+        pty_reader_tx: mpsc::Sender<BytesFromPTY>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::task::spawn_blocking(move || {
+            let mut reader = std::io::BufReader::new(pty_reader);
+            loop {
+                let mut buffer: BytesFromPTY = [0; 4096];
+                let read_result = reader.read(&mut buffer);
+                match read_result {
+                    Ok(0) => {
+                        tracing::debug!("PTY reader loop received 0 bytes, exiting...");
+                        break;
+                    }
+                    Ok(_) => {
+                        let send_result = pty_reader_tx.blocking_send(buffer);
+                        if let Err(error) = send_result {
+                            tracing::error!("Broadcasting PTY output: {error:?}");
+                            break;
+                        }
+                    }
+                    Err(error) => tracing::error!("PTY reader: {error:?}"),
+                }
+            }
+            tracing::trace!("Leaving PTY reader loop");
+        })
+    }
+
+    /// A dedicated loop to listen for the official PTY end event.
+    fn wait_for_pty_end(
+        protocol_out: tokio::sync::broadcast::Sender<crate::Protocol>,
+        mut spawn: Box<dyn portable_pty::Child + Send + Sync>,
+    ) {
+        tokio::task::spawn_blocking(move || {
+            tracing::debug!("Starting to wait for PTY end");
+            let waiter_result = spawn.wait();
+            if let Err(error) = waiter_result {
+                tracing::error!("Waiting for PTY: {error:?}");
+            }
+            let sender_result = protocol_out.send(crate::Protocol::End);
+            if let Err(error) = sender_result {
+                tracing::error!("Sending `Protocol::End` after: {error:?} ");
+            }
+            tracing::info!("PTY ended by its own accord");
+        });
     }
 
     /// Listen for the `End` message from the Tattoy protocol channel and then kill the PTY.
     fn kill_on_protocol_end(
-        mut protocol_out: tokio::sync::broadcast::Receiver<crate::Protocol>,
-        mut spawn: Box<dyn portable_pty::Child + Send + Sync>,
+        mut protocol_in: tokio::sync::broadcast::Receiver<crate::Protocol>,
+        mut spawn: Box<dyn portable_pty::ChildKiller + Send + Sync>,
     ) {
         let current_span = tracing::Span::current();
         tokio::spawn(
             async move {
                 tracing::debug!("Starting loop for PTY spawn to receive protocol messages");
                 loop {
-                    match protocol_out.recv().await {
+                    match protocol_in.recv().await {
                         Ok(message) => {
                             if matches!(message, crate::Protocol::End)  {
                                 tracing::debug!("PTY received Tattoy message {message:?}");
                                 let result = spawn.kill();
                                 if let Err(error) = result {
+                                    // This is the error when the PTY naturally ends. Is there a better way to
+                                    // match?
+                                    let pty_exit = "No such process";
+                                    if error.to_string().contains(pty_exit) {
+                                        tracing::debug!("Tried killing PTY that was already gone.");
+                                        break;
+                                    }
+
                                     tracing::error!("Couldn't kill PTY: {error:?}");
                                     // TODO: maybe we want to force exit here?
                                 }
+
                                 tracing::debug!(
                                     "`kill()` (which includes OS kill signals) sent to PTY spawn process"
                                 );
@@ -115,18 +154,24 @@ impl PTY {
         self,
         input_rx: mpsc::Receiver<BytesFromSTDIN>,
     ) -> Result<(), crate::errors::PTYError> {
+        let (pty_reader_tx, mut pty_reader_rx) = tokio::sync::mpsc::channel(1);
+
         // It's important that we subscribe now, as that is what starts the backlog of protocol
         // messages. It's possible that messages are sent during PTY startup and we don't want to
         // miss any of those messages later when we finally start the listening loop.
         let mut protocol_for_main_loop = self.control_tx.subscribe();
 
-        let (pty_raw_device_file, pty_pair) = self.setup_pty()?;
-        let mut pty_stream_reader = tokio::io::BufReader::new(
-            pty_raw_device_file
-                .try_clone()
-                .await
-                .with_whatever_context(|_| "Couldn't clone raw PTY device reader")?,
-        );
+        let pty_pair = self.setup_pty()?;
+        let pty_writer = pty_pair
+            .master
+            .take_writer()
+            .with_whatever_context(|err| format!("Getting PTY writer: {err:?}"))?;
+        let pty_reader = pty_pair
+            .master
+            .try_clone_reader()
+            .with_whatever_context(|err| format!("Getting PTY reader: {err:?}"))?;
+
+        Self::pty_reader_loop(pty_reader, pty_reader_tx);
 
         // We have to drop the slave so that we don't hang on it when we exit.
         drop(pty_pair.slave);
@@ -137,7 +182,7 @@ impl PTY {
         tokio::spawn(async move {
             let result = Self::forward_input(
                 input_rx,
-                pty_raw_device_file,
+                pty_writer,
                 pty_pair.master,
                 protocol_for_input_loop,
             )
@@ -155,16 +200,8 @@ impl PTY {
         )]
         loop {
             tokio::select! {
-                result = self.read_stream(&mut pty_stream_reader) => {
+                result = self.read_stream(&mut pty_reader_rx) => {
                     if let Err(error) = result {
-                        // This is the error when the PTY naturally ends. Is there a better way to
-                        // match?
-                        let pty_exit = "Os { code: 5, kind: Uncategorized, message: \"Input/output error\" }";
-                        if error.to_string().contains(pty_exit) {
-                            tracing::info!("PTY exited by its own accord");
-                            break;
-                        }
-
                         // TODO: The error should be bubbled, and logged centrally
                         tracing::error!("{error:?}");
                         snafu::whatever!("{error:?}");
@@ -196,52 +233,37 @@ impl PTY {
     /// Read bytes from the underlying PTY sub process and forward them to the Shadow Terminal.
     async fn read_stream(
         &self,
-        pty_stream_reader: &mut tokio::io::BufReader<tokio::fs::File>,
+        pty_reader_rx: &mut mpsc::Receiver<BytesFromPTY>,
     ) -> Result<(), crate::errors::PTYError> {
-        let mut buffer: BytesFromPTY = [0; 4096];
-        let chunk_size = pty_stream_reader.read(&mut buffer[..]).await;
-        match chunk_size {
-            Ok(0) => {
-                snafu::whatever!("PTY reader received 0 bytes");
-            }
-            Ok(size) => {
-                let result = self.output_tx.send(buffer).await;
-                if let Err(err) = result {
-                    tracing::error!("Sending bytes on PTY output channel: {err}");
-                }
+        let Some(bytes) = pty_reader_rx.recv().await else {
+            return Ok(());
+        };
 
-                // Debugging only
-                // TODO: only do this is dev builds?
-                let payload = &buffer
-                    .get(0..size)
-                    .with_whatever_context(|| "No data in buffer (should be impossible)")?;
-                let output = String::from_utf8_lossy(payload)
-                    .to_string()
-                    .replace('[', "\\[");
-                tracing::trace!("Sent PTY output ({size}), sample:\n{:.1000}...", output);
-            }
-            Err(err) => {
-                snafu::whatever!("Reading PTY stream: {err:?}");
-            }
+        let result = self.output_tx.send(bytes).await;
+        if let Err(err) = result {
+            tracing::error!("Sending bytes on PTY output channel: {err}");
         }
+
+        let output = String::from_utf8_lossy(&bytes)
+            .to_string()
+            .replace('[', "\\[");
+        tracing::trace!(
+            "Sent PTY output ({}), sample:\n{:.1000}...",
+            bytes.len(),
+            output
+        );
 
         Ok(())
     }
 
-    // Note: I wonder if using `termwiz::terminal::new_terminal`'s' `poll_input()` method is also
-    // an option? I think it might not be because we're not actually intercepting `CTRL+C`, `CTRL+D`,
-    // etc. But it might be useful for Tattoy-specific keybindings?
-    //
     /// Forward channel bytes from the user's input to the virtual PTY
     async fn forward_input(
         mut user_input: mpsc::Receiver<BytesFromSTDIN>,
-        pty_stream: tokio::fs::File,
+        mut pty_writer: std::boxed::Box<dyn std::io::Write + std::marker::Send>,
         pty_master: std::boxed::Box<(dyn portable_pty::MasterPty + std::marker::Send + 'static)>,
         mut protocol: tokio::sync::broadcast::Receiver<crate::Protocol>,
     ) -> Result<(), crate::errors::PTYError> {
         tracing::debug!("Starting `forward_input` loop");
-
-        let mut writer = tokio::io::BufWriter::new(pty_stream);
 
         #[expect(
             clippy::integer_division_remainder_used,
@@ -256,7 +278,7 @@ impl PTY {
                     }
                 }
                 Some(some_bytes) = user_input.recv() => {
-                    Self::handle_input_bytes(some_bytes, &mut writer).await?;
+                    Self::handle_input_bytes(some_bytes, &mut pty_writer)?;
                 }
             }
         }
@@ -291,34 +313,29 @@ impl PTY {
     }
 
     /// Handle input from end user.
-    async fn handle_input_bytes(
+    fn handle_input_bytes(
         bytes: BytesFromSTDIN,
-        pty_stdin: &mut tokio::io::BufWriter<tokio::fs::File>,
+        pty_stdin: &mut std::boxed::Box<dyn std::io::Write + std::marker::Send>,
     ) -> Result<(), crate::errors::PTYError> {
         tracing::trace!(
             "Forwarding input to PTY: '{}'",
             String::from_utf8_lossy(&bytes).replace('\n', "\\n")
         );
 
-        // TODO:
-        // Sending the entire payload seems to break some input 🤔
-        // Also, is it more efficient like this? Not sending more bytes than is needed probably
-        // prevents some unnecessary parsing somewhere?
-        for byte in bytes {
-            if byte == 0 {
-                break;
-            }
-            pty_stdin
-                .write_all(&[byte])
-                .await
-                .with_whatever_context(|err| {
-                    format!("Couldn't write bytes into PTY's STDIN: {err:?}")
-                })?;
-        }
+        let maybe_size = bytes.iter().position(|byte| byte == &0);
+        let size = maybe_size.unwrap_or(128);
+        let byte_slice = bytes.get(0..size).with_whatever_context(|| {
+            "Couldn't get slice of input payload. Should be impossible."
+        })?;
+
+        pty_stdin
+            .write_all(byte_slice)
+            .with_whatever_context(|err| {
+                format!("Couldn't write bytes into PTY's STDIN: {err:?}")
+            })?;
         pty_stdin
             .flush()
-            .await
-            .with_whatever_context(|err| format!("Couldn't flush stdin stream to PTY: {err:?}"))?;
+            .with_whatever_context(|err| format!("Couldn't flush STDIN stream to PTY: {err:?}"))?;
 
         Ok(())
     }
@@ -355,6 +372,7 @@ impl Drop for PTY {
 }
 
 #[cfg(test)]
+#[expect(clippy::print_stderr, reason = "Tests aren't so strict")]
 mod test {
     use super::*;
 
@@ -367,16 +385,20 @@ mod test {
         // TODO: Think about a convenient way to enable this whenever only a single test is ran
         // setup_logging().unwrap();
 
-        let (pty_output_tx, mut pty_output_rx) = mpsc::channel::<BytesFromPTY>(1);
-        let (pty_input_tx, pty_input_rx) = mpsc::channel::<BytesFromSTDIN>(1);
+        let (pty_output_tx, mut pty_output_rx) = mpsc::channel::<BytesFromPTY>(8);
+        let (pty_input_tx, pty_input_rx) = mpsc::channel::<BytesFromSTDIN>(8);
         let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
 
         let output_task = tokio::spawn(async move {
             tracing::debug!("TEST: Output listener loop starting...");
             let mut result: Vec<u8> = vec![];
+
+            // TODO: don't just rely on test commands sending an `exit` to allow this loop to
+            // finish.
             while let Some(bytes) = pty_output_rx.recv().await {
                 result.extend(bytes.iter().copied());
             }
+
             let output = String::from_utf8_lossy(&result).into_owned();
             tracing::debug!("TEST: `interactive()` output: {output:?}");
             output
@@ -402,6 +424,24 @@ mod test {
         (output_task, pty_input_tx)
     }
 
+    /// TODO: Powershell isn't displaying emoji: 🌍
+    fn cat_earth_command() -> String {
+        let cat_command = "cat";
+        let path = crate::tests::helpers::workspace_dir()
+            .join("crates")
+            .join("shadow_terminal")
+            .join("src")
+            .join("tests")
+            .join("cat_me.txt");
+
+        #[cfg(not(target_os = "windows"))]
+        let sleep = "&& sleep 0.5";
+        #[cfg(target_os = "windows")]
+        let sleep = "; Start-Sleep -Milliseconds 5";
+
+        format!("{cat_command} {} {sleep}", path.display())
+    }
+
     fn stdin_bytes(input: &str) -> BytesFromSTDIN {
         let mut buffer: BytesFromSTDIN = [0; 128];
         #[expect(
@@ -412,25 +452,44 @@ mod test {
         buffer
     }
 
-    #[tokio::test]
-    async fn rendering_pi() {
-        let (output_task, _input_channel) = run(vec![
-            "bash".into(),
-            "-c".into(),
-            "echo 'scale=10; 4*a(1)' | bc -l".into(),
-        ]);
+    #[tokio::test(flavor = "multi_thread")]
+    async fn basic_output() {
+        let mut command = crate::steppable_terminal::get_canonical_shell();
+
+        #[cfg(not(target_os = "windows"))]
+        command.push("-c".into());
+        #[cfg(target_os = "windows")]
+        command.push("-Command".into());
+
+        command.push(cat_earth_command().into());
+
+        let (output_task, _) = run(command);
         let result = output_task.await.unwrap();
-        assert!(result.contains("3.1415926532"));
+        eprintln!("{result}");
+
+        assert!(result.contains("earth"));
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test(flavor = "multi_thread")]
     async fn interactive() {
-        let (output_task, input_channel) = run(vec!["bash".into()]);
+        let (output_task, input_channel) = run(crate::steppable_terminal::get_canonical_shell());
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        #[cfg(not(target_os = "windows"))]
+        let exit = "&& exit";
+        #[cfg(target_os = "windows")]
+        let exit = "; exit";
+        let command = format!("{} {exit}\n", cat_earth_command());
+
         input_channel
-            .send(stdin_bytes("echo Hello && exit\n"))
+            .send(stdin_bytes(command.as_ref()))
             .await
             .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         let result = output_task.await.unwrap();
-        assert!(result.contains("Hello"));
+        eprintln!("{result}");
+
+        assert!(result.contains("earth"));
     }
 }
