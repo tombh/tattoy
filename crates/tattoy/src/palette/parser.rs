@@ -163,8 +163,8 @@ impl Parser {
         std::io::stdin().read_line(&mut answer)?;
         println!();
 
-        if answer != "y\n" {
-            println!("Aborted");
+        if answer != format!("y{}", crate::utils::NEWLINE) {
+            println!("'y' not selected, exiting...");
             std::process::exit(0);
         }
 
@@ -294,8 +294,9 @@ impl Parser {
         std::io::stdin().read_line(&mut answer)?;
         println!();
 
-        if answer != "y\n" {
-            println!("Aborted");
+        if answer != format!("y{}", crate::utils::NEWLINE) {
+            println!("'y' not selected, exiting...");
+            return Ok(());
         }
 
         let path = Self::palette_config_path(state).await;

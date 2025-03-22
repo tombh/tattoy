@@ -275,7 +275,7 @@ impl crate::shadow_terminal::ShadowTerminal {
                 let mut surface = termwiz::surface::Surface::new(tty_size.cols, tty_size.rows);
                 surface.add_changes(changes);
                 tracing::trace!(
-                    "Sending complete Screen ({} changes): Sample:\n{:.100}\n...",
+                    "Sending complete Screen ({} changes): Sample:\n{:.1000}\n...",
                     changes_count,
                     surface.screen_chars_to_string()
                 );

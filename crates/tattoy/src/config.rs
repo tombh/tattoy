@@ -46,7 +46,13 @@ impl Default for Config {
     fn default() -> Self {
         let command = match std::env::var("SHELL") {
             Ok(command) => command,
-            Err(_) => "/usr/bin/bash".into(),
+            Err(_) => {
+                if std::env::var("PSModulePath").is_ok() {
+                    "powershell".into()
+                } else {
+                    "/usr/bin/bash".into()
+                }
+            }
         };
 
         let log_directory = match dirs::state_dir() {

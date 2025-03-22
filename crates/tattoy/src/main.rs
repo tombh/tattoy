@@ -19,6 +19,7 @@ pub mod run;
 pub mod shared_state;
 pub mod surface;
 pub mod terminal_proxy;
+pub mod utils;
 
 /// This is where all the various tattoys are kept
 pub mod tattoys {
