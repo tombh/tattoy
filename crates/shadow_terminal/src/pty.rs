@@ -10,7 +10,7 @@ use tracing::Instrument as _;
 
 /// A single payload from the PTY output stream.
 pub type BytesFromPTY = [u8; 4096];
-/// A single payload from the user's input stream.
+/// A single payload from the user's input stream (or sometimes internal input).
 pub type BytesFromSTDIN = [u8; 128];
 
 /// This is the PTY process that replaces the user's current TTY
@@ -152,7 +152,8 @@ impl PTY {
     /// Start the PTY
     pub async fn run(
         self,
-        input_rx: mpsc::Receiver<BytesFromSTDIN>,
+        user_input_rx: mpsc::Receiver<BytesFromSTDIN>,
+        internal_input_rx: mpsc::Receiver<BytesFromSTDIN>,
     ) -> Result<(), crate::errors::PTYError> {
         let (pty_reader_tx, mut pty_reader_rx) = tokio::sync::mpsc::channel(1);
 
@@ -181,7 +182,8 @@ impl PTY {
         let current_span = tracing::Span::current();
         tokio::spawn(async move {
             let result = Self::forward_input(
-                input_rx,
+                user_input_rx,
+                internal_input_rx,
                 pty_writer,
                 pty_pair.master,
                 protocol_for_input_loop,
@@ -246,12 +248,8 @@ impl PTY {
 
         let output = String::from_utf8_lossy(&bytes)
             .to_string()
-            .replace('[', "\\[");
-        tracing::trace!(
-            "Sent PTY output ({}), sample:\n{:.1000}...",
-            bytes.len(),
-            output
-        );
+            .replace('\x1b', "^");
+        tracing::trace!("Sent PTY output, sample:\n{:.500}...", output);
 
         Ok(())
     }
@@ -259,6 +257,7 @@ impl PTY {
     /// Forward channel bytes from the user's input to the virtual PTY
     async fn forward_input(
         mut user_input: mpsc::Receiver<BytesFromSTDIN>,
+        mut internal_input: mpsc::Receiver<BytesFromSTDIN>,
         mut pty_writer: std::boxed::Box<dyn std::io::Write + std::marker::Send>,
         pty_master: std::boxed::Box<(dyn portable_pty::MasterPty + std::marker::Send + 'static)>,
         mut protocol: tokio::sync::broadcast::Receiver<crate::Protocol>,
@@ -278,6 +277,9 @@ impl PTY {
                     }
                 }
                 Some(some_bytes) = user_input.recv() => {
+                    Self::handle_input_bytes(some_bytes, &mut pty_writer)?;
+                }
+                Some(some_bytes) = internal_input.recv() => {
                     Self::handle_input_bytes(some_bytes, &mut pty_writer)?;
                 }
             }
@@ -352,6 +354,28 @@ impl PTY {
             pixel_height: 0,
         }
     }
+
+    /// Add bytes to the beginning
+    pub fn add_bytes_to_buffer(
+        buffer: &mut BytesFromSTDIN,
+        bytes: &[u8],
+    ) -> Result<(), crate::errors::PTYError> {
+        if bytes.len() > buffer.len() {
+            snafu::whatever!(
+                "Bytes ({}) to add to buffer are more than the buffer size ({}).",
+                bytes.len(),
+                buffer.len()
+            );
+        }
+        for (i, chunk_byte) in bytes.iter().enumerate() {
+            let buffer_byte = buffer
+                .get_mut(i)
+                .with_whatever_context(|| "Couldn't get byte from buffer")?;
+            *buffer_byte = *chunk_byte;
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for PTY {
@@ -386,7 +410,8 @@ mod test {
         // setup_logging().unwrap();
 
         let (pty_output_tx, mut pty_output_rx) = mpsc::channel::<BytesFromPTY>(8);
-        let (pty_input_tx, pty_input_rx) = mpsc::channel::<BytesFromSTDIN>(8);
+        let (pty_input_tx, pty_input_rx) = mpsc::channel::<BytesFromSTDIN>(1);
+        let (_, internal_input_rx) = mpsc::channel::<BytesFromSTDIN>(8);
         let (protocol_tx, _) = tokio::sync::broadcast::channel(16);
 
         let output_task = tokio::spawn(async move {
@@ -413,7 +438,7 @@ mod test {
                 output_tx: pty_output_tx,
                 control_tx: protocol_tx.clone(),
             };
-            let result = pty.run(pty_input_rx).await;
+            let result = pty.run(pty_input_rx, internal_input_rx).await;
             if let Err(err) = result {
                 tracing::warn!("PTY (for tests) handle: {err:?}");
             }

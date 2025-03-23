@@ -24,8 +24,8 @@ pub enum ShadowTerminalError {
     Whatever {
         /// A helpful message acompanying the error
         message: String,
-        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         /// The parent error type
+        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 }
@@ -37,8 +37,8 @@ pub enum PTYError {
     Whatever {
         /// A helpful message acompanying the error
         message: String,
-        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         /// The parent error type
+        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 }
@@ -50,8 +50,8 @@ pub enum SteppableTerminalError {
     Whatever {
         /// A helpful message acompanying the error
         message: String,
-        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         /// The parent error type
+        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 }
