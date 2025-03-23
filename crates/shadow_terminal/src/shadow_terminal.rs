@@ -67,6 +67,8 @@ pub struct Channels {
     pub output_tx: tokio::sync::mpsc::Sender<crate::pty::BytesFromPTY>,
     /// The channel side that receives terminal output updates.
     pub output_rx: tokio::sync::mpsc::Receiver<crate::pty::BytesFromPTY>,
+    /// Internally generated input
+    pub internal_input_tx: Option<tokio::sync::mpsc::Sender<crate::pty::BytesFromSTDIN>>,
     /// Sends complete snapshots of the current screen state.
     shadow_output: tokio::sync::mpsc::Sender<crate::output::Output>,
 }
@@ -79,6 +81,9 @@ pub struct LastSent {
     /// The size of the last sent terminal output.
     pub pty_size: (usize, usize),
 }
+
+/// The special ANSI code that applications send to get a reply with the current cursor position.
+const CURSOR_POSITION_REQUEST: &str = "\x1b[6n";
 
 // TODO: Would it be useful to keep the PTY's task handle on here, and `await` it in the main loop,
 // so that the PTY module always has time to do its shutdown?
@@ -131,6 +136,7 @@ impl ShadowTerminal {
                 control_tx,
                 output_tx,
                 output_rx,
+                internal_input_tx: None,
                 shadow_output,
             },
             scroll_position: 0,
@@ -144,9 +150,12 @@ impl ShadowTerminal {
     /// Start the background PTY process.
     #[inline]
     pub fn start(
-        &self,
-        input_rx: tokio::sync::mpsc::Receiver<crate::pty::BytesFromSTDIN>,
+        &mut self,
+        user_input_rx: tokio::sync::mpsc::Receiver<crate::pty::BytesFromSTDIN>,
     ) -> tokio::task::JoinHandle<Result<(), crate::errors::PTYError>> {
+        let (internal_input_tx, internal_input_rx) = tokio::sync::mpsc::channel(1);
+        self.channels.internal_input_tx = Some(internal_input_tx);
+
         let pty = crate::pty::PTY {
             command: self.config.command.clone(),
             width: self.config.width,
@@ -159,16 +168,23 @@ impl ShadowTerminal {
         // intensive in terms of the current thread. It runs in an OS sub process, so in theory
         // shouldn't conflict with Tokio's IO-focussed scheduler?
         let current_span = tracing::Span::current();
-        tokio::spawn(async move { pty.run(input_rx).instrument(current_span).await })
+        tokio::spawn(async move {
+            pty.run(user_input_rx, internal_input_rx)
+                .instrument(current_span)
+                .await
+        })
     }
 
     /// Start listening to a stream of PTY bytes and render them to a shadow Termwiz surface
     #[inline]
-    pub async fn run(&mut self, input_rx: tokio::sync::mpsc::Receiver<crate::pty::BytesFromSTDIN>) {
+    pub async fn run(
+        &mut self,
+        user_input_rx: tokio::sync::mpsc::Receiver<crate::pty::BytesFromSTDIN>,
+    ) {
         tracing::debug!("Starting Shadow Terminal loop...");
 
         let mut control_rx = self.channels.control_tx.subscribe();
-        self.start(input_rx);
+        self.start(user_input_rx);
 
         tracing::debug!("Starting Shadow Terminal main loop");
         #[expect(
@@ -178,11 +194,9 @@ impl ShadowTerminal {
         loop {
             tokio::select! {
                 Some(bytes) = self.channels.output_rx.recv() => {
-                    self.terminal.advance_bytes(bytes);
-                    tracing::trace!("Wezterm shadow terminal advanced {} bytes", bytes.len());
-                    let result = self.send_outputs().await;
+                    let result = self.handle_pty_output(&bytes).await;
                     if let Err(error) = result {
-                        tracing::error!("{error:?}");
+                        tracing::error!("Handling PTY output: {error:?}");
                     }
                 },
                 Ok(message) = control_rx.recv() => {
@@ -191,18 +205,77 @@ impl ShadowTerminal {
                         break;
                     }
                 }
-                // TODO: I don't actually understand the conditions in which this is called.
-                else => {
-                    let result = self.kill();
-                    if let Err(error) = result {
-                        tracing::error!("{error:?}");
-                    }
-                    break;
-                }
             }
         }
 
         tracing::debug!("Shadow Terminal loop finished");
+    }
+
+    /// Find bytes in bytes.
+    fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack
+            .windows(needle.len())
+            .position(|window| window == needle)
+    }
+
+    /// Handle bytes from the PTY
+    pub(crate) async fn handle_pty_output(
+        &mut self,
+        bytes: &crate::pty::BytesFromPTY,
+    ) -> Result<(), crate::errors::ShadowTerminalError> {
+        self.handle_cursor_position_request(bytes).await?;
+        self.terminal.advance_bytes(bytes);
+        tracing::trace!("Wezterm shadow terminal advanced {} bytes", bytes.len());
+        let result = self.send_outputs().await;
+        if let Err(error) = result {
+            tracing::error!("{error:?}");
+        }
+
+        Ok(())
+    }
+
+    /// Some CLI applications need to know where the current cursor is, so that they can decide how
+    /// to draw themselves. They request the cursor position from the host terminal emulator by
+    /// sending the special code: `^[6n`. It is the responsibility of the terminal emulator to
+    /// respond to this request with another ANSI code containing the coordinates of the cursor.
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "
+            When I set this to `&self` then we get an actual compiler error that the `send()` method
+            on the channel is not safe because it's not `Send`. I don't understand this.
+        "
+    )]
+    async fn handle_cursor_position_request(
+        &mut self,
+        bytes: &crate::pty::BytesFromPTY,
+    ) -> Result<(), crate::errors::ShadowTerminalError> {
+        if Self::find_subsequence(bytes, CURSOR_POSITION_REQUEST.as_bytes()).is_none() {
+            return Ok(());
+        }
+
+        let mut payload: crate::pty::BytesFromSTDIN = [0; 128];
+        let cursor_position = self.terminal.cursor_pos();
+        let response_string = format!("\x1b[{};{}R", cursor_position.y, cursor_position.x);
+        let response_bytes = response_string.as_bytes();
+
+        for chunk in response_bytes.chunks(128) {
+            crate::pty::PTY::add_bytes_to_buffer(&mut payload, chunk).with_whatever_context(
+                |error| format!("Couldn't add response to payload buffer: {error:?}"),
+            )?;
+
+            if let Some(sender) = self.channels.internal_input_tx.as_ref() {
+                tracing::debug!(
+                    "Responding to cursor position request with: {}",
+                    response_string.replace('\x1b', "^")
+                );
+                let result = sender.send(payload).await;
+                if let Err(error) = result {
+                    snafu::whatever!("Couldn't send internal input: {error:?}");
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // The output of the PTY seems to be capped at 4095 bytes. Making the size of

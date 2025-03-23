@@ -116,7 +116,7 @@ mod e2e {
         tattoy.wait_for_string("▀", Some(iterations)).await.unwrap();
         let coords = tattoy.get_coords_of_cell_by_content("▀").unwrap();
         for i in 0..=iterations {
-            tattoy.render_all_output();
+            tattoy.render_all_output().await.unwrap();
             assert!(
                 i != iterations,
                 "Random walker didn't move in a {iterations} iterations."

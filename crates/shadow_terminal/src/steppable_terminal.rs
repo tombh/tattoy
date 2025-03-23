@@ -52,7 +52,7 @@ impl SteppableTerminal {
         config: crate::shadow_terminal::Config,
     ) -> Result<Self, crate::errors::SteppableTerminalError> {
         let (surface_output_tx, _) = tokio::sync::mpsc::channel(1);
-        let shadow_terminal =
+        let mut shadow_terminal =
             crate::shadow_terminal::ShadowTerminal::new(config, surface_output_tx);
 
         let (pty_input_tx, pty_input_rx) = tokio::sync::mpsc::channel(2048);
@@ -68,7 +68,10 @@ impl SteppableTerminal {
             if i == 100 {
                 snafu::whatever!("Shadow Terminal didn't start in time.");
             }
-            steppable.render_all_output();
+            steppable
+                .render_all_output()
+                .await
+                .with_whatever_context(|err| format!("Couldn't render output: {err:?}"))?;
             let mut screen = steppable.screen_as_string()?;
             screen.retain(|character| !character.is_whitespace());
             if !screen.is_empty() {
@@ -154,12 +157,7 @@ impl SteppableTerminal {
             Input::Event(event) => {
                 for chunk in event.as_bytes().chunks(128) {
                     let mut buffer: crate::pty::BytesFromSTDIN = [0; 128];
-                    for (i, chunk_byte) in chunk.iter().enumerate() {
-                        let buffer_byte = buffer
-                            .get_mut(i)
-                            .with_whatever_context(|| "Couldn't get byte from buffer")?;
-                        *buffer_byte = *chunk_byte;
-                    }
+                    crate::pty::PTY::add_bytes_to_buffer(&mut buffer, chunk)?;
 
                     self.pty_input_tx
                         .try_send(buffer)
@@ -207,18 +205,27 @@ impl SteppableTerminal {
     /// terminal.
     ///
     /// Warning: this function could block if there is no end to the output from the PTY.
+    ///
+    /// # Errors
+    /// If PTY output can't be handled.
     #[inline]
-    pub fn render_all_output(&mut self) {
+    pub async fn render_all_output(&mut self) -> Result<(), crate::errors::PTYError> {
         loop {
             let result = self.shadow_terminal.channels.output_rx.try_recv();
             match result {
                 Ok(bytes) => {
-                    self.shadow_terminal.terminal.advance_bytes(bytes);
+                    Box::pin(self.shadow_terminal.handle_pty_output(&bytes))
+                        .await
+                        .with_whatever_context(|err| {
+                            format!("Couldn't handle PTY output: {err:?}")
+                        })?;
                     tracing::trace!("Wezterm shadow terminal advanced {} bytes", bytes.len());
                 }
                 Err(_) => break,
             }
         }
+
+        Ok(())
     }
 
     /// Get the position of the top of the screen in the scrollback history.
@@ -247,7 +254,7 @@ impl SteppableTerminal {
         let size = self.shadow_terminal.terminal.get_size();
         let mut screen = self.shadow_terminal.terminal.screen().clone();
         let mut output = String::new();
-        // let scrollback = self.get_scrollback_position()?;
+
         for y in 0..size.rows {
             for x in 0..size.cols {
                 let maybe_cell = screen.get_cell(
@@ -388,7 +395,7 @@ impl SteppableTerminal {
             command,
             ..crate::shadow_terminal::Config::default()
         };
-        let mut stepper = Self::start(config).await?;
+        let mut stepper = Box::pin(Self::start(config)).await?;
         let mut output = stepper.screen_as_string()?;
         tracing::info!("Finished `get_prompt` terminal instance.");
 
@@ -412,7 +419,9 @@ impl SteppableTerminal {
             if i == DEFAULT_TIMEOUT {
                 snafu::whatever!("No change detected in {DEFAULT_TIMEOUT} milliseconds.");
             }
-            self.render_all_output();
+            self.render_all_output()
+                .await
+                .with_whatever_context(|err| format!("Couldn't render output: {err:?}"))?;
             let current_screen = self.screen_as_string()?;
             if initial_screen != current_screen {
                 break;
@@ -437,7 +446,9 @@ impl SteppableTerminal {
         let timeout = maybe_timeout.map_or(DEFAULT_TIMEOUT, |ms| ms);
 
         for i in 0u32..=timeout {
-            self.render_all_output();
+            self.render_all_output()
+                .await
+                .with_whatever_context(|err| format!("Couldn't render output: {err:?}"))?;
             let current_screen = self.screen_as_string()?;
             if current_screen.contains(string) {
                 break;
@@ -468,7 +479,9 @@ impl SteppableTerminal {
         let timeout = maybe_timeout.map_or(DEFAULT_TIMEOUT, |ms| ms);
 
         for i in 0u32..=timeout {
-            self.render_all_output();
+            self.render_all_output()
+                .await
+                .with_whatever_context(|err| format!("Couldn't render output: {err:?}"))?;
             let found_string = self.get_string_at(x, y, string_to_find.len())?;
             if found_string == string_to_find {
                 break;
@@ -505,7 +518,9 @@ impl SteppableTerminal {
         };
 
         for i in 0u32..=timeout {
-            self.render_all_output();
+            self.render_all_output()
+                .await
+                .with_whatever_context(|err| format!("Couldn't render output: {err:?}"))?;
             let cell = self.get_cell_at(x, y)?;
 
             if cell
@@ -581,14 +596,14 @@ mod test {
     use super::*;
     use crate::shadow_terminal::Config;
 
-    async fn run() -> SteppableTerminal {
+    async fn run(width: Option<u16>, height: Option<u16>) -> SteppableTerminal {
         let config = Config {
-            width: 50,
-            height: 10,
+            width: width.unwrap_or(50),
+            height: height.unwrap_or(10),
             command: get_canonical_shell(),
             ..Config::default()
         };
-        SteppableTerminal::start(config).await.unwrap()
+        Box::pin(SteppableTerminal::start(config)).await.unwrap()
     }
 
     fn setup_logging() {
@@ -601,8 +616,7 @@ mod test {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn basic_interactivity() {
-        setup_logging();
-        let mut stepper = run().await;
+        let mut stepper = Box::pin(run(None, None)).await;
 
         stepper.send_command("nano --version").unwrap();
         stepper.wait_for_string("GNU nano", None).await.unwrap();
@@ -613,7 +627,7 @@ mod test {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn resizing() {
-        let mut stepper = run().await;
+        let mut stepper = Box::pin(run(None, None)).await;
         stepper.send_command("nano --restricted").unwrap();
         stepper.wait_for_string("GNU nano", None).await.unwrap();
 
@@ -641,5 +655,20 @@ mod test {
             .get_string_at(resized_right - 10, resized_bottom, 5)
             .unwrap();
         assert_eq!(resized_menu_item_paste, "Paste");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cursor_position_response() {
+        setup_logging();
+        let mut stepper = Box::pin(run(Some(100), None)).await;
+
+        // TODO: this should work pretty easily with Powershell, it's just a matter of finding the
+        // right commands.
+        let command = "echo -en \"\\E[6n\"; read -sdR CURPOS; echo ${CURPOS#*[}";
+
+        stepper.send_command(command).unwrap();
+
+        stepper.wait_for_string("1;0", None).await.unwrap();
     }
 }
