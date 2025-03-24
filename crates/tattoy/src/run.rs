@@ -158,8 +158,13 @@ pub(crate) fn broadcast_protocol_end(protocol_tx: &tokio::sync::broadcast::Sende
 /// Prepare the application to start.
 async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     let cli_args = CliArgs::parse();
+
+    let mut main_config_file = state.main_config_file.write().await;
+    (*main_config_file).clone_from(&cli_args.main_config);
+    drop(main_config_file);
+
     crate::config::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
-    crate::config::Config::update_shared_state(state).await?;
+    crate::config::Config::load_config_into_shared_state(state).await?;
 
     setup_logging(cli_args.clone(), state).await?;
 

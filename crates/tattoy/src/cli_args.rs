@@ -1,5 +1,8 @@
 //! All the CLI arguments for Tattoy
 
+/// The default name of the main config file.
+pub const DEFAULT_CONFIG_FILE_NAME: &str = "tattoy.toml";
+
 /// Simple program to greet a person
 #[derive(clap::Parser, Debug, Clone)]
 #[command(version, about, long_about = "Tattoy argument description")]
@@ -29,6 +32,15 @@ pub struct CliArgs {
     /// files.
     #[arg(long, value_name = "Path to config directory")]
     pub config_dir: Option<std::path::PathBuf>,
+
+    /// Override the default Tattoy config _file_. The same default config directory is used, so the
+    /// palette and shader files are the same.
+    #[arg(
+        long,
+        default_value = DEFAULT_CONFIG_FILE_NAME,
+        value_name = "Path to the main Tattoy config file"
+    )]
+    pub main_config: std::path::PathBuf,
 
     /// Path to the log file, overrides the setting in config.
     #[arg(long, value_name = "Path to log file")]

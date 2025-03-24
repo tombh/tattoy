@@ -135,32 +135,46 @@ impl Config {
         state: &std::sync::Arc<crate::shared_state::SharedState>,
     ) -> std::path::PathBuf {
         let directory = Self::directory(state).await;
-        directory.join("tattoy.toml")
+        let main_config_file = state.main_config_file.read().await.clone();
+        directory.join(main_config_file)
     }
 
     /// Load the main config
     pub async fn load(state: &std::sync::Arc<crate::shared_state::SharedState>) -> Result<Self> {
         let config_path = Self::main_config_path(state).await;
-        if !config_path.exists() {
-            tracing::info!("Copying default config to: {config_path:?}");
+        let config_file_name = config_path
+            .file_name()
+            .context("Couldn't get file name from config path")?;
+        let is_default_config = config_file_name == crate::cli_args::DEFAULT_CONFIG_FILE_NAME;
+        if is_default_config && !config_path.exists() {
             std::fs::write(config_path.clone(), DEFAULT_CONFIG)?;
 
             let shader_path = Self::directory(state)
                 .await
                 .join(SHADER_DIRECTORY_NAME)
                 .join("point_lights.glsl");
-            tracing::info!("Copying example shader to: {shader_path:?}");
             std::fs::write(shader_path, EXAMPLE_SHADER)?;
         }
 
         tracing::info!("(Re)loading the main Tattoy config from: {config_path:?}");
-        let data = std::fs::read_to_string(config_path)?;
-        let config = toml::from_str::<Self>(&data)?;
-        Ok(config)
+        let result = std::fs::read_to_string(config_path.clone());
+        match result {
+            Ok(data) => {
+                let config = toml::from_str::<Self>(&data)?;
+                Ok(config)
+            }
+            Err(err) => {
+                tracing::error!("Loading config: {err:?}");
+                color_eyre::eyre::bail!(
+                    "Couldn't load config at {config_path:?}: {}",
+                    err.to_string()
+                );
+            }
+        }
     }
 
     /// Load the main config
-    pub async fn update_shared_state(
+    pub async fn load_config_into_shared_state(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<()> {
         let mut config_state = state.config.write().await;
@@ -236,7 +250,7 @@ impl Config {
         }
         tracing::debug!("Config file change detected, updating shared state.");
 
-        let result_for_update = Self::update_shared_state(state).await;
+        let result_for_update = Self::load_config_into_shared_state(state).await;
 
         if let Err(error) = result_for_update {
             tracing::error!("Updating shared state after config file change: {error:?}");

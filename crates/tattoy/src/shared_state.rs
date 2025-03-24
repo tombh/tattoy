@@ -26,12 +26,12 @@ pub struct TTYSize {
 pub(crate) struct SharedState {
     /// Location of the config directory.
     pub config_path: tokio::sync::RwLock<std::path::PathBuf>,
+    /// Name of the main config file.
+    pub main_config_file: tokio::sync::RwLock<std::path::PathBuf>,
     /// User config
     pub config: tokio::sync::RwLock<crate::config::Config>,
     /// Just the size of the user's terminal. All the tattoys and shadow TTY should follow this
     pub tty_size: tokio::sync::RwLock<TTYSize>,
-
-    // TODO: rename to `shadow_alternate_screen`?
     /// This is a view onto the active screen of the shadow terminal. It's what you would see if
     /// you had some kind of VNC viewer, let's say.
     pub shadow_tty_screen: tokio::sync::RwLock<termwiz::surface::Surface>,
