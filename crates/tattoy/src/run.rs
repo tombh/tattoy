@@ -193,33 +193,49 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
 
 /// Setup logging
 async fn setup_logging(cli_args: CliArgs, state: &std::sync::Arc<SharedState>) -> Result<()> {
+    let are_log_filters_manually_set = std::env::var("TATTOY_LOG").is_ok();
     let mut path = state.config.read().await.log_path.clone();
 
     if let Some(cli_override_path) = cli_args.log_path {
         path = cli_override_path;
     }
 
+    let mut level = state.config.read().await.log_level.clone();
+    if let Some(cli_override_level) = cli_args.log_level {
+        level = cli_override_level;
+    }
+    let level_as_string = format!("{level:?}").to_lowercase();
+
+    let is_loggable =
+        !matches!(level, crate::config::LogLevel::Off) || are_log_filters_manually_set;
+
+    if !is_loggable {
+        return Ok(());
+    }
+
     let directory = path.parent().context("Couldn't get log path's parent")?;
     std::fs::create_dir_all(directory)?;
     let file = std::fs::File::create(path)?;
 
-    let are_log_filters_manually_set = std::env::var("RUST_LOG").is_ok();
     let filters = if are_log_filters_manually_set {
-        // When defining your own filters with a `RUST_LOG` set to debug or trace,
-        // you'll very likely want `tokio=debug,runtime=debug`. They're very noisy
-        // and most of it is just for the Tokio console, which aren't needed
+        if let Ok(user_filters) = std::env::var("TATTOY_LOG") {
+            std::env::set_var("RUST_LOG", user_filters);
+        }
+
+        // When defining your own filters with `TATTOY_LOG` or `RUST_LOG` set to debug
+        // or trace, you'll very likely also want `tokio=debug,runtime=debug`. They're
+        // very noisy and most of it is just for the Tokio console, which aren't needed
         // anyway as they're parsed internally.
         tracing_subscriber::EnvFilter::builder()
             .with_default_directive("error".parse()?)
             .from_env_lossy()
     } else {
-        let level = state.config.read().await.log_level.clone();
         tracing_subscriber::EnvFilter::builder()
             .with_default_directive("off".parse()?)
             .from_env_lossy()
-            .add_directive(format!("shadow_terminal={level}").parse()?)
-            .add_directive(format!("tattoy={level}").parse()?)
-            .add_directive(format!("tests={level}").parse()?)
+            .add_directive(format!("shadow_terminal={level_as_string}").parse()?)
+            .add_directive(format!("tattoy={level_as_string}").parse()?)
+            .add_directive(format!("tests={level_as_string}").parse()?)
     };
 
     let logfile_layer = tracing_subscriber::fmt::layer()
@@ -234,6 +250,10 @@ async fn setup_logging(cli_args: CliArgs, state: &std::sync::Arc<SharedState>) -
     } else {
         tracing_setup.init();
     }
+
+    let mut is_logging = state.is_logging.write().await;
+    *is_logging = true;
+    drop(is_logging);
 
     Ok(())
 }

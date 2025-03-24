@@ -51,6 +51,8 @@ pub(crate) struct SharedState {
     /// A counter for every change to the underlying PTY output. Useful for triggering behaviour on
     /// screen state changes.
     pub pty_sequence: tokio::sync::RwLock<usize>,
+    /// Is the application logging?
+    pub is_logging: tokio::sync::RwLock<bool>,
 }
 
 impl SharedState {

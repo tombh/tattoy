@@ -17,12 +17,6 @@ use color_eyre::Result;
 /// Convenience type for screenshot image.
 type Screenshot = xcap::image::ImageBuffer<xcap::image::Rgba<u8>, std::vec::Vec<u8>>;
 
-/// Reset any OSC colour codes
-const RESET_COLOUR: &str = "\x1b[m";
-
-/// OSC code to clear the terminal
-const CLEAR_SCREEN: &str = "\x1b[2J";
-
 /// A pure blue used for signalling in the our "QR Code" of the palette.
 const PURE_BLUE: &xcap::image::Rgba<u8> = &xcap::image::Rgba::<u8>([0, 0, 255, 255]);
 
@@ -106,7 +100,10 @@ impl Parser {
         Self::print_generic_palette(|palette_index| -> Result<()> {
             let background_colour = palette_index;
             let foreground_colour = palette_index + Self::ROW_SIZE;
-            print!("\x1b[48;5;{background_colour}m\x1b[38;5;{foreground_colour}m▄{RESET_COLOUR}");
+            print!(
+                "\x1b[48;5;{background_colour}m\x1b[38;5;{foreground_colour}m▄{}",
+                crate::utils::RESET_COLOUR
+            );
             Ok(())
         })?;
 
@@ -142,14 +139,20 @@ impl Parser {
     /// Use the UTF-8 half block trick to print 2 colours in one cell.
     pub fn print_2_true_colours_in_1(top: (u8, u8, u8), bottom: (u8, u8, u8)) {
         print!(
-            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄{RESET_COLOUR}",
-            top.0, top.1, top.2, bottom.0, bottom.1, bottom.2,
+            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄{}",
+            top.0,
+            top.1,
+            top.2,
+            bottom.0,
+            bottom.1,
+            bottom.2,
+            crate::utils::RESET_COLOUR
         );
     }
 
     /// Take a screenshot of the current monitor.
     fn take_screenshot() -> Result<Screenshot> {
-        println!("{CLEAR_SCREEN}");
+        println!("{}", crate::utils::CLEAR_SCREEN);
 
         Self::print_native_palette()?;
 
