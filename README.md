@@ -55,4 +55,8 @@ It would be really useful if you could try the following:
 * Change numbers in the config, like `saturation`, `opacity`, etc and see if they live update in the terminal.
 * Find new shaders on https://www.shadertoy.com to try. Currently you can only use single file shaders that _don't_ use the `iChannel0` box (see underneath the code on the shader's webpage). The most interesting shaders will be the ones that are interactive because the terminal cursor is currently providing the `iMouse` value in the shaders.
 
-Logs go to: `$XDG_STATE_DIR/tattoy/tattoy.log` (path configurable in the config file).
+## Debugging
+* Set `log_level = "trace"` in `$XDG_CONFIG_DIR/tattoy/tattoy.toml`
+* Default log path is `$XDG_STATE_DIR/tattoy/tattoy.log`.
+* Log path can be changed with `log_path = "/tmp/tattoy.log"` in `$XDG_CONFIG_DIR/tattoy/tattoy.toml`
+* Or log path can be changed per-instance with the `--log-path` CLI argument.

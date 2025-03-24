@@ -73,8 +73,8 @@ mod e2e {
             clippy::option_if_let_else,
             reason = "In this case `match` reads better that `map_or`"
         )]
-        let rust_log_filters = match std::env::var_os("RUST_LOG") {
-            Some(value) => format!("RUST_LOG={value:?}"),
+        let rust_log_filters = match std::env::var_os("TATTOY_LOG") {
+            Some(value) => format!("TATTOY_LOG={value:?}"),
             None => String::new(),
         };
 

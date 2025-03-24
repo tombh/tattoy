@@ -665,7 +665,7 @@ mod test {
 
         // TODO: this should work pretty easily with Powershell, it's just a matter of finding the
         // right commands.
-        let command = "echo -en \"\\E[6n\"; read -sdR CURPOS; echo ${CURPOS#*[}";
+        let command = "sleep 0.1; echo -en \"\\E[6n\"; read -sdR CURPOS; echo ${CURPOS#*[}";
 
         stepper.send_command(command).unwrap();
 

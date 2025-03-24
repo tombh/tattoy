@@ -14,6 +14,24 @@ static EXAMPLE_SHADER: &str = include_str!("tattoys/shaders/point_lights.glsl");
 /// The name of the directory where shader files are kept.
 const SHADER_DIRECTORY_NAME: &str = "shaders";
 
+/// The valid log levels. Based on our `tracing` crate.
+#[derive(serde::Serialize, serde::Deserialize, clap::ValueEnum, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum LogLevel {
+    /// Error
+    Error,
+    /// Warnings
+    Warn,
+    /// Info
+    Info,
+    /// Debug
+    Debug,
+    /// Trace
+    Trace,
+    /// No logging
+    Off,
+}
+
 /// Managing user config.
 #[expect(
     clippy::unsafe_derive_deserialize,
@@ -29,7 +47,7 @@ pub(crate) struct Config {
     /// `SHELL` env variable.
     pub command: String,
     /// The maximum log level
-    pub log_level: String,
+    pub log_level: LogLevel,
     /// The location of the log file.
     pub log_path: std::path::PathBuf,
     /// Colour grading
@@ -64,7 +82,7 @@ impl Default for Config {
         Self {
             term: "xterm-256color".to_owned(),
             command,
-            log_level: "none".into(),
+            log_level: LogLevel::Off,
             log_path,
             color: Color::default(),
             smokey_cursor: crate::tattoys::smokey_cursor::config::Config::default(),

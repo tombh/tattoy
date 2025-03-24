@@ -7,8 +7,8 @@ term = "xterm-256color"
 # `SHELL` env var.
 # command = "/usr/bin/zsh"
 
-# The log level, one of: "error", "warn", "info", "debug", "trace"
-log_level = "debug"
+# The log level, one of: "off", "error", "warn", "info", "debug", "trace"
+log_level = "off"
 # The path to the log file. Defaults to your OS's `XDG_STATE_DIR`.
 # See: https://specifications.freedesktop.org/basedir-spec/latest/
 # log_path = ""

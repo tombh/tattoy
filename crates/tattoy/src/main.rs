@@ -49,20 +49,35 @@ use color_eyre::eyre::Result;
 
 #[expect(clippy::non_ascii_literal, reason = "It's just for debugging")]
 #[expect(
+    clippy::print_stdout,
     clippy::print_stderr,
-    reason = "It's our central place for reporting errors to the user"
+    reason = "It's our central place for communicating with the user on CLI"
 )]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     color_eyre::install()?;
     let state_arc = shared_state::SharedState::init().await?;
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
+    println!("{}", utils::RESET_SCREEN);
+
     let logpath = state_arc.config.read().await.log_path.clone();
+    let is_logging = *state_arc.is_logging.read().await;
     tracing::debug!("Tattoy is exiting 🙇");
-    if let Err(error) = result {
-        tracing::error!("{error:?}");
-        eprintln!("Error: {error}");
-        eprintln!("See {} for more details", logpath.display());
+
+    match result {
+        Ok(()) => {
+            if is_logging {
+                println!("Logs saved to {}", logpath.display());
+            }
+        }
+        Err(error) => {
+            tracing::error!("{error:?}");
+            eprintln!("Error: {error}");
+            if is_logging {
+                eprintln!("See {} for more details", logpath.display());
+            }
+        }
     }
+
     Ok(())
 }
