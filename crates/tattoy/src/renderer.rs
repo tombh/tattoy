@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use color_eyre::eyre::{ContextCompat as _, Result};
 use termwiz::cell::Cell;
-use tokio::sync::mpsc;
 
 use termwiz::surface::Surface as TermwizSurface;
 use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
@@ -19,6 +18,9 @@ pub const ONE_MICROSECOND: u64 = 1_000_000;
 
 /// The number of milliseconds in a second.
 pub const MILLIS_PER_SECOND: f32 = 1_000.0;
+
+/// The maximum numnber of frames in the surfaces channel before tattoy frames are dropped.
+pub const MAX_FRAME_BACKLOG: usize = 5;
 
 /// `Render`
 #[derive(Default)]
@@ -55,18 +57,18 @@ impl Renderer {
     /// Instantiate and run
     pub fn start(
         state: Arc<SharedState>,
-        surfaces_rx: mpsc::Receiver<FrameUpdate>,
         protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
-    ) -> tokio::task::JoinHandle<Result<()>> {
-        let protocol_rx = protocol_tx.subscribe();
-        tokio::spawn(async move {
+    ) -> (
+        tokio::task::JoinHandle<Result<()>>,
+        tokio::sync::mpsc::Sender<FrameUpdate>,
+    ) {
+        let (surfaces_tx, surfaces_rx) = tokio::sync::mpsc::channel(100);
+        let handle = tokio::spawn(async move {
             // This would be much simpler if async closures where stable, because then we could use
             // the `?` syntax.
             match Self::new(Arc::clone(&state)) {
                 Ok(mut renderer) => {
-                    let result = renderer
-                        .run(surfaces_rx, protocol_rx, protocol_tx.clone())
-                        .await;
+                    let result = renderer.run(surfaces_rx, protocol_tx.clone()).await;
 
                     if let Err(error) = result {
                         crate::run::broadcast_protocol_end(&protocol_tx);
@@ -80,7 +82,9 @@ impl Renderer {
             }
 
             Ok(())
-        })
+        });
+
+        (handle, surfaces_tx)
     }
 
     /// We need this just because I can't figure out how to pass `Box<dyn Terminal>` to
@@ -131,11 +135,11 @@ impl Renderer {
     /// terminal is always returned to cooked mode.
     async fn run(
         &mut self,
-        mut surfaces: mpsc::Receiver<FrameUpdate>,
-        mut protocol_rx: tokio::sync::broadcast::Receiver<crate::run::Protocol>,
+        mut surfaces: tokio::sync::mpsc::Receiver<FrameUpdate>,
         protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
         tracing::debug!("Putting user's terminal into raw mode");
+        let mut protocol_rx = protocol_tx.subscribe();
         let mut copy_of_users_terminal = Self::get_termwiz_terminal()?;
         copy_of_users_terminal.set_raw_mode()?;
         let mut composited_terminal = BufferedTerminal::new(copy_of_users_terminal)?;
@@ -143,12 +147,16 @@ impl Renderer {
         tracing::debug!("Starting render loop");
         #[expect(
             clippy::integer_division_remainder_used,
-            reason = "`tokio::select! generates this.`"
+            reason = "`tokio::select!` generates this."
         )]
         loop {
             tokio::select! {
                 Some(update) = surfaces.recv() => {
                     self.handle_resize(&mut composited_terminal, &protocol_tx).await?;
+                    let is_pty_update = matches!(update, FrameUpdate::PTYSurface);
+                    if surfaces.len() > MAX_FRAME_BACKLOG && !is_pty_update {
+                        continue;
+                    }
                     self.render(update, &mut composited_terminal).await?;
                 }
                 Ok(message) = protocol_rx.recv() => {

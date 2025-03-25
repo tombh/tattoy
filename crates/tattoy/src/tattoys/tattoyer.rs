@@ -2,9 +2,6 @@
 
 use color_eyre::eyre::Result;
 
-/// The target number of frames per second to render a tattoy.
-const FRAME_RATE: u64 = 30;
-
 /// Shared state and behaviour useful to all tattoys.
 pub(crate) struct Tattoyer {
     /// A unique identifier.
@@ -23,6 +20,8 @@ pub(crate) struct Tattoyer {
     pub scrollback: shadow_terminal::output::CompleteScrollback,
     /// Our own copy of the screen. Saves taking costly read locks.
     pub screen: shadow_terminal::output::CompleteScreen,
+    /// The target frame rate.
+    pub frame_rate: u32,
     /// The time at which the previous frame was rendererd.
     pub last_frame_tick: std::time::Instant,
     /// The last known position of an active scroll.
@@ -45,6 +44,7 @@ impl Tattoyer {
             height: 0,
             scrollback: shadow_terminal::output::CompleteScrollback::default(),
             screen: shadow_terminal::output::CompleteScreen::default(),
+            frame_rate: 30,
             last_frame_tick: std::time::Instant::now(),
             last_scroll_position: 0,
         }
@@ -90,6 +90,7 @@ impl Tattoyer {
                 self.set_tty_size(width, height);
             }
             crate::run::Protocol::Output(output) => self.handle_pty_output(output)?,
+            crate::run::Protocol::Config(config) => self.frame_rate = config.frame_rate,
             _ => (),
         }
 
@@ -179,7 +180,7 @@ impl Tattoyer {
 
     /// Sleep until the next frame render is due.
     pub async fn sleep_until_next_frame_tick(&mut self) {
-        let target = crate::renderer::ONE_MICROSECOND.wrapping_div(FRAME_RATE);
+        let target = crate::renderer::ONE_MICROSECOND.wrapping_div(self.frame_rate.into());
         let target_frame_rate_micro = std::time::Duration::from_micros(target);
         if let Some(wait) = target_frame_rate_micro.checked_sub(self.last_frame_tick.elapsed()) {
             tokio::time::sleep(wait).await;

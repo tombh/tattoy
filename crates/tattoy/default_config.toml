@@ -13,6 +13,9 @@ log_level = "off"
 # See: https://specifications.freedesktop.org/basedir-spec/latest/
 # log_path = ""
 
+# The target frame rate
+frame_rate = 30
+
 [color]
 saturation = 0.0
 brightness = 0.0

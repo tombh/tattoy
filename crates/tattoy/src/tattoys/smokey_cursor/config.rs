@@ -1,7 +1,7 @@
 //! All the variables that can be configured for the simulation
 
 /// All the config for the simulation
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 #[non_exhaustive]
 pub struct Config {
