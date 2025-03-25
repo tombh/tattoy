@@ -214,7 +214,11 @@ impl SteppableTerminal {
             let result = self.shadow_terminal.channels.output_rx.try_recv();
             match result {
                 Ok(bytes) => {
-                    Box::pin(self.shadow_terminal.handle_pty_output(&bytes))
+                    self.shadow_terminal
+                        .accumulated_pty_output
+                        .append(&mut bytes.to_vec());
+
+                    Box::pin(self.shadow_terminal.handle_pty_output())
                         .await
                         .with_whatever_context(|err| {
                             format!("Couldn't handle PTY output: {err:?}")
