@@ -85,6 +85,9 @@ pub struct LastSent {
 /// The special ANSI code that applications send to get a reply with the current cursor position.
 const CURSOR_POSITION_REQUEST: &str = "\x1b[6n";
 
+/// The time to wait for more output from the PTY. In microseconds (1000s of a millisecond).
+const TIME_TO_WAIT_FOR_MORE_PTY_OUTPUT: u64 = 1000;
+
 // TODO: Would it be useful to keep the PTY's task handle on here, and `await` it in the main loop,
 // so that the PTY module always has time to do its shutdown?
 //
@@ -101,6 +104,10 @@ pub struct ShadowTerminal {
     pub config: Config,
     /// The various channels needed to run the shadow terminal and its PTY
     pub channels: Channels,
+    /// Accumulated PTY output to help minimise render events.
+    pub accumulated_pty_output: Vec<u8>,
+    /// The timestamp for when to broadcast accumulated PTY output.
+    pub wait_for_output_until: Option<tokio::time::Instant>,
     /// The current position of the scollback buffer.
     pub scroll_position: usize,
     /// Metadata about the most recent sent output.
@@ -139,6 +146,8 @@ impl ShadowTerminal {
                 internal_input_tx: None,
                 shadow_output,
             },
+            accumulated_pty_output: Vec::new(),
+            wait_for_output_until: None,
             scroll_position: 0,
             last_sent: LastSent {
                 pty_sequence: 0,
@@ -192,13 +201,18 @@ impl ShadowTerminal {
             reason = "`tokio::select!` generates this."
         )]
         loop {
+            let is_wait = self.wait_for_output_until.is_some();
+            let wait_until = self.wait_for_output_until;
             tokio::select! {
                 Some(bytes) = self.channels.output_rx.recv() => {
-                    let result = self.handle_pty_output(&bytes).await;
+                    self.accumulate_pty_output(&bytes);
+                },
+                () = Self::wait_for_more_pty_output(wait_until), if is_wait => {
+                    let result = self.handle_pty_output().await;
                     if let Err(error) = result {
                         tracing::error!("Handling PTY output: {error:?}");
                     }
-                },
+                }
                 Ok(message) = control_rx.recv() => {
                     self.handle_protocol_message(&message).await;
                     if matches!(message, crate::Protocol::End) {
@@ -211,6 +225,24 @@ impl ShadowTerminal {
         tracing::debug!("Shadow Terminal loop finished");
     }
 
+    /// The PTY crate that we use only sends output at 4kb a time. Often, on bigger terminals, a
+    /// single change to the PTY can trigger a handful of these payloads. It would be inefficient to
+    /// trigger output broadcasts for each mini PTY output. It's better to let the Wezterm terminal
+    /// parse all the bytes and only then convert Wezterm's view into a broadcastable surface.
+    async fn wait_for_more_pty_output(maybe_wait_until: Option<tokio::time::Instant>) {
+        if let Some(wait_until) = maybe_wait_until {
+            tokio::time::sleep_until(wait_until).await;
+        }
+    }
+
+    /// Accumulate PTY outputs.
+    fn accumulate_pty_output(&mut self, bytes: &crate::pty::BytesFromPTY) {
+        self.accumulated_pty_output.append(&mut bytes.to_vec());
+        let next_output_broadcast = tokio::time::Instant::now()
+            + tokio::time::Duration::from_micros(TIME_TO_WAIT_FOR_MORE_PTY_OUTPUT);
+        self.wait_for_output_until = Some(next_output_broadcast);
+    }
+
     /// Find bytes in bytes.
     fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack
@@ -221,8 +253,10 @@ impl ShadowTerminal {
     /// Handle bytes from the PTY
     pub(crate) async fn handle_pty_output(
         &mut self,
-        bytes: &crate::pty::BytesFromPTY,
     ) -> Result<(), crate::errors::ShadowTerminalError> {
+        let bytes_copy = self.accumulated_pty_output.clone();
+        let bytes = bytes_copy.as_slice();
+
         self.handle_cursor_position_request(bytes).await?;
         self.terminal.advance_bytes(bytes);
         tracing::trace!("Wezterm shadow terminal advanced {} bytes", bytes.len());
@@ -230,7 +264,8 @@ impl ShadowTerminal {
         if let Err(error) = result {
             tracing::error!("{error:?}");
         }
-
+        self.accumulated_pty_output = Vec::new();
+        self.wait_for_output_until = None;
         Ok(())
     }
 
@@ -247,7 +282,7 @@ impl ShadowTerminal {
     )]
     async fn handle_cursor_position_request(
         &mut self,
-        bytes: &crate::pty::BytesFromPTY,
+        bytes: &[u8],
     ) -> Result<(), crate::errors::ShadowTerminalError> {
         if Self::find_subsequence(bytes, CURSOR_POSITION_REQUEST.as_bytes()).is_none() {
             return Ok(());

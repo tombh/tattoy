@@ -8,7 +8,8 @@ use snafu::{OptionExt as _, ResultExt as _};
 use tokio::sync::mpsc;
 use tracing::Instrument as _;
 
-/// A single payload from the PTY output stream.
+/// A single payload from the PTY output stream. This value comes from the `portable_pty` crate and
+/// doesn't seem adjustable.
 pub type BytesFromPTY = [u8; 4096];
 /// A single payload from the user's input stream (or sometimes internal input).
 pub type BytesFromSTDIN = [u8; 128];
@@ -56,7 +57,7 @@ impl PTY {
     }
 
     /// The PTY crate is not async, so here we're basically just listening to the PTY to be able to
-    /// broadcastr it's output on an async channel.
+    /// broadcast its output on an async channel.
     fn pty_reader_loop(
         pty_reader: std::boxed::Box<dyn std::io::Read + std::marker::Send>,
         pty_reader_tx: mpsc::Sender<BytesFromPTY>,
@@ -65,13 +66,22 @@ impl PTY {
             let mut reader = std::io::BufReader::new(pty_reader);
             loop {
                 let mut buffer: BytesFromPTY = [0; 4096];
+
+                let now = std::time::Instant::now();
                 let read_result = reader.read(&mut buffer);
+                let elapsed = now.elapsed();
+
                 match read_result {
                     Ok(0) => {
                         tracing::debug!("PTY reader loop received 0 bytes, exiting...");
                         break;
                     }
-                    Ok(_) => {
+                    Ok(n) => {
+                        tracing::trace!(
+                            "Read {} PTY bytes. Time since last output {:?}",
+                            n,
+                            elapsed
+                        );
                         let send_result = pty_reader_tx.blocking_send(buffer);
                         if let Err(error) = send_result {
                             tracing::error!("Broadcasting PTY output: {error:?}");
