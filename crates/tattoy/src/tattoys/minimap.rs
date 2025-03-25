@@ -8,7 +8,7 @@ use shadow_terminal::output::SurfaceKind;
 use super::tattoyer::Tattoyer;
 
 /// User-configurable settings for the minimap
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 pub(crate) struct Config {
     /// Enable/disable the minimap

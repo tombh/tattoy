@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use clap::Parser as _;
 use color_eyre::eyre::{ContextCompat as _, Result};
-use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _, Layer as _};
 
 use crate::cli_args::CliArgs;
@@ -45,6 +44,8 @@ pub(crate) enum Protocol {
     Input(crate::input::ParsedInput),
     /// The visibility of the end user's cursor.
     CursorVisibility(bool),
+    /// Tattoy's configuration.
+    Config(crate::config::Config),
 }
 
 // TODO:
@@ -66,7 +67,8 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     }
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
-    let (surfaces_tx, surfaces_rx) = mpsc::channel(8192);
+
+    let (renderer, surfaces_tx) = Renderer::start(Arc::clone(state_arc), protocol_tx.clone());
 
     let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
     let input_thread_handle = Input::start(protocol_tx.clone());
@@ -77,7 +79,6 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         Arc::clone(state_arc),
     );
 
-    let renderer = Renderer::start(Arc::clone(state_arc), surfaces_rx, protocol_tx.clone());
     let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     crate::terminal_proxy::TerminalProxy::start(
         state_arc,

@@ -189,7 +189,7 @@ impl ShadowTerminal {
         tracing::debug!("Starting Shadow Terminal main loop");
         #[expect(
             clippy::integer_division_remainder_used,
-            reason = "`tokio::select! generates this.`"
+            reason = "`tokio::select!` generates this."
         )]
         loop {
             tokio::select! {

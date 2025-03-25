@@ -6,7 +6,7 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 use crate::tattoys::tattoyer::Tattoyer;
 
 /// All the user config for the shader tattoy.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 pub(crate) struct Config {
     /// Enable/disable the shaders on and off

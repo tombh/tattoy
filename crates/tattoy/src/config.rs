@@ -37,7 +37,7 @@ pub(crate) enum LogLevel {
     clippy::unsafe_derive_deserialize,
     reason = "Are the unsafe methods on the `f32`s?"
 )]
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 pub(crate) struct Config {
     /// The `TERM` value to send to the underlying PTY. This may not actually be needed, but
@@ -52,6 +52,8 @@ pub(crate) struct Config {
     pub log_path: std::path::PathBuf,
     /// Colour grading
     pub color: Color,
+    /// Target frame rate
+    pub frame_rate: u32,
     /// The smokey particles cursor
     pub smokey_cursor: crate::tattoys::smokey_cursor::config::Config,
     /// The minimap
@@ -85,6 +87,7 @@ impl Default for Config {
             log_level: LogLevel::Off,
             log_path,
             color: Color::default(),
+            frame_rate: 30,
             smokey_cursor: crate::tattoys::smokey_cursor::config::Config::default(),
             minimap: crate::tattoys::minimap::Config::default(),
             shader: crate::tattoys::shaders::main::Config::default(),
@@ -93,7 +96,7 @@ impl Default for Config {
 }
 
 /// Final colour grading for the whole terminal render.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug, Clone)]
 pub(crate) struct Color {
     /// Saturation
     pub saturation: f32,
@@ -194,30 +197,31 @@ impl Config {
     /// Load the main config
     pub async fn load_config_into_shared_state(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
-    ) -> Result<()> {
+    ) -> Result<Self> {
         let mut config_state = state.config.write().await;
-        *config_state = Self::load(state).await?;
+        let new_config = Self::load(state).await?;
+        *config_state = new_config.clone();
         drop(config_state);
 
-        Ok(())
+        Ok(new_config)
     }
 
     /// Watch the config file for any changes and then automatically update the shared state with
     /// the contents of the new config file.
     pub fn watch(
         state: std::sync::Arc<crate::shared_state::SharedState>,
-        tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+        tattoy_protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> tokio::task::JoinHandle<Result<()>> {
         tokio::spawn(async move {
             let path = Self::directory(&state).await;
             tracing::debug!("Watching config ({path:?}) for changes.");
 
-            let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-            let mut tattoy_protocol_rx = tattoy_protocol.subscribe();
+            let (config_file_change_tx, mut config_file_change_rx) = tokio::sync::mpsc::channel(1);
+            let mut tattoy_protocol_rx = tattoy_protocol_tx.subscribe();
 
             let mut watcher = notify::RecommendedWatcher::new(
                 move |res| {
-                    let result = tx.blocking_send(res);
+                    let result = config_file_change_tx.blocking_send(res);
                     if let Err(error) = result {
                         tracing::error!("Sending config file watcher notification: {error:?}");
                     }
@@ -232,7 +236,7 @@ impl Config {
             )]
             loop {
                 tokio::select! {
-                    Some(result) = rx.recv() => Self::handle_file_change_event(result, &state).await,
+                    Some(result) = config_file_change_rx.recv() => Self::handle_file_change_event(result, &state, &tattoy_protocol_tx).await,
                     Ok(message) = tattoy_protocol_rx.recv() => {
                         if matches!(message, crate::run::Protocol::End) {
                             break;
@@ -249,11 +253,12 @@ impl Config {
     /// Handle an event from the config file watcher. Should normally be a notification that the
     /// config file has changed.
     async fn handle_file_change_event(
-        result: std::result::Result<notify::Event, notify::Error>,
+        file_event_result: std::result::Result<notify::Event, notify::Error>,
         state: &std::sync::Arc<crate::shared_state::SharedState>,
+        tattoy_protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) {
-        let Ok(event) = result else {
-            tracing::error!("Receving config file watcher event: {result:?}");
+        let Ok(event) = file_event_result else {
+            tracing::error!("Receving config file watcher event: {file_event_result:?}");
             return;
         };
 
@@ -268,10 +273,19 @@ impl Config {
         }
         tracing::debug!("Config file change detected, updating shared state.");
 
-        let result_for_update = Self::load_config_into_shared_state(state).await;
+        let maybe_new_config = Self::load_config_into_shared_state(state).await;
 
-        if let Err(error) = result_for_update {
-            tracing::error!("Updating shared state after config file change: {error:?}");
+        match maybe_new_config {
+            Ok(config) => {
+                let protocol_send_result =
+                    tattoy_protocol_tx.send(crate::run::Protocol::Config(config));
+                if let Err(error) = protocol_send_result {
+                    tracing::error!("Couldn't send config update on protocol channgel: {error:?}");
+                }
+            }
+            Err(error) => {
+                tracing::error!("Updating shared state after config file change: {error:?}");
+            }
         }
     }
 

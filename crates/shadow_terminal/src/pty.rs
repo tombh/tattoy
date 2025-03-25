@@ -198,7 +198,7 @@ impl PTY {
         tracing::debug!("Starting PTY reader loop");
         #[expect(
             clippy::integer_division_remainder_used,
-            reason = "`tokio::select! generates this.`"
+            reason = "`tokio::select!` generates this."
         )]
         loop {
             tokio::select! {
