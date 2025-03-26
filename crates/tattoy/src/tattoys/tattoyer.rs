@@ -21,9 +21,9 @@ pub(crate) struct Tattoyer {
     /// Our own copy of the screen. Saves taking costly read locks.
     pub screen: shadow_terminal::output::CompleteScreen,
     /// The target frame rate.
-    pub frame_rate: u32,
+    pub target_frame_rate: u32,
     /// The time at which the previous frame was rendererd.
-    pub last_frame_tick: std::time::Instant,
+    pub last_frame_tick: tokio::time::Instant,
     /// The last known position of an active scroll.
     pub last_scroll_position: usize,
 }
@@ -44,8 +44,8 @@ impl Tattoyer {
             height: 0,
             scrollback: shadow_terminal::output::CompleteScrollback::default(),
             screen: shadow_terminal::output::CompleteScreen::default(),
-            frame_rate: 30,
-            last_frame_tick: std::time::Instant::now(),
+            target_frame_rate: 30,
+            last_frame_tick: tokio::time::Instant::now(),
             last_scroll_position: 0,
         }
     }
@@ -90,7 +90,7 @@ impl Tattoyer {
                 self.set_tty_size(width, height);
             }
             crate::run::Protocol::Output(output) => self.handle_pty_output(output)?,
-            crate::run::Protocol::Config(config) => self.frame_rate = config.frame_rate,
+            crate::run::Protocol::Config(config) => self.target_frame_rate = config.frame_rate,
             _ => (),
         }
 
@@ -172,7 +172,7 @@ impl Tattoyer {
         Ok(())
     }
 
-    /// Send a blank frame to the render.
+    /// Send a blank frame to the renderer.
     pub(crate) async fn send_blank_output(&mut self) -> Result<()> {
         self.initialise_surface();
         self.send_output().await
@@ -180,12 +180,12 @@ impl Tattoyer {
 
     /// Sleep until the next frame render is due.
     pub async fn sleep_until_next_frame_tick(&mut self) {
-        let target = crate::renderer::ONE_MICROSECOND.wrapping_div(self.frame_rate.into());
+        let target = crate::renderer::ONE_MICROSECOND.wrapping_div(self.target_frame_rate.into());
         let target_frame_rate_micro = std::time::Duration::from_micros(target);
         if let Some(wait) = target_frame_rate_micro.checked_sub(self.last_frame_tick.elapsed()) {
             tokio::time::sleep(wait).await;
         }
-        self.last_frame_tick = std::time::Instant::now();
+        self.last_frame_tick = tokio::time::Instant::now();
     }
 
     /// Check if the scrollback output has changed.
