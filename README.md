@@ -44,6 +44,9 @@ Tattoy largely works on Windows, but I don't have a local Windows machine to eas
 > [!WARNING]
 > Don't place `tattoy` in your `.bashrc` or `.zshrc`. It's not ready to be a default terminal yet.
 
+> [!TIP]
+> If you use `is_vim` in `tmux`, it is better to use a `tmux set-option -p @is_vim yes` approach to detect when a `tmux` pane is running (n)vim. See [this comment](https://github.com/christoomey/vim-tmux-navigator/issues/295#issuecomment-1123455337) for inspiration.
+
 ## Providing Beta Feedback
 It would be really useful if you could try the following:
 * Installing

@@ -19,8 +19,21 @@ pub const ONE_MICROSECOND: u64 = 1_000_000;
 /// The number of milliseconds in a second.
 pub const MILLIS_PER_SECOND: f32 = 1_000.0;
 
-/// The maximum numnber of frames in the surfaces channel before tattoy frames are dropped.
-pub const MAX_FRAME_BACKLOG: usize = 5;
+/// The maximum number of unrendered frames to keep in the renderer's backlog.
+///
+/// When the renderer starts struggling such that it can't render a frame before the next one
+/// arrives, the frame messaging channel will keep a backlog of frame updates. To avoid congestion,
+/// and thus visual stuttering, the backlog is always merely drained wihtout rendering. Each frame
+/// from the draining is used to update the latest copy of the various PTY outputs, Tattoys etc.
+/// Only when the backlog reaches 0 does actual rendering restart.
+///
+/// Once the backlog is full, further frames are dropped, never to be rendered. This would also
+/// cause stuttering, but is necessary to prevent completely crashing the app.
+///
+/// The backlog should only really ever get filled on either notably large terminals or notably
+/// slow hardware. So its size should normally only need to be informed by what a reasonable
+/// buffer of frames is for extreme conditions. 100 frames should give about 3 seconds of grace.
+const MAX_FRAME_BACKLOG: usize = 100;
 
 /// `Render`
 #[derive(Default)]
@@ -62,7 +75,7 @@ impl Renderer {
         tokio::task::JoinHandle<Result<()>>,
         tokio::sync::mpsc::Sender<FrameUpdate>,
     ) {
-        let (surfaces_tx, surfaces_rx) = tokio::sync::mpsc::channel(100);
+        let (surfaces_tx, surfaces_rx) = tokio::sync::mpsc::channel(MAX_FRAME_BACKLOG);
         let handle = tokio::spawn(async move {
             // This would be much simpler if async closures where stable, because then we could use
             // the `?` syntax.
@@ -101,7 +114,7 @@ impl Renderer {
     }
 
     /// Get the user's current terminal size and propogate it
-    pub async fn handle_resize<T: TermwizTerminal + Send>(
+    pub async fn check_for_user_resize<T: TermwizTerminal + Send>(
         &mut self,
         composited_terminal: &mut BufferedTerminal<T>,
         protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
@@ -151,14 +164,15 @@ impl Renderer {
         )]
         loop {
             tokio::select! {
-                Some(update) = surfaces.recv() => {
-                    self.handle_resize(&mut composited_terminal, &protocol_tx).await?;
-                    let is_pty_update = matches!(update, FrameUpdate::PTYSurface);
-                    if surfaces.len() > MAX_FRAME_BACKLOG && !is_pty_update {
+                // For some reason `surfaces.recv()` doesn't let the Tokio scheduler do its thing.
+                // Even though there might be a new frame, the scheduler doesn't seem to trigger.
+                // So instead we just force the scheduler with this timer.
+                () = tokio::time::sleep(tokio::time::Duration::from_micros(1)) => {
+                    if surfaces.is_empty() {
                         continue;
                     }
-                    self.render(update, &mut composited_terminal).await?;
-                }
+                    self.handle_frame_update(&mut surfaces, &mut composited_terminal, &protocol_tx).await?;
+                },
                 Ok(message) = protocol_rx.recv() => {
                     Self::handle_protocol_message(&mut composited_terminal, &message);
                     if matches!(message, crate::run::Protocol::End) {
@@ -171,6 +185,25 @@ impl Renderer {
 
         tracing::debug!("Setting user's terminal to cooked mode");
         composited_terminal.terminal().set_cooked_mode()?;
+
+        Ok(())
+    }
+
+    /// Handle PTY output and all Tattoy frames.
+    async fn handle_frame_update(
+        &mut self,
+        surfaces: &mut tokio::sync::mpsc::Receiver<FrameUpdate>,
+        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
+        protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
+    ) -> Result<()> {
+        let Some(update) = surfaces.recv().await else {
+            return Ok(());
+        };
+
+        self.check_for_user_resize(composited_terminal, protocol_tx)
+            .await?;
+        self.render(surfaces.len(), update, composited_terminal)
+            .await?;
 
         Ok(())
     }
@@ -213,20 +246,27 @@ impl Renderer {
     /// the minimum number of changes.
     async fn render(
         &mut self,
+        backlog: usize,
         update: FrameUpdate,
         composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
     ) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => {
-                if surface.id != "random_walker" && surface.id != "shaders" {
-                    tracing::trace!("Rendering {} frame update", surface.id);
+                let surface_id = surface.id.clone();
+                self.tattoys.insert(surface_id.clone(), surface);
+                if surface_id != "random_walker" && surface_id != "shaders" {
+                    tracing::trace!("Rendering {} frame update", surface_id);
                 }
-                self.tattoys.insert(surface.id.clone(), surface);
             }
             FrameUpdate::PTYSurface => {
                 tracing::trace!("Rendering PTY frame update");
                 self.get_updated_pty_frame().await;
             }
+        }
+
+        if backlog > 0 {
+            tracing::warn!("Backlog: {backlog}");
+            return Ok(());
         }
 
         let new_frame = self.composite().await?;
