@@ -57,14 +57,14 @@ impl Input {
             let mut buffer: BytesFromSTDIN = [0; 128];
             match reader.read(&mut buffer[..]) {
                 Ok(size) => {
-                    accumulated = if size < 128 {
-                        if is_accumulating {
-                            [accumulated.clone(), buffer.to_vec()].concat()
-                        } else {
-                            buffer.to_vec()
-                        }
-                    } else {
+                    let is_full = size == 128;
+                    if is_full {
                         is_accumulating = true;
+                    }
+
+                    accumulated = if is_accumulating {
+                        [accumulated.clone(), buffer.to_vec()].concat()
+                    } else {
                         buffer.to_vec()
                     };
 
