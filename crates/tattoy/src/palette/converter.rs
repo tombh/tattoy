@@ -49,7 +49,7 @@ impl Palette {
                 .context("Palette colour not found")?;
             let fg = self
                 .map
-                .get(&(palette_index + crate::palette::parser::Parser::ROW_SIZE).to_string())
+                .get(&(palette_index + crate::palette::parser::PALETTE_ROW_SIZE).to_string())
                 .context("Palette colour not found")?;
             crate::palette::parser::Parser::print_2_true_colours_in_1(
                 (bg.0, bg.1, bg.2),

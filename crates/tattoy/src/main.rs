@@ -13,6 +13,7 @@ pub mod opaque_cell;
 pub mod palette {
     pub mod converter;
     pub mod parser;
+    pub mod state_machine;
 }
 pub mod renderer;
 pub mod run;
