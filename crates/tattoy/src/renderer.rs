@@ -264,8 +264,11 @@ impl Renderer {
             }
         }
 
-        if backlog > 0 {
+        if backlog > 5 {
             tracing::warn!("Backlog: {backlog}");
+        }
+
+        if backlog > 0 {
             return Ok(());
         }
 
