@@ -1,14 +1,13 @@
 //! A state machine for parsing a QRcode-like screenshot of the user's terminal colours.
 
-use color_eyre::Result;
+use color_eyre::{eyre::ContextCompat as _, Result};
 
 /// A state machine for parsing a QR Code-like grid of colours.
 enum State {
     /// The first colour to look for is a pure(ish) red, which indicates the start of the colour grid.
-    /// Reds are also used to indicate the beginnings of new rows of colours. However, we increment
-    /// the green channel of the red by 1 for every new row. Hence the extra `u8` in this enum
-    /// variant.
-    LookingForRedish(u8),
+    /// Reds are also used to indicate the beginnings of new rows of colours by incrementing the
+    /// green channel by 1 for every row.
+    LookingForRedish,
     /// We then look for a pure blue just as a way to avoid false positive triggerings of the state
     /// machine.
     LookingForBlue,
@@ -29,13 +28,24 @@ pub struct Machine {
     current_colour: xcap::image::Rgba<u8>,
     /// The current terminal palette index being parsed.
     palette_index: u8,
-    /// The current colour in the palette print out being parsed.
+    /// The current row in the palette print out being parsed.
     row_index: u8,
+    /// The accumulated confidence that the parser is in a new palette block.
+    block_confidence: u8,
+    /// The accumulated confidence that the parser is in a new row of the palette.
+    row_confidence: u8,
 }
 
 impl Machine {
     /// A pure blue used for signalling in the our "QR Code" of the palette.
     const PURE_BLUE: xcap::image::Rgba<u8> = xcap::image::Rgba::<u8>([0, 0, 255, 255]);
+
+    /// The number of times a pixel must occur one after the other to be considered as defining a
+    /// new palette block.
+    const COLOUR_CONFIDENCE: u8 = 3;
+
+    /// The maximum level of lossy noise that allows 2 colours to be considered the same.
+    const MAX_LOSSY_NOISE_LEVEL: u16 = 4;
 
     // TODO:
     //   Some of the state isn't kept in the enum variants. That's not a big problem, but I'd
@@ -52,19 +62,21 @@ impl Machine {
         );
 
         let mut machine = Self {
-            state: State::LookingForRedish(0),
+            state: State::LookingForRedish,
             palette: crate::palette::converter::Palette {
                 map: std::collections::HashMap::new(),
             },
             current_colour: xcap::image::Rgba::<u8>([0, 0, 0, 0]),
             palette_index: 0,
             row_index: 0,
+            block_confidence: 0,
+            row_confidence: 0,
         };
 
         tracing::debug!("Looking for first redish palette row start");
         for pixel in image.enumerate_pixels() {
             let pixel_color = *pixel.2;
-            let is_finished = machine.state_transition(pixel_color);
+            let is_finished = machine.state_transition(pixel_color)?;
             if is_finished {
                 return Ok(machine.palette);
             }
@@ -76,35 +88,100 @@ impl Machine {
         );
     }
 
-    /// Is the current pixel a part of the printed palette and has it changed?
-    fn is_new_palette_pixel(&self, previous_colour: xcap::image::Rgba<u8>) -> bool {
-        let is_in_palette_printout = !matches!(self.state, State::LookingForRedish(_));
-
-        // TODO: I don't feel this condition is very intuitive
-        if is_in_palette_printout && self.current_colour == previous_colour {
+    /// Is the parser in known pure red block at the start of a palette row?
+    fn is_row_start_redish(&mut self, previous_colour: xcap::image::Rgba<u8>) -> bool {
+        let redish_row_start = xcap::image::Rgba::<u8>([255, self.row_index, 0, 255]);
+        if !(previous_colour == redish_row_start && self.current_colour == redish_row_start) {
             return false;
         }
 
-        true
+        self.row_confidence += 1;
+        tracing::debug!(
+            "Potential palette row ({}) found, certainty {}/{}",
+            self.row_index,
+            self.row_confidence,
+            Self::COLOUR_CONFIDENCE
+        );
+
+        self.row_confidence > Self::COLOUR_CONFIDENCE
     }
 
-    /// Transition the state machine.
-    fn state_transition(&mut self, pixel_colour: xcap::image::Rgba<u8>) -> bool {
+    /// Have we moved into a new palette block?
+    fn is_new_palette_block(&mut self, previous_colour: xcap::image::Rgba<u8>) -> Result<bool> {
+        if self.block_confidence == 0 {
+            if !self.is_same_colour(previous_colour)? {
+                self.block_confidence += 1;
+            }
+
+            return Ok(false);
+        }
+
+        if self.is_same_colour(previous_colour)? {
+            self.block_confidence += 1;
+        }
+        Ok(self.block_confidence > Self::COLOUR_CONFIDENCE)
+    }
+
+    /// Calculate a crude difference metric for 2 colours
+    fn colour_difference(&self, colour: xcap::image::Rgba<u8>) -> Result<u16> {
+        let mut difference = 0;
+        difference += Self::channel_difference(self.current_colour.0, colour.0, 0)?;
+        difference += Self::channel_difference(self.current_colour.0, colour.0, 1)?;
+        difference += Self::channel_difference(self.current_colour.0, colour.0, 2)?;
+        Ok(difference)
+    }
+
+    /// Calculate the difference between a single channel on 2 colours.
+    fn channel_difference(left: [u8; 4], right: [u8; 4], channel: usize) -> Result<u16> {
+        Ok(i16::from(*left.get(channel).context("")?)
+            .abs_diff(i16::from(*right.get(channel).context("")?)))
+    }
+
+    /// Within our defined noise levels, is the new colour the same as the current colour?
+    fn is_same_colour(&self, colour: xcap::image::Rgba<u8>) -> Result<bool> {
+        let difference = self.colour_difference(colour)?;
+        if matches!(self.state, State::LookingForBlue) {
+            tracing::trace!("{:?}-{:?}={difference}", colour, self.current_colour);
+        }
+        Ok(difference < Self::MAX_LOSSY_NOISE_LEVEL)
+    }
+
+    /// Does the new at the boundary of a state change? Like entering/exit the palette grid,
+    /// starting a new palette block etc.
+    fn is_transition(&mut self, pixel_colour: xcap::image::Rgba<u8>) -> Result<bool> {
         let previous_colour = self.current_colour;
         self.current_colour = pixel_colour;
 
-        if !self.is_new_palette_pixel(previous_colour) {
-            return false;
+        #[expect(
+            clippy::collapsible_else_if,
+            reason = "
+                I think it looks better like this. Besides a trusted member of my Twitch
+                community saw me struggling on this minor cosmetic detail kindly
+                suggested that I go out and touch grass ❤️.
+            "
+        )]
+        if matches!(self.state, State::LookingForRedish) {
+            if !self.is_row_start_redish(previous_colour) {
+                return Ok(false);
+            }
+        } else {
+            if !self.is_new_palette_block(previous_colour)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Transition the state machine.
+    fn state_transition(&mut self, pixel_colour: xcap::image::Rgba<u8>) -> Result<bool> {
+        if !self.is_transition(pixel_colour)? {
+            return Ok(false);
         }
 
         match self.state {
-            State::LookingForRedish(row_marker) => {
-                let redish_row_start = xcap::image::Rgba::<u8>([255, row_marker, 0, 255]);
-                if self.current_colour == redish_row_start {
-                    tracing::debug!("Potential palette row found: {row_marker}");
-
-                    self.state = State::LookingForBlue;
-                }
+            State::LookingForRedish => {
+                self.state = State::LookingForBlue;
             }
             State::LookingForBlue => {
                 if self.current_colour == Self::PURE_BLUE {
@@ -112,9 +189,12 @@ impl Machine {
 
                     self.state = State::LookingForFirstColourInRow;
                 } else {
-                    tracing::debug!("False positive palette start, restarting row search");
+                    tracing::debug!(
+                        "False positive palette start (found {:?} after pure red), restarting row search",
+                        self.current_colour
+                    );
 
-                    self.state = State::LookingForRedish(self.row_index);
+                    self.state = State::LookingForRedish;
                 }
             }
             State::LookingForFirstColourInRow => {
@@ -142,7 +222,7 @@ impl Machine {
                 let new_column = column_index + 1;
                 if new_column >= crate::palette::parser::PALETTE_ROW_SIZE {
                     self.row_index += 1;
-                    self.state = State::LookingForRedish(self.row_index);
+                    self.state = State::LookingForRedish;
 
                     tracing::debug!("Looking for redish palette row start: {}", self.row_index);
                 } else {
@@ -161,7 +241,7 @@ impl Machine {
                         ),
                     );
                     if self.palette_index == 255 {
-                        return true;
+                        return Ok(true);
                     }
                     self.palette_index += 1;
 
@@ -170,7 +250,10 @@ impl Machine {
             }
         }
 
-        false
+        self.block_confidence = 0;
+        self.row_confidence = 0;
+
+        Ok(false)
     }
 }
 
@@ -179,7 +262,7 @@ impl Machine {
 mod test {
     use super::*;
 
-    fn assert_screenshot(path: std::path::PathBuf) {
+    fn assert_default_screenshot(path: std::path::PathBuf) {
         let screenshot = xcap::image::open(path).unwrap();
         let palette = Machine::parse_screenshot(&screenshot.into_rgba8()).unwrap();
 
@@ -192,7 +275,7 @@ mod test {
     fn parse_palette_easy() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../tests/resources/palette_screenshot_easy.png");
-        assert_screenshot(path);
+        assert_default_screenshot(path);
     }
 
     #[test]
@@ -200,6 +283,18 @@ mod test {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../tests/resources/palette_screenshot_hard.png");
 
-        assert_screenshot(path);
+        assert_default_screenshot(path);
+    }
+
+    #[test]
+    fn parse_palette_lossy() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/resources/palette_screenshot_cmang.png");
+        let screenshot = xcap::image::open(path).unwrap();
+        let palette = Machine::parse_screenshot(&screenshot.into_rgba8()).unwrap();
+
+        assert_eq!(palette.map["0"], (1, 1, 0));
+        assert_eq!(palette.map["128"], (175, 0, 215));
+        assert_eq!(palette.map["255"], (238, 237, 238));
     }
 }
