@@ -85,6 +85,12 @@ pub struct LastSent {
 /// The special ANSI code that applications send to get a reply with the current cursor position.
 const CURSOR_POSITION_REQUEST: &str = "\x1b[6n";
 
+/// Enable the user's terminal's 'application mode'.
+const APPLICATION_MODE_START: &str = "\x1b[?1h";
+
+/// Disable the user's terminal's 'application mode'.
+const APPLICATION_MODE_END: &str = "\x1b[?1l";
+
 /// The time to wait for more output from the PTY. In microseconds (1000s of a millisecond).
 const TIME_TO_WAIT_FOR_MORE_PTY_OUTPUT: u64 = 1000;
 
@@ -256,6 +262,22 @@ impl ShadowTerminal {
     ) -> Result<(), crate::errors::ShadowTerminalError> {
         let bytes_copy = self.accumulated_pty_output.clone();
         let bytes = bytes_copy.as_slice();
+
+        if Self::find_subsequence(bytes, APPLICATION_MODE_START.as_bytes()).is_some() {
+            tracing::trace!("Starting terminal 'application mode'");
+            crate::output::raw_string_direct_to_terminal(APPLICATION_MODE_START)
+                .with_whatever_context(|err| {
+                    format!("Sending 'application mode start' ANSI code: {err:?}")
+                })?;
+        }
+
+        if Self::find_subsequence(bytes, APPLICATION_MODE_END.as_bytes()).is_some() {
+            tracing::trace!("APPLICATION_MODE_END");
+            crate::output::raw_string_direct_to_terminal(APPLICATION_MODE_END)
+                .with_whatever_context(|err| {
+                    format!("Sending 'application mode end' ANSI code: {err:?}")
+                })?;
+        }
 
         self.handle_cursor_position_request(bytes).await?;
         self.terminal.advance_bytes(bytes);
