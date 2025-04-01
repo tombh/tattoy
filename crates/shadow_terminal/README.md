@@ -29,9 +29,15 @@ assert_eq!(
 );
 ```
 
-## testing
+## Testing
 * End to end tests depend on `nano` (to help text resizing the terminal).
 
 ## TODO
 * [ ] Every test has to be marked with `#[tokio::test(flavor = "multi_thread")]` otherwise tests can hang. I'm not sure why, I'd really like to know.
 * [ ] If `#[tokio::test(flavor = "multi_thread")]` is really necessary it'd be nice if there was a way to globally set it for tests.
+
+
+## Notes
+* Useful ANSI code resources:
+  * https://gist.github.com/ConnerWill/d4b6c776b509add763e17f9f113fd25b
+  * https://www.qnx.com/developers/docs/qnx_4.25_docs/qnx4/utils/d/devansi.html

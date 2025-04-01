@@ -3,9 +3,31 @@
 //! We try to be efficient in how we send output. If the change from the underlying PTY is small,
 //! then we just send diffs. Otherwise we send the entire screen or scrollback buffer.
 
+use std::io::Write as _;
+
 use snafu::{OptionExt as _, ResultExt as _};
 use termwiz::surface::Change as TermwizChange;
 use termwiz::surface::Position as TermwizPosition;
+
+/// Send raw output directly to the user's terminal without going via the renderer. Useful for
+/// sending ANSI codes to the terminal emulator. For example, `^[?1h` to set "application mode"
+/// arrow key codes.
+///
+/// # Errors
+/// When writing to STDOUT fails.
+#[inline]
+pub fn raw_string_direct_to_terminal(
+    string: &str,
+) -> Result<(), crate::errors::ShadowTerminalError> {
+    std::io::stdout()
+        .write(string.as_bytes())
+        .with_whatever_context(|err| {
+            format!("Writing direct raw output to user's terminal: {err:?}")
+        })?;
+    std::io::stdout().flush().with_whatever_context(|err| {
+        format!("Writing direct raw output to user's terminal: {err:?}")
+    })
+}
 
 /// The mode of the terminal screen, therefore either the primary screen, where the scrollback is
 /// collected, or the alternate screen, where apps like `vim`, `htop`, etc, get rendered.
