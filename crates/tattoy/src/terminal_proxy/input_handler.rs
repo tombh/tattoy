@@ -2,7 +2,7 @@
 
 use color_eyre::eyre::{ContextCompat as _, Result};
 
-impl crate::terminal_proxy::TerminalProxy {
+impl crate::terminal_proxy::proxy::Proxy {
     /// Handle input from the end user.
     pub async fn handle_input(&self, input: &crate::raw_input::ParsedInput) -> Result<()> {
         if self.is_tattoy_input_event(&input.event).await {

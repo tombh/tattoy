@@ -8,7 +8,7 @@ use color_eyre::eyre::Result;
 use crate::shared_state::SharedState;
 
 /// A proxy for signals and data to and from an in-memory shadow terminal.
-pub(crate) struct TerminalProxy {
+pub(crate) struct Proxy {
     /// Shared app state
     pub state: Arc<SharedState>,
     /// A headless Wezterm terminal running entirely in memory.
@@ -21,7 +21,7 @@ pub(crate) struct TerminalProxy {
     palette: Option<crate::palette::converter::Palette>,
 }
 
-impl TerminalProxy {
+impl Proxy {
     /// Instantiate.
     ///
     /// The `surfaces_tx` channel sends `termwiz::surface::Surface` updates representing the current

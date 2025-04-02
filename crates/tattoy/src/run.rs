@@ -80,7 +80,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     );
 
     let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
-    crate::terminal_proxy::TerminalProxy::start(
+    crate::terminal_proxy::proxy::Proxy::start(
         state_arc,
         surfaces_tx,
         protocol_tx.clone(),

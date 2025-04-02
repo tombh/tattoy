@@ -6,7 +6,6 @@
 
 pub mod cli_args;
 pub mod config;
-pub mod input_handler;
 pub mod loader;
 pub mod opaque_cell;
 pub mod raw_input;
@@ -20,7 +19,11 @@ pub mod renderer;
 pub mod run;
 pub mod shared_state;
 pub mod surface;
-pub mod terminal_proxy;
+/// A layer between Tattoy and the Shadow Terminal
+pub mod terminal_proxy {
+    pub mod input_handler;
+    pub mod proxy;
+}
 pub mod utils;
 
 /// This is where all the various tattoys are kept
