@@ -39,6 +39,10 @@ scale = 0.75
 # The maximum number of particles in the simulation
 max_particles = 3000
 
+[smokey_cursor.keybindings]
+enabled = { mods = "CTRL|ALT", key = "END" }
+enabled = { mods = "ALT", key = "e" }
+
 [shader]
 enabled = false
 opacity = 0.75

@@ -7,7 +7,7 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _, Layer as _};
 
 use crate::cli_args::CliArgs;
-use crate::input::Input;
+use crate::raw_input::RawInput;
 use crate::renderer::Renderer;
 use crate::shared_state::SharedState;
 
@@ -41,7 +41,7 @@ pub(crate) enum Protocol {
         height: u16,
     },
     /// Parsed input from STDIN.
-    Input(crate::input::ParsedInput),
+    Input(crate::raw_input::ParsedInput),
     /// The visibility of the end user's cursor.
     CursorVisibility(bool),
     /// Tattoy's configuration.
@@ -71,7 +71,7 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let (renderer, surfaces_tx) = Renderer::start(Arc::clone(state_arc), protocol_tx.clone());
 
     let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
-    let input_thread_handle = Input::start(protocol_tx.clone());
+    let input_thread_handle = RawInput::start(protocol_tx.clone());
     let tattoys_handle = crate::loader::start_tattoys(
         cli_args.enabled_tattoys.clone(),
         protocol_tx.clone(),

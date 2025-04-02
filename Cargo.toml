@@ -15,7 +15,10 @@ tracing = "0.1.40"
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 indoc = "2.0.5"
 
-termwiz = { git = "https://github.com/tombh/wezterm.git", branch = "add-surface-repaint-override" }
+[workspace.dependencies.termwiz]
+git = "https://github.com/tombh/wezterm.git"
+branch = "add-surface-repaint-override"
+features = ["use_serde"]
 # termwiz = { path = "../wezterm/termwiz" }
 
 # Canonical lints for whole crate

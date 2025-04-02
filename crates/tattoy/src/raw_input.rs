@@ -17,12 +17,12 @@ pub(crate) struct ParsedInput {
 }
 
 /// Handle input from the user
-pub(crate) struct Input {
+pub(crate) struct RawInput {
     /// The main Tattoy protocol channel.
     protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
 }
 
-impl Input {
+impl RawInput {
     /// Start a thread to listen and parse the end user's STDIN and forward it to the rest of the
     /// application.
     pub fn start(
@@ -94,8 +94,6 @@ impl Input {
 
     /// The callback for when the input parser detects known keyboard/mouse events.
     fn parsed_bytes_callback(&self, event: termwiz::input::InputEvent, bytes: Vec<u8>) {
-        tracing::trace!("Parsed input event: {event:?}");
-
         let result = self
             .protocol_tx
             .send(crate::run::Protocol::Input(ParsedInput { bytes, event }));
