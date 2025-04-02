@@ -6,9 +6,10 @@
 
 pub mod cli_args;
 pub mod config;
-pub mod input;
+pub mod input_handler;
 pub mod loader;
 pub mod opaque_cell;
+pub mod raw_input;
 /// The palette code is for helping convert a terminal's palette to true colour.
 pub mod palette {
     pub mod converter;
