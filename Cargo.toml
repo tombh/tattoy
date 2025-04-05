@@ -76,6 +76,7 @@ unseparated_literal_suffix = "allow"
 multiple_inherent_impl = "allow"
 upper_case_acronyms = "allow"
 struct_field_names = "allow"
+self_named_module_files = "allow"
 
 # I just personally prefer the `match` syntax for if-let matching.
 option_if_let_else = "allow"

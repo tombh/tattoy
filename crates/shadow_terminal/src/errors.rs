@@ -4,6 +4,7 @@
 
 /// All the known errors returned by this crate.
 #[derive(Debug, snafu::Snafu)]
+#[non_exhaustive]
 pub enum ShadowTerminalError {
     #[snafu(display("PTY Error"))]
     /// Any error that occurs in the PTY
@@ -30,7 +31,9 @@ pub enum ShadowTerminalError {
     },
 }
 
+/// An error in the PTY.
 #[derive(Debug, snafu::Snafu)]
+#[non_exhaustive]
 pub enum PTYError {
     /// General errors that don't need to be matched on
     #[snafu(whatever, display("{message}"))]
@@ -43,7 +46,9 @@ pub enum PTYError {
     },
 }
 
+/// An error in the Steppable terminal.
 #[derive(Debug, snafu::Snafu)]
+#[non_exhaustive]
 pub enum SteppableTerminalError {
     /// General errors that don't need to be matched on
     #[snafu(whatever, display("{message}"))]

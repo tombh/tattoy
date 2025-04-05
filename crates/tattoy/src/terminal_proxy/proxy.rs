@@ -16,7 +16,7 @@ pub(crate) struct Proxy {
     /// A channel for output updates from the shadow terminal screen.
     surfaces_tx: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     /// The Tattoy protocol
-    tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+    pub tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     /// A hash map linking palette indexes to true colour values.
     palette: Option<crate::palette::converter::Palette>,
 }
@@ -37,7 +37,7 @@ impl Proxy {
             shadow_terminal,
             surfaces_tx,
             tattoy_protocol,
-            palette: crate::config::Config::load_palette(state).await?,
+            palette: crate::config::main::Config::load_palette(state).await?,
         })
     }
 

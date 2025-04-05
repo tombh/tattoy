@@ -6,10 +6,10 @@ use notify::Watcher as _;
 
 /// A copy of the default config file. It gets copied to the user's config folder the first time
 /// they start Tattoy.
-static DEFAULT_CONFIG: &str = include_str!("../default_config.toml");
+static DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
 
 /// Bundle an example shader with Tattoy.
-static EXAMPLE_SHADER: &str = include_str!("tattoys/shaders/point_lights.glsl");
+static EXAMPLE_SHADER: &str = include_str!("../tattoys/shaders/point_lights.glsl");
 
 /// The name of the directory where shader files are kept.
 const SHADER_DIRECTORY_NAME: &str = "shaders";
@@ -50,10 +50,12 @@ pub(crate) struct Config {
     pub log_level: LogLevel,
     /// The location of the log file.
     pub log_path: std::path::PathBuf,
-    /// Colour grading
-    pub color: Color,
+    /// Keybindings
+    pub keybindings: super::input::KeybindingsRaw,
     /// Target frame rate
     pub frame_rate: u32,
+    /// Colour grading
+    pub color: Color,
     /// The smokey particles cursor
     pub smokey_cursor: crate::tattoys::smokey_cursor::config::Config,
     /// The minimap
@@ -86,8 +88,9 @@ impl Default for Config {
             command,
             log_level: LogLevel::Off,
             log_path,
-            color: Color::default(),
             frame_rate: 30,
+            keybindings: super::input::KeybindingsRaw::new(),
+            color: Color::default(),
             smokey_cursor: crate::tattoys::smokey_cursor::config::Config::default(),
             minimap: crate::tattoys::minimap::Config::default(),
             shader: crate::tattoys::shaders::main::Config::default(),
@@ -181,7 +184,9 @@ impl Config {
         let result = std::fs::read_to_string(config_path.clone());
         match result {
             Ok(data) => {
+                tracing::trace!("Using config file:\n{data}");
                 let config = toml::from_str::<Self>(&data)?;
+                Self::load_keybindings(state, &config).await?;
                 Ok(config)
             }
             Err(err) => {
@@ -204,6 +209,26 @@ impl Config {
         drop(config_state);
 
         Ok(new_config)
+    }
+
+    /// Load all user keybindings.
+    async fn load_keybindings(
+        state: &std::sync::Arc<crate::shared_state::SharedState>,
+        config: &Self,
+    ) -> Result<()> {
+        tracing::trace!("Loading user-defined keybindings...");
+        let mut keybindings = super::input::KeybindingsEvents::new();
+
+        #[expect(clippy::iter_over_hash_type, reason = "The ordering doesn't matter")]
+        for (action, binding_config) in config.keybindings.clone() {
+            tracing::trace!("Keybinding found for '{action:?}': {binding_config:?}");
+            let key_event: termwiz::input::KeyEvent = binding_config.try_into()?;
+            keybindings.insert(action.clone(), key_event.clone());
+            tracing::debug!("Keybinding parsed for '{action:?}': {key_event:?}");
+        }
+
+        *state.keybindings.write().await = keybindings;
+        Ok(())
     }
 
     /// Watch the config file for any changes and then automatically update the shared state with

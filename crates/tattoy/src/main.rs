@@ -5,7 +5,11 @@
 // definitions.
 
 pub mod cli_args;
-pub mod config;
+/// All the user-configurable settings.
+pub mod config {
+    pub mod input;
+    pub mod main;
+}
 pub mod loader;
 pub mod opaque_cell;
 pub mod raw_input;

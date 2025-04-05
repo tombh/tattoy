@@ -5,7 +5,7 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 impl crate::terminal_proxy::proxy::Proxy {
     /// Handle input from the end user.
     pub async fn handle_input(&self, input: &crate::raw_input::ParsedInput) -> Result<()> {
-        if self.is_tattoy_input_event(&input.event).await {
+        if self.is_tattoy_input_event(&input.event).await? {
             tracing::trace!("Tattoy input event: {:?}", input.event);
             self.handle_scrolling_input(&input.event).await?;
         } else if !self.state.get_is_scrolling().await {
@@ -46,23 +46,44 @@ impl crate::terminal_proxy::proxy::Proxy {
 
     /// Is the input event specific to Tattoy (eg toggling tattoys etc)? If it is, then the raw
     /// input bytes shouldn't be passed on to the underlying PTY.
-    async fn is_tattoy_input_event(&self, event: &termwiz::input::InputEvent) -> bool {
+    async fn is_tattoy_input_event(&self, event: &termwiz::input::InputEvent) -> Result<bool> {
         match event {
-            termwiz::input::InputEvent::Key(_key_event) => {}
-            termwiz::input::InputEvent::Mouse(_mouse_event) => {
-                if !self.state.get_is_alternate_screen().await {
-                    return true;
-                }
+            termwiz::input::InputEvent::Key(key_event) => {
+                self.handle_tattoy_key_event(key_event).await
             }
-            termwiz::input::InputEvent::PixelMouse(_pixel_mouse_event) => (),
+            termwiz::input::InputEvent::Mouse(_mouse_event) => {
+                Ok(!self.state.get_is_alternate_screen().await)
+            }
+            termwiz::input::InputEvent::PixelMouse(_pixel_mouse_event) => Ok(false),
             termwiz::input::InputEvent::Resized {
                 cols: _cols,
                 rows: _rows,
-            } => (),
-            termwiz::input::InputEvent::Paste(_) | termwiz::input::InputEvent::Wake => (),
+            } => Ok(false),
+            termwiz::input::InputEvent::Paste(_) | termwiz::input::InputEvent::Wake => Ok(false),
+        }
+    }
+
+    /// Handle a key event that we have a keybinding for.
+    async fn handle_tattoy_key_event(&self, key_event: &termwiz::input::KeyEvent) -> Result<bool> {
+        // TODO: may turn out to be better to cache this.
+        let keybindings = self.state.keybindings.read().await;
+        let maybe_match = keybindings
+            .iter()
+            .find_map(|(action, binding)| (binding == key_event).then_some(action.clone()));
+        let Some(trigger) = maybe_match else {
+            return Ok(false);
+        };
+        drop(keybindings);
+
+        match trigger {
+            crate::config::input::KeybindingAction::ToggleTattoy => {
+                let existing = *self.state.is_rendering_enabled.read().await;
+                *self.state.is_rendering_enabled.write().await = !existing;
+                tracing::debug!("Toggling Tattoy renderer to: {}", !existing);
+            }
         }
 
-        false
+        Ok(true)
     }
 
     /// Because Tattoy is a wrapper around a headless, in-memory terminal, it can't rely on the

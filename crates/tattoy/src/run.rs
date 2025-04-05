@@ -45,7 +45,7 @@ pub(crate) enum Protocol {
     /// The visibility of the end user's cursor.
     CursorVisibility(bool),
     /// Tattoy's configuration.
-    Config(crate::config::Config),
+    Config(crate::config::main::Config),
 }
 
 // TODO:
@@ -70,7 +70,8 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
 
     let (renderer, surfaces_tx) = Renderer::start(Arc::clone(state_arc), protocol_tx.clone());
 
-    let config_handle = crate::config::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
+    let config_handle =
+        crate::config::main::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
     let input_thread_handle = RawInput::start(protocol_tx.clone());
     let tattoys_handle = crate::loader::start_tattoys(
         cli_args.enabled_tattoys.clone(),
@@ -164,8 +165,8 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     (*main_config_file).clone_from(&cli_args.main_config);
     drop(main_config_file);
 
-    crate::config::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
-    crate::config::Config::load_config_into_shared_state(state).await?;
+    crate::config::main::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
+    crate::config::main::Config::load_config_into_shared_state(state).await?;
 
     setup_logging(cli_args.clone(), state).await?;
 
@@ -183,6 +184,7 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     std::env::set_var("TERM", term);
 
     tracing::info!("Starting Tattoy");
+    tracing::debug!("Loaded config: {:?}", state.config.read().await);
 
     let tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     state
@@ -208,7 +210,7 @@ async fn setup_logging(cli_args: CliArgs, state: &std::sync::Arc<SharedState>) -
     let level_as_string = format!("{level:?}").to_lowercase();
 
     let is_loggable =
-        !matches!(level, crate::config::LogLevel::Off) || are_log_filters_manually_set;
+        !matches!(level, crate::config::main::LogLevel::Off) || are_log_filters_manually_set;
 
     if !is_loggable {
         return Ok(());
