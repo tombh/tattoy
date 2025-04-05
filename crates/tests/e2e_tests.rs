@@ -291,7 +291,6 @@ mod e2e {
     async fn minimap() {
         let mut tattoy = start_tattoy(None).await;
         let size = tattoy.shadow_terminal.terminal.get_size();
-        setup_logging();
 
         tattoy
             .send_command("cat resources/LOREM_IPSUM.txt")
@@ -302,5 +301,30 @@ mod e2e {
             .unwrap();
 
         tattoy.wait_for_string("co▀▀▀▀▀▀▀▀▀▀", None).await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn keybind_toggle_renderer() {
+        let mut tattoy = start_tattoy(None).await;
+        setup_logging();
+
+        assert_random_walker_moves(&mut tattoy).await;
+        let mut is_random_walker_walking = true;
+
+        let alt_t = format!("{ESCAPE}t");
+        tattoy.send_input(Input::Event(alt_t)).unwrap();
+
+        for _ in 0..1000u16 {
+            let result = tattoy.wait_for_string("▀", Some(10)).await;
+            if result.is_err() {
+                is_random_walker_walking = false;
+                break;
+            }
+        }
+
+        assert!(
+            !is_random_walker_walking,
+            "Random walker didn't stop walking after keybinding toggler event sent"
+        );
     }
 }

@@ -45,7 +45,7 @@ impl Parser {
         let result = super::state_machine::Machine::parse_screenshot(&screenshot);
         let Ok(palette) = result else {
             if maybe_user_screenshot.is_none() {
-                let path = crate::config::Config::temporary_file("screenshot.png")?;
+                let path = crate::config::main::Config::temporary_file("screenshot.png")?;
                 screenshot.save(path.clone())?;
 
                 color_eyre::eyre::bail!(
@@ -69,7 +69,7 @@ impl Parser {
     pub async fn palette_config_path(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
     ) -> std::path::PathBuf {
-        crate::config::Config::directory(state)
+        crate::config::main::Config::directory(state)
             .await
             .join("palette.toml")
     }

@@ -47,5 +47,5 @@ pub(crate) struct CliArgs {
 
     /// Verbosity of logs
     #[arg(long, value_name = "Level to log at")]
-    pub log_level: Option<crate::config::LogLevel>,
+    pub log_level: Option<crate::config::main::LogLevel>,
 }

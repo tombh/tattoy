@@ -174,7 +174,10 @@ impl Renderer {
                     self.handle_frame_update(&mut surfaces, &mut composited_terminal, &protocol_tx).await?;
                 },
                 Ok(message) = protocol_rx.recv() => {
-                    Self::handle_protocol_message(&mut composited_terminal, &message);
+                    let result = Self::handle_protocol_message(&mut composited_terminal, &message);
+                    if let Err(error) = result {
+                        tracing::error!("Handling protocol message in renderer: {error:?}");
+                    }
                     if matches!(message, crate::run::Protocol::End) {
                         break;
                     }
@@ -210,19 +213,15 @@ impl Renderer {
 
     /// Handle messages from the global Tattoy protocol.
     fn handle_protocol_message(
-        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
+        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
         message: &crate::run::Protocol,
-    ) {
+    ) -> Result<()> {
         #[expect(clippy::wildcard_enum_match_arm, reason = "It's our internal protocol")]
-        let result = match message {
+        match message {
             crate::run::Protocol::CursorVisibility(is_visible) => {
                 Self::cursor_visibility(composited_terminal, *is_visible)
             }
             _ => Ok(()),
-        };
-
-        if let Err(error) = result {
-            tracing::error!("Handling protocol message in renderer: {error:?}");
         }
     }
 
@@ -264,11 +263,10 @@ impl Renderer {
             }
         }
 
-        if backlog > 5 {
-            tracing::warn!("Backlog: {backlog}");
-        }
-
         if backlog > 0 {
+            if backlog > 5 {
+                tracing::warn!("Backlog: {backlog}");
+            }
             return Ok(());
         }
 
@@ -298,16 +296,22 @@ impl Renderer {
         Ok(())
     }
 
+    // TODO: A failed render shouldn't crash the whole tick.
     /// Composite all the tattoys and the PTY together into a single surface (frame).
     async fn composite(&mut self) -> Result<TermwizSurface> {
         let mut surface = TermwizSurface::new(self.width.into(), self.height.into());
         let mut frame = surface.screen_cells();
 
-        // TODO: A failed render shouldn't crash the whole tick.
-        self.render_tattoys_below(&mut frame)?;
+        if *self.state.is_rendering_enabled.read().await {
+            self.render_tattoys_below(&mut frame)?;
+        }
+
         self.render_pty(&mut frame)?;
-        self.render_tattoys_above(&mut frame)?;
-        self.colour_grade(&mut frame).await?;
+
+        if *self.state.is_rendering_enabled.read().await {
+            self.render_tattoys_above(&mut frame)?;
+            self.colour_grade(&mut frame).await?;
+        }
 
         Ok(surface)
     }
@@ -469,15 +473,21 @@ impl Renderer {
 mod test {
     use super::*;
 
-    async fn blend_pixels(
-        first: (usize, usize, crate::surface::Colour),
-        second: (usize, usize, crate::surface::Colour),
-    ) -> Cell {
-        let mut renderer = Renderer {
+    async fn make_renderer() -> Renderer {
+        let renderer = Renderer {
             width: 1,
             height: 1,
             ..Renderer::default()
         };
+        *renderer.state.is_rendering_enabled.write().await = true;
+        renderer
+    }
+
+    async fn blend_pixels(
+        first: (usize, usize, crate::surface::Colour),
+        second: (usize, usize, crate::surface::Colour),
+    ) -> Cell {
+        let mut renderer = make_renderer().await;
         let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
         tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
         renderer
@@ -501,11 +511,7 @@ mod test {
 
     #[tokio::test]
     async fn blending_text() {
-        let mut renderer = Renderer {
-            width: 1,
-            height: 1,
-            ..Renderer::default()
-        };
+        let mut renderer = make_renderer().await;
         let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
         tattoy_below.add_text(
             0,
@@ -544,11 +550,7 @@ mod test {
 
     #[tokio::test]
     async fn blending_text_with_default_bg_below() {
-        let mut renderer = Renderer {
-            width: 1,
-            height: 1,
-            ..Renderer::default()
-        };
+        let mut renderer = make_renderer().await;
         let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
         tattoy_below.add_text(0, 0, "a".into(), None, Some(crate::surface::WHITE));
         renderer

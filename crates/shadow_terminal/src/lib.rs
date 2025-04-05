@@ -21,7 +21,7 @@
 pub use wezterm_term;
 
 pub mod active_terminal;
-mod errors;
+pub mod errors;
 pub mod output;
 mod pty;
 pub mod shadow_terminal;

@@ -29,7 +29,9 @@ pub(crate) struct SharedState {
     /// Name of the main config file.
     pub main_config_file: tokio::sync::RwLock<std::path::PathBuf>,
     /// User config
-    pub config: tokio::sync::RwLock<crate::config::Config>,
+    pub config: tokio::sync::RwLock<crate::config::main::Config>,
+    /// All the user-configured keybindings.
+    pub keybindings: tokio::sync::RwLock<crate::config::input::KeybindingsEvents>,
     /// Just the size of the user's terminal. All the tattoys and shadow TTY should follow this
     pub tty_size: tokio::sync::RwLock<TTYSize>,
     /// This is a view onto the active screen of the shadow terminal. It's what you would see if
@@ -53,6 +55,8 @@ pub(crate) struct SharedState {
     pub pty_sequence: tokio::sync::RwLock<usize>,
     /// Is the application logging?
     pub is_logging: tokio::sync::RwLock<bool>,
+    /// Is Tattoy rendering anything to the terminal?
+    pub is_rendering_enabled: tokio::sync::RwLock<bool>,
 }
 
 impl SharedState {
@@ -60,6 +64,7 @@ impl SharedState {
     pub async fn init() -> Result<Arc<Self>> {
         let tty_size = Renderer::get_users_tty_size()?;
         let state = Self::default();
+        *state.is_rendering_enabled.write().await = true;
 
         state
             .set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)
