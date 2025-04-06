@@ -46,6 +46,8 @@ pub(crate) enum Protocol {
     CursorVisibility(bool),
     /// Tattoy's configuration.
     Config(crate::config::main::Config),
+    /// Cycle through configured shaders
+    CycleShader(bool),
 }
 
 // TODO:

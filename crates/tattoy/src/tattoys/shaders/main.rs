@@ -28,16 +28,16 @@ impl Default for Config {
 }
 
 /// `Shaders`
-pub(crate) struct Shaders {
+pub(crate) struct Shaders<'shaders> {
     /// The base Tattoy struct
     tattoy: Tattoyer,
     /// Shared app state
     state: std::sync::Arc<crate::shared_state::SharedState>,
     /// All the special GPU handling code.
-    gpu: super::gpu::GPU,
+    gpu: super::gpu::GPU<'shaders>,
 }
 
-impl Shaders {
+impl Shaders<'_> {
     /// Instantiate
     async fn new(
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
@@ -72,7 +72,7 @@ impl Shaders {
                     if matches!(result, Ok(crate::run::Protocol::End)) {
                         break;
                     }
-                    shaders.handle_protocol_message(result)?;
+                    shaders.handle_protocol_message(result).await?;
                 }
             }
         }
@@ -81,16 +81,71 @@ impl Shaders {
     }
 
     /// Handle messages from the main Tattoy app.
-    fn handle_protocol_message(
+    async fn handle_protocol_message(
         &mut self,
-        result: std::result::Result<crate::run::Protocol, tokio::sync::broadcast::error::RecvError>,
+        protocol_result: std::result::Result<
+            crate::run::Protocol,
+            tokio::sync::broadcast::error::RecvError,
+        >,
     ) -> Result<()> {
-        match result {
+        match protocol_result {
             Ok(message) => {
+                if let crate::run::Protocol::CycleShader(direction) = message {
+                    self.cycle_shader(direction).await?;
+                }
+
                 self.tattoy.handle_common_protocol_messages(message)?;
             }
             Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
         }
+
+        Ok(())
+    }
+
+    /// Cycle through the shaders in the user's shader directory.
+    async fn cycle_shader(&mut self, direction: bool) -> Result<()> {
+        let Some(shader_directory) = self.gpu.shader_path.parent() else {
+            color_eyre::eyre::bail!("Unreachable: current shader doesn't have a parent path.");
+        };
+        let Some(current_filename) = self.gpu.shader_path.file_name() else {
+            color_eyre::eyre::bail!("Unreachable: couldn't get current shader's filename.");
+        };
+
+        let mut all_shaders = std::fs::read_dir(shader_directory)?
+            .map(|result| result.map_err(Into::into))
+            .collect::<Result<Vec<std::fs::DirEntry>>>()?
+            .into_iter()
+            .filter_map(|entry| entry.path().is_file().then(|| entry.file_name()))
+            .collect::<Vec<std::ffi::OsString>>();
+        all_shaders.sort();
+
+        if !direction {
+            all_shaders.reverse();
+        }
+
+        let Some(new_shader_raw) = all_shaders.first() else {
+            color_eyre::eyre::bail!(
+                "Unreachable: current shader's directory doesn't have a shader in it."
+            );
+        };
+        let mut new_shader = new_shader_raw.clone();
+        let mut is_current_shader_found = false;
+        for shader_filename in all_shaders {
+            if is_current_shader_found {
+                new_shader = shader_filename;
+                break;
+            }
+            tracing::debug!("{:?}=={:?}", shader_filename, current_filename);
+            if shader_filename == current_filename {
+                is_current_shader_found = true;
+            }
+        }
+
+        let shader_path = shader_directory.join(new_shader.clone());
+        tracing::info!("Changing shader to: {new_shader:?}");
+
+        self.gpu.shader_path = shader_path;
+        self.gpu.build_pipeline().await?;
 
         Ok(())
     }

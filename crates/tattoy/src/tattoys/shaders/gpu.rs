@@ -29,7 +29,9 @@ pub struct Variables {
 }
 
 /// Code for talking to the GPU.
-pub(crate) struct GPU {
+pub(crate) struct GPU<'gpu> {
+    /// Path to the current shader file.
+    pub shader_path: std::path::PathBuf,
     /// The time at which rendering began.
     started: std::time::Instant,
     /// Useful varibale data for shaders. Eg, mouse coordinates, wall time, etc
@@ -38,6 +40,8 @@ pub(crate) struct GPU {
     variables_buffer: wgpu::Buffer,
     /// The layout of the variables buffer binding.
     variables_bindgroup_layout: wgpu::BindGroupLayout,
+    /// The texture descriptor
+    texture_descriptor: wgpu::TextureDescriptor<'gpu>,
 
     /// The `wgpu` device.
     device: wgpu::Device,
@@ -51,10 +55,10 @@ pub(crate) struct GPU {
     /// The raw data for the final render.
     output_buffer: wgpu::Buffer,
     /// The GPU render pipeline.
-    pipeline: wgpu::RenderPipeline,
+    pipeline: Option<wgpu::RenderPipeline>,
 }
 
-impl GPU {
+impl GPU<'_> {
     // TODO: This does not scale. We will need to dynamically recreate the texture to factors of
     // 256 on terminal resizes.
     //
@@ -68,12 +72,6 @@ impl GPU {
     }
 
     /// Instantiate
-    #[expect(
-        clippy::too_many_lines,
-        reason = "
-            It's not a priority right now, let's split it up when live shader reloading.
-        "
-    )]
     pub async fn new(shader_path: std::path::PathBuf) -> Result<Self> {
         let variables = Variables::default();
 
@@ -93,7 +91,7 @@ impl GPU {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await?;
 
-        let texture_desc = wgpu::TextureDescriptor {
+        let texture_descriptor = wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: Self::TEXTURE_SIZE,
                 height: Self::TEXTURE_SIZE,
@@ -107,7 +105,8 @@ impl GPU {
             label: None,
             view_formats: &[],
         };
-        let texture = device.create_texture(&texture_desc);
+
+        let texture = device.create_texture(&texture_descriptor);
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let output_buffer_size: wgpu::BufferAddress =
@@ -120,16 +119,13 @@ impl GPU {
         };
         let output_buffer = device.create_buffer(&output_buffer_desc);
 
-        let (vertex_shader, fragment_shader) =
-            Self::compile_shaders(&device, shader_path.clone()).await?;
-
         let variables_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
             contents: bytemuck::cast_slice(&[variables]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let variables_bind_group_layout =
+        let variables_bindgroup_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -144,65 +140,14 @@ impl GPU {
                 label: Some("variables_bind_group_layout"),
             });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&variables_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &vertex_shader,
-                entry_point: Some("main"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &fragment_shader,
-                entry_point: Some("main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: texture_desc.format,
-                    blend: Some(wgpu::BlendState {
-                        alpha: wgpu::BlendComponent::REPLACE,
-                        color: wgpu::BlendComponent::REPLACE,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
-            multiview: None,
-            cache: None,
-        });
-
-        Ok(Self {
+        let mut gpu = Self {
+            shader_path,
             started: std::time::Instant::now(),
 
             variables,
             variables_buffer,
-            variables_bindgroup_layout: variables_bind_group_layout,
+            variables_bindgroup_layout,
+            texture_descriptor,
 
             device,
             queue,
@@ -210,8 +155,76 @@ impl GPU {
             texture,
             texture_view,
             output_buffer,
-            pipeline: render_pipeline,
-        })
+            pipeline: None,
+        };
+
+        gpu.build_pipeline().await?;
+
+        Ok(gpu)
+    }
+
+    /// (Re)build the render pipeline
+    pub async fn build_pipeline(&mut self) -> Result<()> {
+        let (vertex_shader, fragment_shader) = self.compile_shaders().await?;
+        let render_pipeline_layout =
+            self.device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Render Pipeline Layout"),
+                    bind_group_layouts: &[&self.variables_bindgroup_layout],
+                    push_constant_ranges: &[],
+                });
+
+        let render_pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_shader,
+                    entry_point: Some("main"),
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fragment_shader,
+                    entry_point: Some("main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.texture_descriptor.format,
+                        blend: Some(wgpu::BlendState {
+                            alpha: wgpu::BlendComponent::REPLACE,
+                            color: wgpu::BlendComponent::REPLACE,
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    // Requires Features::DEPTH_CLIP_CONTROL
+                    unclipped_depth: false,
+                    // Requires Features::CONSERVATIVE_RASTERIZATION
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                // If the pipeline will be used with a multiview render pass, this
+                // indicates how many array layers the attachments will have.
+                multiview: None,
+                cache: None,
+            });
+
+        self.pipeline = Some(render_pipeline);
+
+        Ok(())
     }
 
     /// Upda the shader variables with the current elapse wall time since the render began.
@@ -273,10 +286,12 @@ impl GPU {
             };
             let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
 
-            render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_bind_group(0, &self.variables_binding(), &[]);
-            render_pass.draw(0..3, 0..1);
-        };
+            if let Some(pipeline) = self.pipeline.as_ref() {
+                render_pass.set_pipeline(pipeline);
+                render_pass.set_bind_group(0, &self.variables_binding(), &[]);
+                render_pass.draw(0..3, 0..1);
+            }
+        }
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -362,21 +377,20 @@ impl GPU {
     }
 
     /// Complile the GLSL shaders ready for consumption by the GPU.
-    async fn compile_shaders(
-        device: &wgpu::Device,
-        shader_path: std::path::PathBuf,
-    ) -> Result<(wgpu::ShaderModule, wgpu::ShaderModule)> {
+    async fn compile_shaders(&self) -> Result<(wgpu::ShaderModule, wgpu::ShaderModule)> {
         // The vertex shader never changes, it uses a well-known technique called a fullscreen
         // triangle: https://stackoverflow.com/q/2588875/575773 The triangle covers the entire
         // contents of the viewport and so offers a single place for writing pixels to.
-        let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Vertex Shader"),
-            source: wgpu::ShaderSource::Glsl {
-                shader: include_str!("fullscreen_triangle.glsl").into(),
-                stage: wgpu::naga::ShaderStage::Vertex,
-                defines: std::collections::HashMap::default(),
-            },
-        });
+        let vertex_shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Vertex Shader"),
+                source: wgpu::ShaderSource::Glsl {
+                    shader: include_str!("fullscreen_triangle.glsl").into(),
+                    stage: wgpu::naga::ShaderStage::Vertex,
+                    defines: std::collections::HashMap::default(),
+                },
+            });
 
         // In our usage, the fragment shader is the code that actually omits pixels.
         //
@@ -384,20 +398,22 @@ impl GPU {
         // Therefore we also need to provide some header and footer boilerplate to allow
         // copy-pasting shaders without alteration. Just little things like `main()` calling
         // `mainImage()` and providing known globals such as `iResolution`.
-        let file = tokio::fs::read(shader_path).await?;
+        let file = tokio::fs::read(self.shader_path.clone()).await?;
         let contents = String::from_utf8_lossy(&file);
         let header = include_str!("header.glsl");
         let footer = include_str!("footer.glsl");
         let shader = format!("{header}\n{contents}\n{footer}");
 
-        let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Fragment Shader"),
-            source: wgpu::ShaderSource::Glsl {
-                shader: shader.into(),
-                stage: wgpu::naga::ShaderStage::Fragment,
-                defines: std::collections::HashMap::default(),
-            },
-        });
+        let fragment_shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Fragment Shader"),
+                source: wgpu::ShaderSource::Glsl {
+                    shader: shader.into(),
+                    stage: wgpu::naga::ShaderStage::Fragment,
+                    defines: std::collections::HashMap::default(),
+                },
+            });
 
         Ok((vertex_shader, fragment_shader))
     }
