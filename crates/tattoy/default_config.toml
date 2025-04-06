@@ -58,3 +58,7 @@ scroll_up = { key = "UpArrow" }
 scroll_down = { key = "DownArrow" }
 # Exit scrolling mode
 scroll_exit = { key = "Escape" }
+# Cycle to previous shader in user's shader config directory
+shader_prev = { mods = "ALT", key = "9" }
+# Cycle to next shader in user's shader config directory
+shader_next = { mods = "ALT", key = "0" }

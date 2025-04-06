@@ -23,6 +23,10 @@ pub(crate) enum KeybindingAction {
     ScrollDown,
     /// Exit scrolling mode.
     ScrollExit,
+    /// Cycle to previous shader in user's config shader directory.
+    ShaderPrev,
+    /// Cycle to next shader in user's config shader directory.
+    ShaderNext,
 }
 
 /// All the active user-configured keybindings.
