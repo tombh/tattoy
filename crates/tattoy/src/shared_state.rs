@@ -31,7 +31,7 @@ pub(crate) struct SharedState {
     /// User config
     pub config: tokio::sync::RwLock<crate::config::main::Config>,
     /// All the user-configured keybindings.
-    pub keybindings: tokio::sync::RwLock<crate::config::input::KeybindingsEvents>,
+    pub keybindings: tokio::sync::RwLock<crate::config::input::KeybindingsAsEvents>,
     /// Just the size of the user's terminal. All the tattoys and shadow TTY should follow this
     pub tty_size: tokio::sync::RwLock<TTYSize>,
     /// This is a view onto the active screen of the shadow terminal. It's what you would see if

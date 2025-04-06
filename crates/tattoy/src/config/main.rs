@@ -199,6 +199,11 @@ impl Config {
         }
     }
 
+    /// Parse the shipped default config.
+    fn parse_default_config() -> Result<Self> {
+        Ok(toml::from_str::<Self>(DEFAULT_CONFIG)?)
+    }
+
     /// Load the main config
     pub async fn load_config_into_shared_state(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
@@ -212,18 +217,26 @@ impl Config {
     }
 
     /// Load all user keybindings.
+    #[expect(clippy::iter_over_hash_type, reason = "The ordering doesn't matter")]
     async fn load_keybindings(
         state: &std::sync::Arc<crate::shared_state::SharedState>,
-        config: &Self,
+        user_config: &Self,
     ) -> Result<()> {
-        tracing::trace!("Loading user-defined keybindings...");
-        let mut keybindings = super::input::KeybindingsEvents::new();
+        let mut keybindings = crate::config::input::KeybindingsAsEvents::new();
 
-        #[expect(clippy::iter_over_hash_type, reason = "The ordering doesn't matter")]
-        for (action, binding_config) in config.keybindings.clone() {
-            tracing::trace!("Keybinding found for '{action:?}': {binding_config:?}");
+        let defaults = Self::parse_default_config()?;
+        for (action, binding_config) in defaults.keybindings.clone() {
             let key_event: termwiz::input::KeyEvent = binding_config.try_into()?;
             keybindings.insert(action.clone(), key_event.clone());
+        }
+
+        tracing::trace!("Loading user-defined keybindings...");
+        for (action, binding_config) in user_config.keybindings.clone() {
+            tracing::trace!("Keybinding found for '{action:?}': {binding_config:?}");
+            let key_event: termwiz::input::KeyEvent = binding_config.try_into()?;
+            keybindings
+                .entry(action.clone())
+                .or_insert_with(|| key_event.clone());
             tracing::debug!("Keybinding parsed for '{action:?}': {key_event:?}");
         }
 
