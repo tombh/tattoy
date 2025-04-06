@@ -111,12 +111,23 @@ impl crate::terminal_proxy::proxy::Proxy {
             }
             crate::config::input::KeybindingAction::ShaderPrev => {
                 self.tattoy_protocol
-                    .send(crate::run::Protocol::CycleShader(false))?;
+                    .send(crate::run::Protocol::KeybindEvent(
+                        crate::config::input::KeybindingAction::ShaderPrev,
+                    ))?;
                 Ok(true)
             }
             crate::config::input::KeybindingAction::ShaderNext => {
                 self.tattoy_protocol
-                    .send(crate::run::Protocol::CycleShader(true))?;
+                    .send(crate::run::Protocol::KeybindEvent(
+                        crate::config::input::KeybindingAction::ShaderNext,
+                    ))?;
+                Ok(true)
+            }
+            crate::config::input::KeybindingAction::ToggleMinimap => {
+                self.tattoy_protocol
+                    .send(crate::run::Protocol::KeybindEvent(
+                        crate::config::input::KeybindingAction::ToggleMinimap,
+                    ))?;
                 Ok(true)
             }
         }

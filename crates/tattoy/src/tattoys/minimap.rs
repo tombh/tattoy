@@ -117,6 +117,7 @@ impl Minimap {
                 self.tattoy
                     .handle_common_protocol_messages(message.clone())?;
                 self.check_if_pty_has_changed(&message).await?;
+                self.check_for_keybind(&message);
             }
             Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
         }
@@ -153,6 +154,20 @@ impl Minimap {
                 }
             }
             _ => (),
+        }
+    }
+
+    /// Toggle the minimap bases on the user config keybinding event.
+    fn check_for_keybind(&mut self, message: &crate::run::Protocol) {
+        if let crate::run::Protocol::KeybindEvent(event) = &message {
+            if matches!(event, crate::config::input::KeybindingAction::ToggleMinimap) {
+                if self.is_hidden() {
+                    self.show();
+                }
+                if self.is_shown() {
+                    self.hide();
+                }
+            }
         }
     }
 

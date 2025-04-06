@@ -52,6 +52,8 @@ path = "shaders/point_lights.glsl"
 toggle_tattoy = { mods = "ALT", key = "t" }
 # Toggle scolling mode whilst in scrollback.
 toggle_scrolling = { mods = "ALT", key = "s" }
+# Show/hide the minimap.
+toggle_minimap = { mods = "ALT", key = "M" }
 # Scroll up in the scrollback 
 scroll_up = { key = "UpArrow" }
 # Scroll down in the scrollback 
