@@ -90,8 +90,13 @@ impl Shaders<'_> {
     ) -> Result<()> {
         match protocol_result {
             Ok(message) => {
-                if let crate::run::Protocol::CycleShader(direction) = message {
-                    self.cycle_shader(direction).await?;
+                if let crate::run::Protocol::KeybindEvent(event) = &message {
+                    if matches!(event, crate::config::input::KeybindingAction::ShaderPrev) {
+                        self.cycle_shader(false).await?;
+                    }
+                    if matches!(event, crate::config::input::KeybindingAction::ShaderNext) {
+                        self.cycle_shader(true).await?;
+                    }
                 }
 
                 self.tattoy.handle_common_protocol_messages(message)?;

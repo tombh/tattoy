@@ -17,6 +17,8 @@ pub(crate) enum KeybindingAction {
     ToggleTattoy,
     /// Toggle scrollback scrolling mode.
     ToggleScrolling,
+    /// Show/hide the minimap.
+    ToggleMinimap,
     /// Scroll up. Also triggers scroll mode if it's not currently enabled.
     ScrollUp,
     /// Scroll down.
