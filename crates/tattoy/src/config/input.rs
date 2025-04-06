@@ -15,13 +15,21 @@ pub(crate) struct KeybindingConfigRaw {
 pub(crate) enum KeybindingAction {
     /// Toggle Tattoy's rendering. Doesn't effect the TTY.
     ToggleTattoy,
+    /// Toggle scrollback scrolling mode.
+    ToggleScrolling,
+    /// Scroll up. Also triggers scroll mode if it's not currently enabled.
+    ScrollUp,
+    /// Scroll down.
+    ScrollDown,
+    /// Exit scrolling mode.
+    ScrollExit,
 }
 
 /// All the active user-configured keybindings.
 pub(crate) type KeybindingsRaw = std::collections::HashMap<KeybindingAction, KeybindingConfigRaw>;
 
 /// The user keybindings converted to native `termwiz::input::KeyEvent`s.
-pub(crate) type KeybindingsEvents =
+pub(crate) type KeybindingsAsEvents =
     std::collections::HashMap<KeybindingAction, termwiz::input::KeyEvent>;
 
 impl TryFrom<KeybindingConfigRaw> for termwiz::input::KeyEvent {

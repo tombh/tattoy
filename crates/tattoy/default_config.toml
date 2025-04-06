@@ -50,3 +50,11 @@ path = "shaders/point_lights.glsl"
 # Whether Tattoy renders anything apart from the TTY. They TTY is always rendered,
 # so toggling this will disable all tattoys, effects, eye-candy, etc.
 toggle_tattoy = { mods = "ALT", key = "t" }
+# Toggle scolling mode whilst in scrollback.
+toggle_scrolling = { mods = "ALT", key = "s" }
+# Scroll up in the scrollback 
+scroll_up = { key = "UpArrow" }
+# Scroll down in the scrollback 
+scroll_down = { key = "DownArrow" }
+# Exit scrolling mode
+scroll_exit = { key = "Escape" }

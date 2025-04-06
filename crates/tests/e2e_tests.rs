@@ -235,8 +235,11 @@ mod e2e {
         }
 
         setup_logging();
-        let mouse_up = "\x1b[<64;14;2M";
-        let mouse_down = "\x1b[<65;15;5M";
+        let mouse_up = format!("{ESCAPE}[<64;14;2M");
+        let mouse_down = format!("{ESCAPE}[<65;15;5M");
+        let alt_s = format!("{ESCAPE}s");
+        let up_key = format!("{ESCAPE}[A");
+        let down_key = format!("{ESCAPE}[B");
 
         let mut tattoy = start_tattoy(None).await;
 
@@ -245,22 +248,15 @@ mod e2e {
             .unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
-        tattoy
-            .send_input(Input::Event(mouse_up.to_owned()))
-            .unwrap();
+        tattoy.send_input(Input::Event(alt_s)).unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
-        tattoy
-            .send_input(Input::Event(mouse_down.to_owned()))
-            .unwrap();
-        tattoy
-            .send_input(Input::Event(mouse_down.to_owned()))
-            .unwrap();
+        tattoy.send_input(Input::Event(up_key)).unwrap();
+        tattoy.send_input(Input::Event(mouse_down)).unwrap();
+        tattoy.send_input(Input::Event(down_key)).unwrap();
         assert_scrolling_off(&mut tattoy).await;
 
-        tattoy
-            .send_input(Input::Event(mouse_up.to_owned()))
-            .unwrap();
+        tattoy.send_input(Input::Event(mouse_up)).unwrap();
         assert_scrolled_up(&mut tattoy).await;
 
         tattoy.send_input(Input::Event(ESCAPE.to_owned())).unwrap();
