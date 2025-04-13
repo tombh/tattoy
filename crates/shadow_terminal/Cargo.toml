@@ -23,6 +23,3 @@ wezterm-term = { git = "https://github.com/tombh/wezterm.git", branch = "add-sur
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-indoc.workspace = true

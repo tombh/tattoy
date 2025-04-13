@@ -11,12 +11,14 @@
 #[cfg(not(target_os = "windows"))]
 #[cfg(test)]
 mod e2e {
-    const ESCAPE: &str = "\x1b";
+    use std::io::Write as _;
 
     use shadow_terminal::{
         shadow_terminal::Config,
         steppable_terminal::{Input, SteppableTerminal},
     };
+
+    const ESCAPE: &str = "\x1b";
 
     fn tattoy_binary_path() -> String {
         shadow_terminal::tests::helpers::workspace_dir()
@@ -155,6 +157,8 @@ mod e2e {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn resizing() {
+        setup_logging();
+
         let mut tattoy = start_tattoy(None).await;
         tattoy.send_command("nano --restricted").unwrap();
         tattoy.wait_for_string("GNU nano", None).await.unwrap();
@@ -187,10 +191,10 @@ mod e2e {
             .wait_for_string_at("^X Exit", 0, resized_bottom, Some(1000))
             .await
             .unwrap();
-        let resized_menu_item_paste = tattoy
-            .get_string_at(resized_right - 10, resized_bottom, 5)
+        tattoy
+            .wait_for_string_at("Paste", resized_right - 10, resized_bottom, None)
+            .await
             .unwrap();
-        assert_eq!(resized_menu_item_paste, "Paste");
 
         assert_random_walker_moves(&mut tattoy).await;
     }
@@ -302,7 +306,6 @@ mod e2e {
     #[tokio::test(flavor = "multi_thread")]
     async fn keybind_toggle_renderer() {
         let mut tattoy = start_tattoy(None).await;
-        setup_logging();
 
         assert_random_walker_moves(&mut tattoy).await;
         let mut is_random_walker_walking = true;
@@ -322,5 +325,58 @@ mod e2e {
             !is_random_walker_walking,
             "Random walker didn't stop walking after keybinding toggler event sent"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn plugin_output() {
+        const PLUGIN_FILE: &str = "plugin_outputter.bash";
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let conf_dir = temp_dir.into_path();
+        let conf_path = conf_dir.join("tattoy.toml");
+        let resources_path = shadow_terminal::tests::helpers::workspace_dir()
+            .join("crates")
+            .join("tests")
+            .join("resources");
+        let plugin_path = resources_path.join(PLUGIN_FILE);
+
+        let mut conf_file = std::fs::File::create(conf_path).unwrap();
+        let config = format!(
+            "
+            [[plugins]]
+            name = \"test\"
+            path = \"{}\"
+            ",
+            plugin_path.as_path().to_string_lossy()
+        );
+        conf_file.write_all(config.as_bytes()).unwrap();
+
+        let mut tattoy = start_tattoy(Some(conf_dir.to_string_lossy().into())).await;
+
+        let text = "songkran";
+        let coordinates = [3, 4];
+        let messages_file_path = shadow_terminal::tests::helpers::workspace_dir()
+            .join("target")
+            .join("tmp")
+            .join("plugin.messages");
+        let mut messages_file = std::fs::File::create(messages_file_path).unwrap();
+        let message = serde_json::json!(
+            {
+                "output_text": {
+                    "text": text,
+                    "coordinates": coordinates,
+                    "bg": null,
+                    "fg": null,
+                }
+            }
+        );
+        messages_file
+            .write_all(message.to_string().as_bytes())
+            .unwrap();
+
+        tattoy
+            .wait_for_string_at(text, coordinates[0], coordinates[1], None)
+            .await
+            .unwrap();
     }
 }

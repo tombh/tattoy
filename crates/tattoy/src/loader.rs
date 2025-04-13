@@ -67,6 +67,20 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
+            for plugin_config in &state.config.read().await.plugins {
+                if let Some(is_enabled) = plugin_config.enabled {
+                    if !is_enabled {
+                        continue;
+                    }
+                }
+
+                tattoy_futures.spawn(crate::tattoys::plugins::Plugin::start(
+                    plugin_config.clone(),
+                    input.clone(),
+                    output.clone(),
+                ));
+            }
+
             while let Some(starting) = tattoy_futures.join_next().await {
                 match starting {
                     Ok(result) => match result {

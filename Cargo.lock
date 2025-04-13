@@ -1547,12 +1547,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indoc"
-version = "2.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
-
-[[package]]
 name = "inotify"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2895,10 +2889,11 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.138"
+version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d434192e7da787e94a6ea7e9670b26a036d0ca41e0b7efb2676dd32bae872949"
+checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
+ "indexmap 2.7.1",
  "itoa",
  "memchr",
  "ryu",
@@ -2971,7 +2966,6 @@ dependencies = [
 name = "shadow-terminal"
 version = "0.1.0"
 dependencies = [
- "indoc",
  "portable-pty",
  "snafu",
  "termwiz",
@@ -3230,6 +3224,7 @@ dependencies = [
  "rayon",
  "rstar",
  "serde",
+ "serde_json",
  "shadow-terminal",
  "tempfile",
  "termwiz",
@@ -3341,8 +3336,9 @@ dependencies = [
 name = "tests"
 version = "0.1.0"
 dependencies = [
- "indoc",
+ "serde_json",
  "shadow-terminal",
+ "tattoy",
  "tempfile",
  "termwiz",
  "tokio",
