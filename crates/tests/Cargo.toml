@@ -6,12 +6,13 @@ publish = false
 
 [dev-dependencies]
 shadow-terminal = { path = "../shadow_terminal" }
+tattoy = { path = "../tattoy" }
+serde_json.workspace = true
 tempfile.workspace = true
 termwiz.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-indoc.workspace = true
 
 [[test]]
 name = "e2e"

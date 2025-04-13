@@ -33,6 +33,7 @@ pub mod utils;
 /// This is where all the various tattoys are kept
 pub mod tattoys {
     pub mod minimap;
+    pub mod plugins;
     pub mod random_walker;
     pub mod scrollbar;
     pub mod tattoyer;
