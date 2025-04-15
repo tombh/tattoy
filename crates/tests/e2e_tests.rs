@@ -46,16 +46,17 @@ mod e2e {
         let mut stepper = SteppableTerminal::start(config).await.unwrap();
 
         let config_path = match maybe_config_path {
-            None => {
-                std::fs::copy(
-                    "resources/palette.toml",
-                    temp_dir.path().join("palette.toml"),
-                )
-                .unwrap();
-                temp_dir.path().display().to_string()
-            }
+            None => temp_dir.path().display().to_string(),
             Some(path) => path,
         };
+
+        std::fs::copy(
+            "resources/palette.toml",
+            std::path::PathBuf::new()
+                .join(config_path.clone())
+                .join("palette.toml"),
+        )
+        .unwrap();
 
         let command = generate_tattoy_command(&shell, prompt, config_path.as_ref());
         stepper.send_command(&command).unwrap();
@@ -328,54 +329,35 @@ mod e2e {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn plugin_output() {
-        const PLUGIN_FILE: &str = "plugin_outputter.bash";
-
+    async fn plugins() {
         let temp_dir = tempfile::tempdir().unwrap();
         let conf_dir = temp_dir.into_path();
         let conf_path = conf_dir.join("tattoy.toml");
-        let resources_path = shadow_terminal::tests::helpers::workspace_dir()
-            .join("crates")
-            .join("tests")
-            .join("resources");
-        let plugin_path = resources_path.join(PLUGIN_FILE);
+        let plugin_path = shadow_terminal::tests::helpers::workspace_dir()
+            .join("target")
+            .join("debug")
+            .join("tattoy-inverter-plugin");
 
         let mut conf_file = std::fs::File::create(conf_path).unwrap();
         let config = format!(
             "
             [[plugins]]
-            name = \"test\"
+            name = \"test-plugin\"
             path = \"{}\"
+            layer = 0
             ",
             plugin_path.as_path().to_string_lossy()
         );
         conf_file.write_all(config.as_bytes()).unwrap();
 
         let mut tattoy = start_tattoy(Some(conf_dir.to_string_lossy().into())).await;
-
-        let text = "songkran";
-        let coordinates = [3, 4];
-        let messages_file_path = shadow_terminal::tests::helpers::workspace_dir()
-            .join("target")
-            .join("tmp")
-            .join("plugin.messages");
-        let mut messages_file = std::fs::File::create(messages_file_path).unwrap();
-        let message = serde_json::json!(
-            {
-                "output_text": {
-                    "text": text,
-                    "coordinates": coordinates,
-                    "bg": null,
-                    "fg": null,
-                }
-            }
-        );
-        messages_file
-            .write_all(message.to_string().as_bytes())
-            .unwrap();
+        tattoy.send_command("ls").unwrap();
+        let size = tattoy.shadow_terminal.terminal.get_size();
+        let bottom = size.rows - 1;
+        let right = size.cols - 1;
 
         tattoy
-            .wait_for_string_at(text, coordinates[0], coordinates[1], None)
+            .wait_for_string_at("yottat", right - 5, bottom, None)
             .await
             .unwrap();
     }

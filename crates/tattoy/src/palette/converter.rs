@@ -13,6 +13,7 @@ type PaletteColour = (u8, u8, u8);
 pub type PaletteHashMap = std::collections::HashMap<String, PaletteColour>;
 
 /// Convenience type for the palette hash.
+#[derive(Clone)]
 pub(crate) struct Palette {
     /// The palette hash.
     pub map: PaletteHashMap,
@@ -20,7 +21,13 @@ pub(crate) struct Palette {
 
 impl Palette {
     /// Convert a palette index to a Termwiz-compatible true colour.
-    pub fn true_colour_from_index(&self, index: u8) -> termwiz::color::ColorAttribute {
+    pub fn true_colour_attribute_from_index(&self, index: u8) -> termwiz::color::ColorAttribute {
+        let srgba = self.true_colour_tuple_from_index(index);
+        termwiz::color::ColorAttribute::TrueColorWithPaletteFallback(srgba, index)
+    }
+
+    /// Convert a palette index to a Termwiz-compatible true colour.
+    pub fn true_colour_tuple_from_index(&self, index: u8) -> termwiz::color::SrgbaTuple {
         #[expect(
             clippy::expect_used,
             reason = "Unreachable because a palette should only have 256 colours"
@@ -29,9 +36,19 @@ impl Palette {
             .map
             .get(&index.to_string())
             .expect("Palette contains less than 256 colours");
-        let srgba: termwiz::color::SrgbaTuple =
-            termwiz::color::RgbColor::new_8bpc(true_colour.0, true_colour.1, true_colour.2).into();
-        termwiz::color::ColorAttribute::TrueColorWithPaletteFallback(srgba, index)
+        termwiz::color::RgbColor::new_8bpc(true_colour.0, true_colour.1, true_colour.2).into()
+    }
+
+    /// Terminal emulator convention is that the default background colour is the first colour in
+    /// the terminal's palette.
+    pub fn default_background_colour(&self) -> termwiz::color::SrgbaTuple {
+        self.true_colour_tuple_from_index(0)
+    }
+
+    /// Terminal emulator convention is that the default foreground colour is the second colour in
+    /// the terminal's palette.
+    pub fn default_foreground_colour(&self) -> termwiz::color::SrgbaTuple {
+        self.true_colour_tuple_from_index(1)
     }
 
     /// Print all the true colour versions of the terminal's palette as found in the screenshot.
@@ -71,7 +88,8 @@ impl Palette {
             attributes.foreground(),
             termwiz::color::ColorAttribute::Default
         ) {
-            let colour_attribute = self.true_colour_from_index(DEFAULT_TEXT_PALETTE_INDEX);
+            let colour_attribute =
+                self.true_colour_attribute_from_index(DEFAULT_TEXT_PALETTE_INDEX);
             attributes.set_foreground(colour_attribute);
             return;
         }
@@ -80,7 +98,7 @@ impl Palette {
             return;
         };
 
-        let colour_attribute = self.true_colour_from_index(index);
+        let colour_attribute = self.true_colour_attribute_from_index(index);
         attributes.set_foreground(colour_attribute);
     }
 
@@ -94,7 +112,7 @@ impl Palette {
             return;
         };
 
-        let colour_attribute = self.true_colour_from_index(index);
+        let colour_attribute = self.true_colour_attribute_from_index(index);
         attributes.set_background(colour_attribute);
     }
 }

@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::{ContextCompat as _, Result};
-use shadow_terminal::output::SurfaceKind;
 
 use super::tattoyer::Tattoyer;
 
@@ -114,10 +113,14 @@ impl Minimap {
         match result {
             Ok(message) => {
                 self.check_if_mouse_is_over_right_columns(&message);
-                self.tattoy
-                    .handle_common_protocol_messages(message.clone())?;
-                self.check_if_pty_has_changed(&message).await?;
                 self.check_for_keybind(&message);
+
+                let maybe_pty_changed = Tattoyer::is_pty_changed(&message);
+                self.tattoy.handle_common_protocol_messages(message)?;
+
+                if let Some(changed_pty_surface) = maybe_pty_changed {
+                    self.rebuild(changed_pty_surface).await?;
+                }
             }
             Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
         }
@@ -201,19 +204,11 @@ impl Minimap {
     //   Currently this builds the minimap even when it's not visible. Perhaps default
     //   to not building unless visible, and provide a config option?
     //
-    /// Check if the PTY output has changed such that we need to trigger a re-render.
-    async fn check_if_pty_has_changed(&mut self, message: &crate::run::Protocol) -> Result<()> {
-        if Tattoyer::is_scrollback_output_changed(message) {
-            self.build_minimap(shadow_terminal::output::SurfaceKind::Scrollback)
-                .await?;
-            self.output_changed = true;
-        }
+    /// Rebuild the minimap.
+    async fn rebuild(&mut self, kind: shadow_terminal::output::SurfaceKind) -> Result<()> {
+        self.build_minimap(kind).await?;
+        self.output_changed = true;
 
-        if Tattoyer::is_screen_output_changed(message) {
-            self.build_minimap(shadow_terminal::output::SurfaceKind::Screen)
-                .await?;
-            self.output_changed = true;
-        }
         Ok(())
     }
 
@@ -349,12 +344,12 @@ impl Minimap {
 
     /// Build a minimap by converting terminal cells to a raw RGB image and then resizing the
     /// image.
-    async fn build_minimap(&mut self, kind: SurfaceKind) -> Result<()> {
+    async fn build_minimap(&mut self, kind: shadow_terminal::output::SurfaceKind) -> Result<()> {
         let pixels_per_line = 2;
 
         let surface = match kind {
-            SurfaceKind::Scrollback => &mut self.tattoy.scrollback.surface,
-            SurfaceKind::Screen => &mut self.tattoy.screen.surface,
+            shadow_terminal::output::SurfaceKind::Scrollback => &mut self.tattoy.scrollback.surface,
+            shadow_terminal::output::SurfaceKind::Screen => &mut self.tattoy.screen.surface,
             _ => {
                 color_eyre::eyre::bail!("Unkown surface kind: {kind:?}");
             }
@@ -416,8 +411,8 @@ impl Minimap {
             .to_rgba32f();
 
         match kind {
-            SurfaceKind::Scrollback => self.scrollback = minimap,
-            SurfaceKind::Screen => self.screen = minimap,
+            shadow_terminal::output::SurfaceKind::Scrollback => self.scrollback = minimap,
+            shadow_terminal::output::SurfaceKind::Screen => self.screen = minimap,
             _ => {
                 color_eyre::eyre::bail!("Unknown surface kind: {kind:?}");
             }

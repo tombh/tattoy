@@ -247,4 +247,18 @@ impl Tattoyer {
 
         false
     }
+
+    /// Has the contents of the PTY changed?
+    pub fn is_pty_changed(
+        message: &crate::run::Protocol,
+    ) -> Option<shadow_terminal::output::SurfaceKind> {
+        if Self::is_scrollback_output_changed(message) {
+            return Some(shadow_terminal::output::SurfaceKind::Scrollback);
+        }
+        if Self::is_screen_output_changed(message) {
+            return Some(shadow_terminal::output::SurfaceKind::Screen);
+        }
+
+        None
+    }
 }
