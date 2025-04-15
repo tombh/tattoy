@@ -1,0 +1,16 @@
+[package]
+name = "tattoy_inverter_plugin"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+tattoy-protocol = { path = "../../tattoy-protocol"}
+serde_json.workspace = true
+
+[[bin]]
+name = "tattoy-inverter-plugin"
+path = "main.rs"
+
+[lints]
+workspace = true

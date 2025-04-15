@@ -6,7 +6,6 @@ publish = false
 
 [dev-dependencies]
 shadow-terminal = { path = "../shadow_terminal" }
-tattoy = { path = "../tattoy" }
 serde_json.workspace = true
 tempfile.workspace = true
 termwiz.workspace = true

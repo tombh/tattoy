@@ -63,3 +63,85 @@ It would be really useful if you could try the following:
 * Default log path is `$XDG_STATE_DIR/tattoy/tattoy.log`.
 * Log path can be changed with `log_path = "/tmp/tattoy.log"` in `$XDG_CONFIG_DIR/tattoy/tattoy.toml`
 * Or log path can be changed per-instance with the `--log-path` CLI argument.
+
+## Writing Plugins
+Plugins can be written in any language, they just need to be executable and support JSON input and output over STDIO. A plugin can be defined with TOML in the standard `tattoy.toml` file. Here is an example:
+```toml
+[[plugins]]
+name = "my-cool-plugin"
+path = "/path/to/plugin/executable"
+enabled = true
+# Layer `0` has special meaning: that this plugin will completely replace the user's TTY.
+layer = -5
+```
+
+See the [crates/tattoy-protocol](crates/tattoy-protocol) crate for more docs and details about the plugin architecture.
+
+There is an example Rust plugin at [crates/tattoy-plugins/inverter](crates/tattoy-plugins/inverter).
+
+### Plugin Output (sent on STDOUT)
+
+#### Render text of arbitrary length in the terminal
+```json
+{
+    "output_text": {
+        "text": "foo",
+        "coordinates": [1, 2],
+        "bg": null,
+        "fg": [0.1, 0.2, 0.3, 0.4],
+    }
+}
+```
+
+#### Render an arbitrary amount of cells in the terminal
+Note that it does not need to include blank cells.
+```json
+{
+    "output_cells": [{
+        "character": "f",
+        "coordinates": [1, 2],
+        "bg": null,
+        "fg": [0.1, 0.2, 0.3, 0.4],
+    }]
+}
+```
+
+#### Renders pixels in the terminal
+Note that the y-coordinate is twice the height of the terminal.
+```json
+{
+    "output_pixels": [{
+        "coordinates": [1, 2],
+        "color": [0.1, 0.2, 0.3, 0.4],
+    }]
+}
+```
+
+### Plugin Input (read from STDIN)
+
+#### The current contents of the PTY screen
+Note that it does not contain any of the scrollback.
+```json
+{
+    "pty_update": {
+        "size": [1, 2],
+        "cells": [{
+            "character": "f",
+            "coordinates": [1, 2],
+            "bg": null,
+            "fg": [0.1, 0.2, 0.3, 0.4],
+        }]
+    }
+}
+
+```
+
+#### A terminal resize event
+```json
+{
+    "tty_resize": {
+        "width": 1,
+        "height": 2,
+    }
+}
+```

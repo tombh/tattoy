@@ -1,14 +1,17 @@
+
 [workspace]
+resolver = "2"
 members = [
     "crates/tattoy",
+		"crates/tattoy-protocol",
     "crates/shadow_terminal",
     
 		"crates/tests",
+		"crates/tattoy-plugins/inverter",
 ]
 
-resolver = "2"
-
 [workspace.dependencies]
+serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.140", features = [ "preserve_order" ]}
 tempfile = "3.17.1"
 tokio = { version = "1.43.0", features = ["full", "tracing"] }

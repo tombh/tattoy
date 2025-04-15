@@ -306,7 +306,11 @@ impl Renderer {
             self.render_tattoys_below(&mut frame)?;
         }
 
-        self.render_pty(&mut frame)?;
+        if self.is_a_plugin_replacing_the_pty_layer() {
+            self.render_tattoys(&mut frame, std::cmp::Ordering::Equal)?;
+        } else {
+            self.render_pty(&mut frame)?;
+        }
 
         if *self.state.is_rendering_enabled.read().await {
             self.render_tattoys_above(&mut frame)?;
@@ -314,6 +318,11 @@ impl Renderer {
         }
 
         Ok(surface)
+    }
+
+    /// Are any of the tattoys replacing the PTY layer?
+    fn is_a_plugin_replacing_the_pty_layer(&self) -> bool {
+        self.tattoys.values().any(|tattoy| tattoy.layer == 0)
     }
 
     /// Render all the tattoys that appear below the PTY.

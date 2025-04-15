@@ -49,7 +49,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --all
       - name: Run tests
         run: cargo nextest run --no-fail-fast --retries 2
       - name: Output e2e test logs (on failure)

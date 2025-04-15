@@ -1,5 +1,7 @@
 //! Run custom external code that gets rendered as tattoys
 
+use std::io::Write as _;
+
 use color_eyre::eyre::{ContextCompat as _, Result};
 
 /// The default compositing layer the plugin is rendered to. Can be manually set inn the config.
@@ -18,68 +20,57 @@ pub struct Config {
     pub enabled: Option<bool>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum PluginProtocol {
-    /// Output from the plugin that renders text in the terminal.
-    OutputText {
-        /// The text to display.
-        text: String,
-        /// The coordinates. [0, 0] is in the top-left.
-        coordinates: (u32, u32),
-        /// An optional colour for the text's background.
-        bg: Option<crate::surface::Colour>,
-        /// An optional colour for the text's foreground.
-        fg: Option<crate::surface::Colour>,
-    },
-
-    /// Output from the plugin that renders pixels in the terminal.
-    OutputPixel {
-        /// The coordinates. [0, 0] is in the top-left. The y-axis is twice as long as the number
-        /// of rows in the terminal.
-        coordinates: (u32, u32),
-        /// An optional colour for the pixel.
-        colour: Option<crate::surface::Colour>,
-    },
-}
-
 /// Plugins
 pub struct Plugin {
     /// The base Tattoy struct.
     tattoy: super::tattoyer::Tattoyer,
+    /// The user's terminal colours.
+    palette: crate::palette::converter::Palette,
+    /// STDIN to the plugin process, for sending messages to the plugin.
+    plugin_stdin: std::io::BufWriter<std::process::ChildStdin>,
     /// Output stream from spawned plugin process.
-    parsed_messages_rx: tokio::sync::mpsc::Receiver<PluginProtocol>,
+    parsed_messages_rx: tokio::sync::mpsc::Receiver<tattoy_protocol::PluginOutputMessages>,
 }
 
 impl Plugin {
     /// Instatiate
     fn new(
-        config: Config,
+        config: &Config,
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+        palette: crate::palette::converter::Palette,
     ) -> Result<Self> {
         let tattoy = super::tattoyer::Tattoyer::new(
-            config.name,
+            config.name.clone(),
             config.layer.unwrap_or(DEFAULT_LAYER),
             output_channel,
         );
         let (parsed_messages_tx, parsed_messages_rx) = tokio::sync::mpsc::channel(16);
-        Self::spawn(&config.path, parsed_messages_tx)?;
 
-        Ok(Self {
-            tattoy,
-            parsed_messages_rx,
-        })
+        let result = Self::spawn(&config.path, parsed_messages_tx);
+        match result {
+            Ok(plugin_stdin) => Ok(Self {
+                tattoy,
+                palette,
+                plugin_stdin,
+                parsed_messages_rx,
+            }),
+            Err(error) => {
+                tracing::error!("Couldn't start plugin {}: {error:?}", config.name);
+                Err(error)
+            }
+        }
     }
 
     /// Our main entrypoint.
     pub(crate) async fn start(
         config: Config,
+        palette: crate::palette::converter::Palette,
         tattoy_protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     ) -> Result<()> {
         tracing::info!("Starting plugin: {}", config.name);
 
-        let mut plugin = Self::new(config, output)?;
+        let mut plugin = Self::new(&config, output, palette)?;
         let mut tattoy_protocol_receiver = tattoy_protocol_tx.subscribe();
 
         #[expect(
@@ -99,6 +90,7 @@ impl Plugin {
                         tracing::info!("Sent kill to plugin");
                         break;
                     }
+                    plugin.handle_protocol_messages(&message)?;
                     plugin.tattoy.handle_common_protocol_messages(message)?;
                 }
             }
@@ -109,27 +101,122 @@ impl Plugin {
         Ok(())
     }
 
+    /// Handle Tattoy protocol messages.
+    fn handle_protocol_messages(&mut self, message: &crate::run::Protocol) -> Result<()> {
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "We're just handling the common cases here."
+        )]
+        match message {
+            crate::run::Protocol::Resize { .. } => self.send_tty_size()?,
+            crate::run::Protocol::Output(_) => self.send_pty_output()?,
+
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// Send the new terminal size to the plugin.
+    fn send_tty_size(&mut self) -> Result<()> {
+        let json = serde_json::to_string(&tattoy_protocol::PluginInputMessages::TTYResize {
+            width: self.tattoy.width,
+            height: self.tattoy.height,
+        })?;
+
+        tracing::trace!("Sending JSON to plugin: {json}");
+        self.plugin_stdin.write_all(json.as_bytes())?;
+        self.plugin_stdin.write_all(b"\n")?;
+        self.plugin_stdin.flush()?;
+
+        Ok(())
+    }
+
+    /// Send Tattoy's PTY output to the plugin.
+    fn send_pty_output(&mut self) -> Result<()> {
+        if self.tattoy.width == 0 || self.tattoy.height == 0 {
+            return Ok(());
+        }
+
+        let mut cells = Vec::<tattoy_protocol::Cell>::new();
+        for (y, line) in self.tattoy.screen.surface.screen_cells().iter().enumerate() {
+            for (x, cell) in line.iter().enumerate() {
+                let character = cell.str();
+                if character.is_empty() || character == " " {
+                    continue;
+                }
+
+                // TODO: how to avoid the clone?
+                self.palette
+                    .cell_attributes_to_true_colour(cell.clone().attrs_mut());
+
+                let bg_attribute =
+                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background());
+                let bg = match bg_attribute {
+                    Some(attribute) => attribute.to_tuple_rgba(),
+                    None => self.palette.default_background_colour().into(),
+                };
+
+                let fg_attribute =
+                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().foreground());
+                let fg = match fg_attribute {
+                    Some(attribute) => attribute.to_tuple_rgba(),
+                    None => self.palette.default_foreground_colour().into(),
+                };
+
+                cells.push(
+                    tattoy_protocol::Cell::builder()
+                        .character(character.to_owned().chars().nth(0).context(
+                            "Couldn't get first character from cell, should be impossible.",
+                        )?)
+                        .coordinates((u32::try_from(x)?, u32::try_from(y)?))
+                        .maybe_bg(Some(bg))
+                        .maybe_fg(Some(fg))
+                        .build(),
+                );
+            }
+        }
+
+        let json = serde_json::to_string(&tattoy_protocol::PluginInputMessages::PTYUpdate {
+            size: (self.tattoy.width, self.tattoy.height),
+            cells,
+        })?;
+        tracing::trace!("Sending JSON to plugin: {json}");
+        self.plugin_stdin.write_all(json.as_bytes())?;
+        self.plugin_stdin.write_all(b"\n")?;
+        self.plugin_stdin.flush()?;
+
+        Ok(())
+    }
+
     /// Spawn the plugin process.
     fn spawn(
         path: &std::path::Path,
-        parsed_messages_tx: tokio::sync::mpsc::Sender<PluginProtocol>,
-    ) -> Result<()> {
+        parsed_messages_tx: tokio::sync::mpsc::Sender<tattoy_protocol::PluginOutputMessages>,
+    ) -> Result<std::io::BufWriter<std::process::ChildStdin>> {
         let mut cmd = std::process::Command::new(
             path.to_str()
                 .context("Couldn't convert plugin path to string")?,
         );
         cmd.stdout(std::process::Stdio::piped());
+        cmd.stdin(std::process::Stdio::piped());
+
         let mut child = cmd.spawn()?;
         let stdout = child
             .stdout
             .take()
             .context("Couldn't take STDOUT from plugin.")?;
-
         // TODO:
         //   By not taking advantage of async this may turn out to be a bad idea.
         //   See this issue for progress on supporting async stream deserialisation:
         //     https://github.com/serde-rs/json/issues/316
-        let mut reader = std::io::BufReader::new(stdout);
+        let mut stdout_reader = std::io::BufReader::new(stdout);
+
+        let stdin = child
+            .stdin
+            .take()
+            .context("Couldn't get STDIN for plugin.")?;
+        let stdin_writer = std::io::BufWriter::new(stdin);
 
         let tokio_runtime = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
@@ -149,13 +236,13 @@ impl Plugin {
                     "
                 )]
                 loop {
-                    tracing::warn!("(Re)starting parser");
-                    Self::listener(&mut reader, &parsed_messages_tx).await;
+                    tracing::debug!("(Re)starting parser");
+                    Self::listener(&mut stdout_reader, &parsed_messages_tx).await;
                 }
             });
         });
 
-        Ok(())
+        Ok(stdin_writer)
     }
 
     /// Parse output from the plugin, byte by byte, sending a message whenever it finds a valid
@@ -167,10 +254,10 @@ impl Plugin {
     /// format of their messages. Therefore, there's no need to use delimeters of any kind.
     async fn listener(
         reader: &mut std::io::BufReader<std::process::ChildStdout>,
-        parsed_messages_tx: &tokio::sync::mpsc::Sender<PluginProtocol>,
+        parsed_messages_tx: &tokio::sync::mpsc::Sender<tattoy_protocol::PluginOutputMessages>,
     ) {
-        let mut messages =
-            serde_json::Deserializer::from_reader(reader).into_iter::<PluginProtocol>();
+        let mut messages = serde_json::Deserializer::from_reader(reader)
+            .into_iter::<tattoy_protocol::PluginOutputMessages>();
 
         for parse_result in messages.by_ref() {
             match parse_result {
@@ -188,7 +275,7 @@ impl Plugin {
     }
 
     /// Tick the render
-    async fn render(&mut self, output: PluginProtocol) -> Result<()> {
+    async fn render(&mut self, output: tattoy_protocol::PluginOutputMessages) -> Result<()> {
         if !self.tattoy.is_ready() {
             return Ok(());
         }
@@ -197,7 +284,7 @@ impl Plugin {
 
         tracing::info!("Rendering from plugin message: {:?}", output);
         match output {
-            PluginProtocol::OutputText {
+            tattoy_protocol::PluginOutputMessages::OutputText {
                 text,
                 coordinates,
                 bg,
@@ -211,51 +298,40 @@ impl Plugin {
                     fg,
                 );
             }
-            PluginProtocol::OutputPixel {
-                coordinates,
-                colour,
-            } => {
-                self.tattoy.surface.add_pixel(
-                    coordinates.0.try_into()?,
-                    coordinates.1.try_into()?,
-                    // TODO: use the terminal palette's default foreground colour
-                    colour.unwrap_or(crate::surface::WHITE),
-                )?;
+            tattoy_protocol::PluginOutputMessages::OutputPixels(pixels) => {
+                for pixel in pixels {
+                    self.tattoy.surface.add_pixel(
+                        pixel.coordinates.0.try_into()?,
+                        pixel.coordinates.1.try_into()?,
+                        // TODO: use the terminal palette's default foreground colour
+                        pixel.color.unwrap_or(crate::surface::WHITE),
+                    )?;
+                }
             }
+            tattoy_protocol::PluginOutputMessages::OutputCells(cells) => {
+                for cell in cells {
+                    self.tattoy.surface.add_text(
+                        cell.coordinates.0.try_into()?,
+                        cell.coordinates.1.try_into()?,
+                        cell.character.to_string(),
+                        cell.bg,
+                        cell.fg,
+                    );
+                }
+            }
+
+            #[expect(
+                clippy::unreachable,
+                reason = "
+                    The plugin protocol specifies `non-exhaustive`, but we are also the protocol definers,
+                    so we won't get hit by unexpeted protocol changes.
+                "
+            )]
+            _ => unreachable!(),
         }
+
         self.tattoy.send_output().await?;
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn parsing_output() {
-        let expected = serde_json::json!(
-            {
-                "output_text": {
-                    "text": "foo",
-                    "coordinates": [1u8, 2u8],
-                    "bg": null,
-                    "fg": null,
-                }
-            }
-        );
-
-        let output = PluginProtocol::OutputText {
-            text: "foo".to_owned(),
-            coordinates: (1, 2),
-            bg: None,
-            fg: None,
-        };
-
-        assert_eq!(
-            expected.to_string(),
-            serde_json::to_string(&output).unwrap()
-        );
     }
 }

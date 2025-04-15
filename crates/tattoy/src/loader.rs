@@ -67,6 +67,11 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
+            let maybe_palette = crate::config::main::Config::load_palette(&state).await?;
+            let Some(palette) = maybe_palette.as_ref() else {
+                color_eyre::eyre::bail!("A palette is needed for running plugins");
+            };
+
             for plugin_config in &state.config.read().await.plugins {
                 if let Some(is_enabled) = plugin_config.enabled {
                     if !is_enabled {
@@ -76,6 +81,7 @@ pub(crate) fn start_tattoys(
 
                 tattoy_futures.spawn(crate::tattoys::plugins::Plugin::start(
                     plugin_config.clone(),
+                    palette.clone(),
                     input.clone(),
                     output.clone(),
                 ));
