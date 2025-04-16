@@ -28,27 +28,24 @@ impl Simulation {
     /// When it can't safely cast the cursor usize to i32
     pub fn add_pty_particles(
         &mut self,
-        cursor: (usize, usize),
-        pty: &[&mut [termwiz::cell::Cell]],
+        cursor: (u16, u16),
+        pty: &Vec<tattoy_protocol::Cell>,
     ) -> usize {
         let scale = self.config.scale * super::particle::PARTICLE_SIZE;
         let mut count: usize = 0;
 
-        for (y, lines) in pty.iter().enumerate() {
-            for (x, cell) in lines.iter().enumerate() {
-                let char = cell.str();
-                if char != " " {
-                    let x_f32 = x as f32;
-                    let y_f32 = y as f32 * 2.0;
+        for cell in pty {
+            if !cell.character.is_whitespace() {
+                let x_f32 = cell.coordinates.0 as f32;
+                let y_f32 = cell.coordinates.1 as f32;
 
-                    let pty_particl1 = Particle::default_immovable(scale, x_f32, y_f32);
-                    self.particles.push_front(pty_particl1.clone());
-                    count += 1;
+                let pty_particl1 = Particle::default_immovable(scale, x_f32, y_f32);
+                self.particles.push_front(pty_particl1.clone());
+                count += 1;
 
-                    let pty_particle2 = Particle::default_immovable(scale, x_f32, y_f32 + 1.0);
-                    self.particles.push_front(pty_particle2.clone());
-                    count += 1;
-                }
+                let pty_particle2 = Particle::default_immovable(scale, x_f32, y_f32 + 1.0);
+                self.particles.push_front(pty_particle2.clone());
+                count += 1;
             }
         }
 
@@ -57,10 +54,8 @@ impl Simulation {
         let radius: i32 = 8;
         for y in 0i32..radius {
             for x in 0i32..radius {
-                #[expect(clippy::expect_used, reason = "FIXME")]
-                let cursor_x: i32 = cursor.0.try_into().expect("Couldn't safely cast cursor.x");
-                #[expect(clippy::expect_used, reason = "FIXME")]
-                let cursor_y: i32 = cursor.1.try_into().expect("Couldn't safely cast cursor.y");
+                let cursor_x: i32 = cursor.0.into();
+                let cursor_y: i32 = cursor.1.into();
                 let x_f32 = (cursor_x + x - (radius.div(2i32))) as f32;
                 let y_f32 = (cursor_y * 2i32 + y - (radius.div(2i32))) as f32;
                 let mut cursor_particle = Particle::default_immovable(scale, x_f32, y_f32 + 1.0);

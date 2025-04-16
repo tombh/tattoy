@@ -1,0 +1,19 @@
+[package]
+name = "tattoy_smokey_cursor_plugin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+color-eyre.workspace = true
+glam = { git = "https://github.com/bitshifter/glam-rs", rev = "aacb9c5f", features = [ "fast-math"] }
+rand.workspace = true
+rayon = "1.10.0"
+rstar = "0.12.0"
+serde_json.workspace = true
+tattoy-protocol = { path = "../../tattoy-protocol"}
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

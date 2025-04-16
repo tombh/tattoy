@@ -26,6 +26,8 @@ pub struct Plugin {
     tattoy: super::tattoyer::Tattoyer,
     /// The user's terminal colours.
     palette: crate::palette::converter::Palette,
+    /// The plugin's subprocess
+    child: std::process::Child,
     /// STDIN to the plugin process, for sending messages to the plugin.
     plugin_stdin: std::io::BufWriter<std::process::ChildStdin>,
     /// Output stream from spawned plugin process.
@@ -48,12 +50,21 @@ impl Plugin {
 
         let result = Self::spawn(&config.path, parsed_messages_tx);
         match result {
-            Ok(plugin_stdin) => Ok(Self {
-                tattoy,
-                palette,
-                plugin_stdin,
-                parsed_messages_rx,
-            }),
+            Ok(mut child) => {
+                let stdin = child
+                    .stdin
+                    .take()
+                    .context("Couldn't get STDIN for plugin.")?;
+                let stdin_writer = std::io::BufWriter::new(stdin);
+
+                Ok(Self {
+                    tattoy,
+                    palette,
+                    child,
+                    plugin_stdin: stdin_writer,
+                    parsed_messages_rx,
+                })
+            }
             Err(error) => {
                 tracing::error!("Couldn't start plugin {}: {error:?}", config.name);
                 Err(error)
@@ -87,6 +98,7 @@ impl Plugin {
                 },
                 Ok(message) = tattoy_protocol_receiver.recv() => {
                     if matches!(message, crate::run::Protocol::End) {
+                        plugin.child.kill()?;
                         tracing::info!("Sent kill to plugin");
                         break;
                     }
@@ -177,9 +189,11 @@ impl Plugin {
             }
         }
 
+        let cursor_position = self.tattoy.screen.surface.cursor_position();
         let json = serde_json::to_string(&tattoy_protocol::PluginInputMessages::PTYUpdate {
             size: (self.tattoy.width, self.tattoy.height),
             cells,
+            cursor: (cursor_position.0.try_into()?, cursor_position.1.try_into()?),
         })?;
         tracing::trace!("Sending JSON to plugin: {json}");
         self.plugin_stdin.write_all(json.as_bytes())?;
@@ -193,7 +207,7 @@ impl Plugin {
     fn spawn(
         path: &std::path::Path,
         parsed_messages_tx: tokio::sync::mpsc::Sender<tattoy_protocol::PluginOutputMessages>,
-    ) -> Result<std::io::BufWriter<std::process::ChildStdin>> {
+    ) -> Result<std::process::Child> {
         let mut cmd = std::process::Command::new(
             path.to_str()
                 .context("Couldn't convert plugin path to string")?,
@@ -202,6 +216,7 @@ impl Plugin {
         cmd.stdin(std::process::Stdio::piped());
 
         let mut child = cmd.spawn()?;
+
         let stdout = child
             .stdout
             .take()
@@ -211,12 +226,6 @@ impl Plugin {
         //   See this issue for progress on supporting async stream deserialisation:
         //     https://github.com/serde-rs/json/issues/316
         let mut stdout_reader = std::io::BufReader::new(stdout);
-
-        let stdin = child
-            .stdin
-            .take()
-            .context("Couldn't get STDIN for plugin.")?;
-        let stdin_writer = std::io::BufWriter::new(stdin);
 
         let tokio_runtime = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
@@ -242,7 +251,7 @@ impl Plugin {
             });
         });
 
-        Ok(stdin_writer)
+        Ok(child)
     }
 
     /// Parse output from the plugin, byte by byte, sending a message whenever it finds a valid

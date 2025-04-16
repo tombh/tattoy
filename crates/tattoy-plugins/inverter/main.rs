@@ -13,7 +13,11 @@ fn main() {
             serde_json::from_str(line.unwrap().as_str()).unwrap();
 
         match message {
-            tattoy_protocol::PluginInputMessages::PTYUpdate { size, cells } => {
+            tattoy_protocol::PluginInputMessages::PTYUpdate {
+                size,
+                cells,
+                cursor: _,
+            } => {
                 if size.0 == 0 || size.1 == 0 {
                     continue;
                 }

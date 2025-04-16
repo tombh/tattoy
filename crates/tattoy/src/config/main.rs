@@ -58,8 +58,6 @@ pub(crate) struct Config {
     pub color: Color,
     /// Plugins config
     pub plugins: Vec<crate::tattoys::plugins::Config>,
-    /// The smokey particles cursor
-    pub smokey_cursor: crate::tattoys::smokey_cursor::config::Config,
     /// The minimap
     pub minimap: crate::tattoys::minimap::Config,
     /// The shaders
@@ -94,7 +92,6 @@ impl Default for Config {
             keybindings: super::input::KeybindingsRaw::new(),
             color: Color::default(),
             plugins: Vec::default(),
-            smokey_cursor: crate::tattoys::smokey_cursor::config::Config::default(),
             minimap: crate::tattoys::minimap::Config::default(),
             shader: crate::tattoys::shaders::main::Config::default(),
         }
