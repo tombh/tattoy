@@ -6,7 +6,6 @@ publish = false
 
 [dev-dependencies]
 shadow-terminal = { path = "../shadow_terminal" }
-serde_json.workspace = true
 tempfile.workspace = true
 termwiz.workspace = true
 tokio.workspace = true

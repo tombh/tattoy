@@ -64,10 +64,17 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get install libdbus-1-dev
       - uses: actions/checkout@v4
-      - run: rustup toolchain install $RUST_VERSION --profile minimal
+      - run: |
+          rustup toolchain install $RUST_VERSION --profile minimal
+          cargo install cargo-binstall
+          cargo binstall cargo-shear --no-confirm
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Lint
         run: cargo clippy -- --deny warnings
       - name: Formatting
         run: cargo fmt --check
+      - name: Check for unused dependencies
+        run: cargo shear
