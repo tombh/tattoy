@@ -10,7 +10,7 @@ pub type Colour = (f32, f32, f32, f32);
 /// It can be sent from Tattoy to communicate the contents of the user's terminal.
 /// And it can also be sent from a plugin to communicate the contents to be composited
 /// in a Tattoy layer.
-#[derive(serde::Serialize, serde::Deserialize, bon::Builder, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, bon::Builder, Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct Cell {
     /// The cell's character.
@@ -26,7 +26,7 @@ pub struct Cell {
 }
 
 /// Output from the plugin that renders pixels in the terminal.
-#[derive(serde::Serialize, serde::Deserialize, bon::Builder, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, bon::Builder, Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct Pixel {
     /// The coordinates of the pixel. [0, 0] is in the top-left. The y-axis is twice as long as the
@@ -39,7 +39,7 @@ pub struct Pixel {
 }
 
 /// The various kinds of messages that Tattoy can send to the plugin.
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum PluginInputMessages {
@@ -50,6 +50,8 @@ pub enum PluginInputMessages {
         size: (u16, u16),
         /// All the cell data for the current terminal. Blank cells are not included.
         cells: Vec<Cell>,
+        /// The current position of the cursor.
+        cursor: (u16, u16),
     },
     /// Sent whenever the terminal resizes.
     #[serde(rename = "tty_resize")]
@@ -62,7 +64,7 @@ pub enum PluginInputMessages {
 }
 
 /// All the message kinds that the plugin can send to Tattoy.
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum PluginOutputMessages {
@@ -176,7 +178,8 @@ mod test {
                         "coordinates": [1, 2],
                         "bg": null,
                         "fg": [0.1, 0.2, 0.3, 0.4],
-                    }]
+                    }],
+                    "cursor": [9, 10],
                 }
             }
         );
@@ -189,6 +192,7 @@ mod test {
                 bg: None,
                 fg: Some((0.1, 0.2, 0.3, 0.4)),
             }],
+            cursor: (9, 10),
         };
 
         assert_eq!(

@@ -8,9 +8,12 @@ members = [
     
 		"crates/tests",
 		"crates/tattoy-plugins/inverter",
+		"crates/tattoy-plugins/smokey_cursor",
 ]
 
 [workspace.dependencies]
+color-eyre = "0.6.3"
+rand = "0.8.5"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.140", features = [ "preserve_order" ]}
 tempfile = "3.17.1"

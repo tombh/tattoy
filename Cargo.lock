@@ -3293,12 +3293,9 @@ dependencies = [
  "color-eyre",
  "console-subscriber",
  "dirs",
- "glam",
  "image",
  "notify",
  "rand",
- "rayon",
- "rstar",
  "serde",
  "serde_json",
  "shadow-terminal",
@@ -3328,6 +3325,22 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "tattoy-protocol",
+]
+
+[[package]]
+name = "tattoy_smokey_cursor_plugin"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "glam",
+ "rand",
+ "rayon",
+ "rstar",
+ "serde_json",
+ "tattoy-protocol",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

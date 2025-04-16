@@ -44,15 +44,6 @@ pub mod tattoys {
         pub mod gpu;
         pub mod main;
     }
-
-    /// The smokey cursor Tattoy
-    pub mod smokey_cursor {
-        pub mod config;
-        pub mod main;
-        pub mod particle;
-        pub mod particles;
-        pub mod simulation;
-    }
 }
 
 use color_eyre::eyre::Result;

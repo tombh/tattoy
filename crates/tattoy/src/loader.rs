@@ -46,16 +46,6 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            if enabled_tattoys.contains(&"smokey_cursor".to_owned())
-                || state.config.read().await.smokey_cursor.enabled
-            {
-                tracing::info!("Starting 'smokey_cursor' tattoy...");
-                tattoy_futures.spawn(crate::tattoys::smokey_cursor::main::SmokeyCursor::start(
-                    input.clone(),
-                    output.clone(),
-                ));
-            }
-
             if enabled_tattoys.contains(&"shaders".to_owned())
                 || state.config.read().await.shader.enabled
             {

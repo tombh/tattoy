@@ -10,7 +10,6 @@ use super::{
     config::Config,
     particle::{Particle, PARTICLE_SIZE_SQUARED},
 };
-use crate::tattoys::utils::is_random_trigger;
 
 /// Number of times to iterate the simulation per graphical frame
 const NUMBER_OF_SIMULATION_STEPS_PER_TICK: usize = 5;
@@ -62,12 +61,12 @@ impl Simulation {
     }
 
     /// A tick of a graphical frame render
-    pub fn tick(&mut self, cursor: (usize, usize), pty: &[&mut [termwiz::cell::Cell]]) {
-        if is_random_trigger(1) {
-            self.add_particle(cursor.0 as f32, (cursor.1 * 2) as f32);
+    pub fn tick(&mut self, cursor: (u16, u16), cells: &Vec<tattoy_protocol::Cell>) {
+        if crate::is_random_trigger(1) {
+            self.add_particle(f32::from(cursor.0), f32::from(cursor.1 * 2));
         }
 
-        let pty_pixel_count = self.add_pty_particles(cursor, pty);
+        let pty_pixel_count = self.add_pty_particles(cursor, cells);
 
         for _ in 0..NUMBER_OF_SIMULATION_STEPS_PER_TICK {
             self.evolve();
@@ -164,7 +163,7 @@ mod test {
         let mut sim = Simulation::new(100, 100);
         sim.config.gravity = Vec2::ZERO.into();
         sim.config.initial_velocity = Vec2::ZERO.into();
-        sim.config.scale = 1.0 * crate::tattoys::smokey_cursor::particle::PARTICLE_SIZE; // So we don't have to scale/unscale
+        sim.config.scale = 1.0 * crate::particle::PARTICLE_SIZE; // So we don't have to scale/unscale
         sim
     }
 
@@ -179,9 +178,9 @@ mod test {
     #[test]
     fn basic() {
         let mut sim = Simulation::new(100, 100);
-        let mut surface = termwiz::surface::Surface::new(100, 100);
+        let pty = Vec::<tattoy_protocol::Cell>::new();
         for _ in 0usize..10 {
-            sim.tick((50, 50), &surface.screen_cells());
+            sim.tick((50, 50), &pty);
         }
         assert!(sim.particles.len() > 5);
         assert!(sim.neighbours.size() > 5);

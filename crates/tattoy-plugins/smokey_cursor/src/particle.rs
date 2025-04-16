@@ -61,7 +61,7 @@ pub struct Particle {
     /// Density of the particle
     pub pressure: f32,
     /// Colour of a gas particle
-    pub colour: crate::surface::Colour,
+    pub colour: tattoy_protocol::Colour,
     /// Whether this particle is locked in place. It still contributes its denisty, pressure, etc
     /// to the rest of the simulation, but it doesn't change its own position.
     pub is_immovable: bool,
@@ -194,7 +194,7 @@ impl Default for Particle {
             scale: 1.0,
             position: Vec2::ZERO,
             density: 1.0,
-            colour: crate::surface::Colour::default(),
+            colour: tattoy_protocol::Colour::default(),
             velocity: Vec2::ZERO,
             force: Vec2::ZERO,
             pressure: 0.0,
