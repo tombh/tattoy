@@ -28,17 +28,6 @@ animation_speed = 0.15
 # in order to maintain a consistent aspect ratio.
 max_width = 10
 
-[smokey_cursor]
-enabled = false
-# The gravitational exceleration of the system in metres per second
-gravity = [0.0, -9.81]
-# The velocity of a particle when it is first added
-initial_velocity = [0.0, 0.0]
-# How much bigger a partical is compared to a rendered pixel
-scale = 0.75
-# The maximum number of particles in the simulation
-max_particles = 3000
-
 [shader]
 enabled = false
 opacity = 0.75

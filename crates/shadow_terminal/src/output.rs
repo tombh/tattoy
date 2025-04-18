@@ -340,26 +340,31 @@ impl crate::shadow_terminal::ShadowTerminal {
             }
         }
 
-        changes.push(self.original_cursor_position()?);
+        self.cursor_state(&mut changes)?;
 
         Ok(changes)
     }
 
-    /// Get the original position of the cursor, because we have to move the cursor around in order
-    /// to generate the diffs/surfaces. We want to always make sure the cursor is reset.
-    fn original_cursor_position(
+    /// Add the current cursor state.
+    fn cursor_state(
         &self,
-    ) -> Result<TermwizChange, crate::errors::ShadowTerminalError> {
-        let position = self.terminal.cursor_pos();
-        let x = position.x;
-        let y = position.y.try_into().with_whatever_context(|err| {
+        changes: &mut Vec<TermwizChange>,
+    ) -> Result<(), crate::errors::ShadowTerminalError> {
+        let cursor = self.terminal.cursor_pos();
+
+        let x = cursor.x;
+        let y = cursor.y.try_into().with_whatever_context(|err| {
             format!("Couldn't convert cursor position to usize: {err:?}")
         })?;
-
-        Ok(TermwizChange::CursorPosition {
+        changes.push(TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(x),
             y: TermwizPosition::Absolute(y),
-        })
+        });
+
+        changes.push(TermwizChange::CursorShape(cursor.shape));
+        changes.push(TermwizChange::CursorVisibility(cursor.visibility));
+
+        Ok(())
     }
 
     /// Calculate the IDs of the lines that need to be output. Could just be the changed lines, or
