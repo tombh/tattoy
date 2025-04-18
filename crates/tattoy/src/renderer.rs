@@ -48,6 +48,8 @@ pub(crate) struct Renderer {
     pub tattoys: std::collections::HashMap<String, crate::surface::Surface>,
     /// A shadow version of the user's conventional terminal
     pub pty: TermwizSurface,
+    /// Is the cursor currently visible?
+    pub is_cursor_visible: bool,
 }
 
 impl Renderer {
@@ -62,6 +64,7 @@ impl Renderer {
             height,
             tattoys: std::collections::HashMap::default(),
             pty: TermwizSurface::new(width.into(), height.into()),
+            is_cursor_visible: true,
         };
 
         Ok(renderer)
@@ -174,10 +177,7 @@ impl Renderer {
                     self.handle_frame_update(&mut surfaces, &mut composited_terminal, &protocol_tx).await?;
                 },
                 Ok(message) = protocol_rx.recv() => {
-                    let result = Self::handle_protocol_message(&mut composited_terminal, &message);
-                    if let Err(error) = result {
-                        tracing::error!("Handling protocol message in renderer: {error:?}");
-                    }
+                    self.handle_protocol_message(&message);
                     if matches!(message, crate::run::Protocol::End) {
                         break;
                     }
@@ -212,33 +212,10 @@ impl Renderer {
     }
 
     /// Handle messages from the global Tattoy protocol.
-    fn handle_protocol_message(
-        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
-        message: &crate::run::Protocol,
-    ) -> Result<()> {
-        #[expect(clippy::wildcard_enum_match_arm, reason = "It's our internal protocol")]
-        match message {
-            crate::run::Protocol::CursorVisibility(is_visible) => {
-                Self::cursor_visibility(composited_terminal, *is_visible)
-            }
-            _ => Ok(()),
+    const fn handle_protocol_message(&mut self, message: &crate::run::Protocol) {
+        if let crate::run::Protocol::CursorVisibility(is_visible) = message {
+            self.is_cursor_visible = *is_visible;
         }
-    }
-
-    /// Hide/show the cursor in the end user's terminal.
-    fn cursor_visibility(
-        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal>,
-        is_visible: bool,
-    ) -> Result<()> {
-        let cursor_visibility = if is_visible {
-            termwiz::surface::CursorVisibility::Visible
-        } else {
-            termwiz::surface::CursorVisibility::Hidden
-        };
-        composited_terminal.add_change(TermwizChange::CursorVisibility(cursor_visibility));
-        composited_terminal.flush()?;
-
-        Ok(())
     }
 
     /// Do a single render to the user's actual terminal. It uses a diffing algorithm to make
@@ -286,12 +263,27 @@ impl Renderer {
             y: TermwizPosition::Absolute(cursor_y),
         });
 
+        if let Some(cursor_shape) = self.pty.cursor_shape() {
+            composited_terminal.add_change(TermwizChange::CursorShape(cursor_shape));
+        }
+
         // This avoids flickering at the cost of slower rendering for complex frame updates.
         composited_terminal.ignore_high_repaint_cost(true);
 
+        // Set the user's cursor visibility to the current PTY's cursor visibility.
+        composited_terminal.add_change(TermwizChange::CursorVisibility(
+            self.pty.cursor_visibility(),
+        ));
+
+        // Tattoy can override the PTY's cursor visibility for example when Tattoy is scrolling.
+        if !self.is_cursor_visible {
+            composited_terminal.add_change(TermwizChange::CursorVisibility(
+                termwiz::surface::CursorVisibility::Hidden,
+            ));
+        }
+
         // This is where we actually render to the user's real terminal.
         composited_terminal.flush()?;
-        Self::cursor_visibility(composited_terminal, true)?;
 
         Ok(())
     }
