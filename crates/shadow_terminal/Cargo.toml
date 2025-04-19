@@ -18,7 +18,9 @@ portable-pty = "0.8.1"
 termwiz.workspace = true
 snafu = "0.8.5"
 
-wezterm-term = { git = "https://github.com/tombh/wezterm.git", branch = "add-surface-repaint-override" }
+[dependencies.wezterm-term]
+git = "https://github.com/tombh/wezterm.git"
+rev = "ec9005d59f6ab92d9b76d3b9947c8582259cf76e"
 # wezterm-term = { path = "../../../wezterm/term/" }
 
 [lints]
