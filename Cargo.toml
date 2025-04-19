@@ -23,7 +23,7 @@ tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 
 [workspace.dependencies.termwiz]
 git = "https://github.com/tombh/wezterm.git"
-branch = "add-surface-repaint-override"
+rev = "ec9005d59f6ab92d9b76d3b9947c8582259cf76e"
 features = ["use_serde"]
 # termwiz = { path = "../wezterm/termwiz" }
 
