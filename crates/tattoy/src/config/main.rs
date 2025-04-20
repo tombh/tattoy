@@ -54,6 +54,8 @@ pub(crate) struct Config {
     pub keybindings: super::input::KeybindingsRaw,
     /// Target frame rate
     pub frame_rate: u32,
+    /// Whether to show the little tattoy indicator in the top-right of the terminal.
+    pub show_tattoy_indicator: bool,
     /// Colour grading
     pub color: Color,
     /// Plugins config
@@ -90,6 +92,7 @@ impl Default for Config {
             log_path,
             frame_rate: 30,
             keybindings: super::input::KeybindingsRaw::new(),
+            show_tattoy_indicator: true,
             color: Color::default(),
             plugins: Vec::default(),
             minimap: crate::tattoys::minimap::Config::default(),

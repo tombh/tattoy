@@ -1,9 +1,10 @@
 //! Render the output of the PTY and tattoys
 
+use std::str::FromStr as _;
 use std::sync::Arc;
 
-use color_eyre::eyre::{ContextCompat as _, Result};
-use termwiz::cell::Cell;
+use color_eyre::eyre::{bail, ContextCompat as _, Result};
+use termwiz::cell::{Cell, CellAttributes};
 
 use termwiz::surface::Surface as TermwizSurface;
 use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
@@ -48,6 +49,8 @@ pub(crate) struct Renderer {
     pub tattoys: std::collections::HashMap<String, crate::surface::Surface>,
     /// A shadow version of the user's conventional terminal
     pub pty: TermwizSurface,
+    /// A little indicator to show that Tattoy is running.
+    indicator_cell: Cell,
     /// Is the cursor currently visible?
     pub is_cursor_visible: bool,
 }
@@ -64,10 +67,26 @@ impl Renderer {
             height,
             tattoys: std::collections::HashMap::default(),
             pty: TermwizSurface::new(width.into(), height.into()),
+            indicator_cell: Self::indicator_cell()?,
             is_cursor_visible: true,
         };
 
         Ok(renderer)
+    }
+
+    /// Create the little indicator pixel that shows that Tattoy is running.
+    fn indicator_cell() -> Result<Cell> {
+        let mut attributes = CellAttributes::default();
+        let result = termwiz::color::SrgbaTuple::from_str(crate::utils::TATTOY_BLUE);
+        match result {
+            Ok(mut rgba) => {
+                rgba.3 = 0.7;
+                let colour = termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(rgba);
+                attributes.set_foreground(colour);
+                Ok(Cell::new('▀', attributes))
+            }
+            Err(()) => bail!("Couldn't convert indicator cell colour to SRGBA"),
+        }
     }
 
     /// Instantiate and run
@@ -293,23 +312,46 @@ impl Renderer {
     async fn composite(&mut self) -> Result<TermwizSurface> {
         let mut surface = TermwizSurface::new(self.width.into(), self.height.into());
         let mut frame = surface.screen_cells();
+        let is_rendering_enabled = *self.state.is_rendering_enabled.read().await;
 
-        if *self.state.is_rendering_enabled.read().await {
+        if is_rendering_enabled {
             self.render_tattoys_below(&mut frame)?;
         }
 
-        if self.is_a_plugin_replacing_the_pty_layer() {
+        if self.is_a_plugin_replacing_the_pty_layer() && is_rendering_enabled {
             self.render_tattoys(&mut frame, std::cmp::Ordering::Equal)?;
         } else {
             self.render_pty(&mut frame)?;
         }
 
-        if *self.state.is_rendering_enabled.read().await {
+        if is_rendering_enabled {
             self.render_tattoys_above(&mut frame)?;
             self.colour_grade(&mut frame).await?;
         }
 
+        self.add_indicator(&mut frame).await?;
+
         Ok(surface)
+    }
+
+    /// Add a little indicator in the top-right to show that Tattoy is running.
+    async fn add_indicator(&self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
+        if !self.state.config.read().await.show_tattoy_indicator {
+            return Ok(());
+        }
+
+        let x = self.width - 1;
+        let y = 0usize;
+
+        let composited_cell = frame
+            .get_mut(y)
+            .context(format!("No y coord ({y}) for cell"))?
+            .get_mut(usize::from(x))
+            .context(format!("No x coord ({x}) for cell"))?;
+
+        Self::composite_cell(composited_cell, &self.indicator_cell);
+
+        Ok(())
     }
 
     /// Are any of the tattoys replacing the PTY layer?
@@ -348,7 +390,12 @@ impl Renderer {
                 for x in 0..self.width {
                     if usize::from(x) < tattoy_frame_size.0 && usize::from(y) < tattoy_frame_size.1
                     {
-                        Self::composite_cell(frame, &tattoy_cells, x.into(), y.into())?;
+                        Self::composite_cell_at_coordinate(
+                            frame,
+                            &tattoy_cells,
+                            x.into(),
+                            y.into(),
+                        )?;
                     }
                 }
             }
@@ -365,7 +412,7 @@ impl Renderer {
         for y in 0..self.height {
             for x in 0..self.width {
                 if usize::from(x) < pty_frame_size.0 && usize::from(y) < pty_frame_size.1 {
-                    Self::composite_cell(frame, &pty_cells, x.into(), y.into())?;
+                    Self::composite_cell_at_coordinate(frame, &pty_cells, x.into(), y.into())?;
                 }
             }
         }
@@ -388,7 +435,7 @@ impl Renderer {
     }
 
     /// Add a single cell to the compositor frame.
-    fn composite_cell(
+    fn composite_cell_at_coordinate(
         base: &mut Vec<&mut [Cell]>,
         frame: &[&mut [Cell]],
         x: usize,
@@ -405,6 +452,13 @@ impl Renderer {
             .get(x)
             .context(format!("No x coord ({x}) for cell"))?;
 
+        Self::composite_cell(composited_cell, cell_above);
+
+        Ok(())
+    }
+
+    /// Composite 2 cells together.
+    fn composite_cell(composited_cell: &mut Cell, cell_above: &Cell) {
         let character_above = cell_above.str().to_owned();
         let is_character_above_text = !character_above.is_empty() && character_above != " ";
         if is_character_above_text {
@@ -417,8 +471,6 @@ impl Renderer {
 
         let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None);
         opaque.blend_all(cell_above);
-
-        Ok(())
     }
 
     /// Apply colour changes, like saturation, hue, contrast, etc.

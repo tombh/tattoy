@@ -1,5 +1,8 @@
 //! Generally useful shared code.
 
+/// The official Tattoy blue;
+pub const TATTOY_BLUE: &str = "#0034a1";
+
 #[cfg(not(target_os = "windows"))]
 /// The Unix newline
 pub const NEWLINE: &str = "\n";
