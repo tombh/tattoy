@@ -16,6 +16,10 @@ log_level = "off"
 # The target frame rate
 frame_rate = 30
 
+# Whether to show a small blue indicator in the very top-right of the terminal screen.
+# It can be useful to indicate that Tattoy is indeed running.
+show_tattoy_indicator = true
+
 [color]
 saturation = 0.0
 brightness = 0.0

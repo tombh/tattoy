@@ -11,6 +11,10 @@ pub(crate) struct CliArgs {
     #[arg(long("use"))]
     pub enabled_tattoys: Vec<String>,
 
+    /// Disable the little blue indicator in the top-right of the terminal.
+    #[arg(long)]
+    pub disable_indicator: bool,
+
     // TODO: Currently only usesd by the e2e tests. I'd rather have a more general purpose flag
     // that allowed overriding any config use a classic dot notation:
     // `config.minimap.enabled = false`.

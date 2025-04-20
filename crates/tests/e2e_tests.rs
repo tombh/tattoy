@@ -101,6 +101,7 @@ mod e2e {
             {} {} \
             --use random_walker \
             --use minimap \
+            --disable-indicator \
             --command 'bash --norc --noprofile' \
             --config-dir {} \
             --log-path ./tests.log \

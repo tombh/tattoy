@@ -172,6 +172,10 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
 
     setup_logging(cli_args.clone(), state).await?;
 
+    if cli_args.disable_indicator {
+        state.config.write().await.show_tattoy_indicator = false;
+    }
+
     // Assuming true colour makes Tattoy simpler.
     // * I think it's safe to assume that the vast majority of people using Tattoy will have a
     //   true color terminal anyway.
