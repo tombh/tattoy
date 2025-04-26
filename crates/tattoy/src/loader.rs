@@ -77,13 +77,16 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            while let Some(starting) = tattoy_futures.join_next().await {
-                match starting {
-                    Ok(result) => match result {
-                        Ok(()) => tracing::error!("A tattoy exited without error"),
-                        Err(error) => tracing::error!("A tattoy exited: {error:?}"),
-                    },
-                    Err(spawn_error) => tracing::error!("Error spawning a tattoy: {spawn_error:?}"),
+            // TODO:
+            //   Ideally what we want is that any tattoy/plugin that exits with an error should be
+            //   logged as an error here, whilst also letting other tattoys/plugins continue. The
+            //   problem with `join_next` is that it stops waiting as soon as the first tattoy
+            //   completes/errors, which means that this whole task finishes and breaks the other
+            //   tattoys/plugins. Maybe try rejoining `join_next` after a tattoy/plugin returns?
+            for completes in tattoy_futures.join_all().await {
+                match completes {
+                    Ok(()) => tracing::debug!("A tattoy exited without error"),
+                    Err(error) => tracing::error!("A tattoy exited with: {error:?}"),
                 }
             }
 

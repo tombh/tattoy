@@ -38,6 +38,7 @@ impl Plugin {
     /// Instatiate
     fn new(
         config: &Config,
+        listener_rx: tokio::sync::oneshot::Receiver<crate::run::Protocol>,
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         palette: crate::palette::converter::Palette,
     ) -> Result<Self> {
@@ -48,7 +49,7 @@ impl Plugin {
         );
         let (parsed_messages_tx, parsed_messages_rx) = tokio::sync::mpsc::channel(16);
 
-        let result = Self::spawn(&config.path, parsed_messages_tx);
+        let result = Self::spawn(&config.path, listener_rx, parsed_messages_tx);
         match result {
             Ok(mut child) => {
                 let stdin = child
@@ -81,7 +82,8 @@ impl Plugin {
     ) -> Result<()> {
         tracing::info!("Starting plugin: {}", config.name);
 
-        let mut plugin = Self::new(&config, output, palette)?;
+        let (listener_tx, listener_rx) = tokio::sync::oneshot::channel();
+        let mut plugin = Self::new(&config, listener_rx, output, palette)?;
         let mut tattoy_protocol_receiver = tattoy_protocol_tx.subscribe();
 
         #[expect(
@@ -99,7 +101,11 @@ impl Plugin {
                 Ok(message) = tattoy_protocol_receiver.recv() => {
                     if matches!(message, crate::run::Protocol::End) {
                         plugin.child.kill()?;
-                        tracing::info!("Sent kill to plugin");
+                        let result = listener_tx.send(message);
+                        if let Err(error) = result {
+                            tracing::error!("Couldn't send End message to listener: {error:?}");
+                        }
+                        tracing::info!("Sent kill to plugin process and our plugin listener.");
                         break;
                     }
                     plugin.handle_protocol_messages(&message)?;
@@ -108,7 +114,7 @@ impl Plugin {
             }
         }
 
-        tracing::debug!("Exiting main plugin loop");
+        tracing::debug!("Exiting main plugin loop for: {}", config.name);
 
         Ok(())
     }
@@ -206,6 +212,7 @@ impl Plugin {
     /// Spawn the plugin process.
     fn spawn(
         path: &std::path::Path,
+        mut listener_rx: tokio::sync::oneshot::Receiver<crate::run::Protocol>,
         parsed_messages_tx: tokio::sync::mpsc::Sender<tattoy_protocol::PluginOutputMessages>,
     ) -> Result<std::process::Child> {
         let mut cmd = std::process::Command::new(
@@ -231,23 +238,23 @@ impl Plugin {
         std::thread::spawn(move || {
             tokio_runtime.block_on(async {
                 tracing::trace!("Starting to parse JSON stream from plugin...");
-                #[expect(
-                    clippy::infinite_loop,
-                    reason = "
-                        I must admit to not totally understanding this. But for whatever reason
-                        the thread is always ended when Tattoy exits. So even though there's no
-                        way to exit the loop, the loop never blocks on application end.
-
-                        My theory is that whereas the thread in `tokio::spawn_blocking()` is
-                        likely quite similar in functionality to this thread, this thread isn't
-                        ever joined which has the advantage of getting automatically garbage
-                        collected when the main application exits.
-                    "
-                )]
                 loop {
                     tracing::debug!("(Re)starting parser");
                     Self::listener(&mut stdout_reader, &parsed_messages_tx).await;
+                    match listener_rx.try_recv() {
+                        Ok(message) => {
+                            if matches!(message, crate::run::Protocol::End) {
+                                break;
+                            }
+                        }
+                        Err(error) => match error {
+                            tokio::sync::oneshot::error::TryRecvError::Empty => (),
+                            tokio::sync::oneshot::error::TryRecvError::Closed => break,
+                        },
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
                 }
+                tracing::debug!("Leaving plugin listener loop.");
             });
         });
 
@@ -291,7 +298,7 @@ impl Plugin {
 
         self.tattoy.initialise_surface();
 
-        tracing::info!("Rendering from plugin message: {:?}", output);
+        tracing::debug!("Rendering from plugin message");
         match output {
             tattoy_protocol::PluginOutputMessages::OutputText {
                 text,
