@@ -19,12 +19,19 @@ pub(crate) fn start_tattoys(
     let tokio_runtime = tokio::runtime::Handle::current();
     std::thread::spawn(move || -> Result<()> {
         tokio_runtime.block_on(async {
+            let maybe_palette =
+                crate::config::main::Config::load_palette(Arc::clone(&state)).await?;
+            let Some(palette) = maybe_palette.as_ref() else {
+                color_eyre::eyre::bail!("You must first parse your terminal's palette.");
+            };
+
             let mut tattoy_futures = tokio::task::JoinSet::new();
 
             tracing::info!("Starting 'scrollbar' tattoy...");
             tattoy_futures.spawn(crate::tattoys::scrollbar::Scrollbar::start(
                 input.clone(),
                 output.clone(),
+                Arc::clone(&state),
             ));
 
             if enabled_tattoys.contains(&"random_walker".to_owned()) {
@@ -32,6 +39,7 @@ pub(crate) fn start_tattoys(
                 tattoy_futures.spawn(crate::tattoys::random_walker::RandomWalker::start(
                     input.clone(),
                     output.clone(),
+                    Arc::clone(&state),
                 ));
             }
 
@@ -57,15 +65,6 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            // This breaks some tests when put at the top of this block. I don't know why.
-            // Maybe contention on the state lock? Or just a timing issue because loading and
-            // deserialising the palette TOML takes a moment?
-            let maybe_palette =
-                crate::config::main::Config::load_palette(Arc::clone(&state)).await?;
-            let Some(palette) = maybe_palette.as_ref() else {
-                color_eyre::eyre::bail!("You must first parse your terminal's palette.");
-            };
-
             if enabled_tattoys.contains(&"bg_command".to_owned())
                 || state.config.read().await.bg_command.enabled
             {
@@ -88,6 +87,7 @@ pub(crate) fn start_tattoys(
                 tattoy_futures.spawn(crate::tattoys::plugins::Plugin::start(
                     plugin_config.clone(),
                     palette.clone(),
+                    Arc::clone(&state),
                     input.clone(),
                     output.clone(),
                 ));

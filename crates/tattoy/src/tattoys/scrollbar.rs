@@ -10,9 +10,13 @@ pub(crate) struct Scrollbar {
 
 impl Scrollbar {
     /// Instantiate
-    fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
+    async fn new(
+        output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
+    ) -> Self {
         let tattoy =
-            super::tattoyer::Tattoyer::new("scrollbar".to_owned(), 100, 1.0, output_channel);
+            super::tattoyer::Tattoyer::new("scrollbar".to_owned(), state, 100, 1.0, output_channel)
+                .await;
         Self { tattoy }
     }
 
@@ -20,8 +24,9 @@ impl Scrollbar {
     pub(crate) async fn start(
         protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<()> {
-        let mut scrollbar = Self::new(output);
+        let mut scrollbar = Self::new(output, state).await;
         let mut protocol = protocol_tx.subscribe();
 
         #[expect(
@@ -65,11 +70,6 @@ impl Scrollbar {
         if self.tattoy.is_scrolling_end() {
             tracing::debug!("Scrolling finished.");
             self.tattoy.send_blank_output().await?;
-            return Ok(());
-        }
-
-        if !self.tattoy.is_ready() {
-            tracing::debug!("Scrolling tattoy not ready.");
             return Ok(());
         }
 

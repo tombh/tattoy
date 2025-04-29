@@ -36,18 +36,21 @@ pub struct Plugin {
 
 impl Plugin {
     /// Instatiate
-    fn new(
+    async fn new(
         config: &Config,
         listener_rx: tokio::sync::oneshot::Receiver<crate::run::Protocol>,
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         palette: crate::palette::converter::Palette,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<Self> {
         let tattoy = super::tattoyer::Tattoyer::new(
             config.name.clone(),
+            state,
             config.layer.unwrap_or(DEFAULT_LAYER),
             1.0,
             output_channel,
-        );
+        )
+        .await;
         let (parsed_messages_tx, parsed_messages_rx) = tokio::sync::mpsc::channel(16);
 
         let result = Self::spawn(&config.path, listener_rx, parsed_messages_tx);
@@ -78,13 +81,14 @@ impl Plugin {
     pub(crate) async fn start(
         config: Config,
         palette: crate::palette::converter::Palette,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
         tattoy_protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     ) -> Result<()> {
         tracing::info!("Starting plugin: {}", config.name);
 
         let (listener_tx, listener_rx) = tokio::sync::oneshot::channel();
-        let mut plugin = Self::new(&config, listener_rx, output, palette)?;
+        let mut plugin = Self::new(&config, listener_rx, output, palette, state).await?;
         let mut tattoy_protocol_receiver = tattoy_protocol_tx.subscribe();
 
         #[expect(
@@ -293,10 +297,6 @@ impl Plugin {
 
     /// Tick the render
     async fn render(&mut self, output: tattoy_protocol::PluginOutputMessages) -> Result<()> {
-        if !self.tattoy.is_ready() {
-            return Ok(());
-        }
-
         self.tattoy.initialise_surface();
 
         tracing::debug!("Rendering from plugin message");

@@ -10,6 +10,8 @@ pub(crate) struct Tattoyer {
     pub layer: i16,
     /// The transparency of layer.
     pub opacity: f32,
+    /// The application shared state
+    pub state: std::sync::Arc<crate::shared_state::SharedState>,
     /// A channel to send final rendered output.
     pub output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     /// The surface on which to construct this tattoy's frame.
@@ -32,31 +34,29 @@ pub(crate) struct Tattoyer {
 
 impl Tattoyer {
     /// Instantiate
-    pub(crate) fn new(
+    pub(crate) async fn new(
         id: String,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
         layer: i16,
         opacity: f32,
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     ) -> Self {
+        let tty_size = state.get_tty_size().await;
         Self {
             id: id.clone(),
             layer,
             opacity,
+            state,
             output_channel,
             surface: crate::surface::Surface::new(id, 0, 0, layer, opacity),
-            width: 0,
-            height: 0,
+            width: tty_size.width,
+            height: tty_size.height,
             scrollback: shadow_terminal::output::CompleteScrollback::default(),
             screen: shadow_terminal::output::CompleteScreen::default(),
             target_frame_rate: 30,
             last_frame_tick: tokio::time::Instant::now(),
             last_scroll_position: 0,
         }
-    }
-
-    /// Is the tattoy ready to be built?
-    pub const fn is_ready(&self) -> bool {
-        self.width > 0 && self.height > 0
     }
 
     /// Create an empty surface ready for building a new frame.
@@ -128,10 +128,6 @@ impl Tattoyer {
                     self.scrollback
                         .surface
                         .resize(scrollback_diff.size.0, scrollback_diff.height);
-                    self.set_tty_size(
-                        scrollback_diff.size.0.try_into()?,
-                        scrollback_diff.size.1.try_into()?,
-                    );
                     self.scrollback.surface.add_changes(scrollback_diff.changes);
                     self.scrollback.position = scrollback_diff.position;
                 }
@@ -152,10 +148,6 @@ impl Tattoyer {
                     self.scrollback = complete_scrollback;
                 }
                 shadow_terminal::output::CompleteSurface::Screen(complete_screen) => {
-                    self.set_tty_size(
-                        complete_screen.surface.dimensions().0.try_into()?,
-                        complete_screen.surface.dimensions().1.try_into()?,
-                    );
                     self.screen = complete_screen;
                 }
                 _ => (),

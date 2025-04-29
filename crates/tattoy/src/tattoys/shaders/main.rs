@@ -31,8 +31,6 @@ impl Default for Config {
 pub(crate) struct Shaders<'shaders> {
     /// The base Tattoy struct
     tattoy: Tattoyer,
-    /// Shared app state
-    state: std::sync::Arc<crate::shared_state::SharedState>,
     /// All the special GPU handling code.
     gpu: super::gpu::GPU<'shaders>,
 }
@@ -43,11 +41,11 @@ impl Shaders<'_> {
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<Self> {
-        let tattoy = Tattoyer::new("shaders".to_owned(), -10, 1.0, output_channel);
         let shader_directory = state.config_path.read().await.clone();
         let shader_path = state.config.read().await.shader.path.clone();
         let gpu = super::gpu::GPU::new(shader_directory.join(shader_path)).await?;
-        Ok(Self { tattoy, state, gpu })
+        let tattoy = Tattoyer::new("shaders".to_owned(), state, -10, 1.0, output_channel).await;
+        Ok(Self { tattoy, gpu })
     }
 
     /// Our main entrypoint.
@@ -157,11 +155,6 @@ impl Shaders<'_> {
 
     /// Tick the render
     async fn render(&mut self) -> Result<()> {
-        if !self.tattoy.is_ready() {
-            tracing::trace!("Not rendering shader as Tattoy isn't ready yet.");
-            return Ok(());
-        }
-
         self.gpu
             .update_resolution(self.tattoy.width, self.tattoy.height * 2);
         let cursor = self.tattoy.screen.surface.cursor_position();
@@ -169,7 +162,7 @@ impl Shaders<'_> {
             .update_mouse_position(cursor.0.try_into()?, cursor.1.try_into()?);
 
         self.tattoy.initialise_surface();
-        let opacity = self.state.config.read().await.shader.opacity;
+        let opacity = self.tattoy.state.config.read().await.shader.opacity;
         let image = self.gpu.render().await?;
 
         let tty_height_in_pixels = u32::from(self.tattoy.height) * 2;

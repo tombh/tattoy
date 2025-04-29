@@ -21,9 +21,18 @@ const COLOUR_CHANGE_RATE: f32 = 0.3;
 
 impl RandomWalker {
     /// Instatiate
-    fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
-        let tattoy =
-            super::tattoyer::Tattoyer::new("random_walker".to_owned(), -10, 1.0, output_channel);
+    async fn new(
+        output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
+    ) -> Self {
+        let tattoy = super::tattoyer::Tattoyer::new(
+            "random_walker".to_owned(),
+            state,
+            -10,
+            1.0,
+            output_channel,
+        )
+        .await;
         let position: Position = (0, 0);
         let colour: crate::surface::Colour = (
             rand::thread_rng().gen_range(0.1..1.0),
@@ -43,8 +52,9 @@ impl RandomWalker {
     pub(crate) async fn start(
         protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<()> {
-        let mut random_walker = Self::new(output);
+        let mut random_walker = Self::new(output, state).await;
         let mut protocol = protocol_tx.subscribe();
 
         #[expect(
@@ -89,10 +99,6 @@ impl RandomWalker {
 
     /// Tick the render
     async fn render(&mut self) -> Result<()> {
-        if !self.tattoy.is_ready() {
-            return Ok(());
-        }
-
         let width_i32: i32 = self.tattoy.width.into();
         let height_i32: i32 = self.tattoy.height.into();
 
