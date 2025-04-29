@@ -1,5 +1,7 @@
 //! Run and output a command in the background.
 
+use std::sync::Arc;
+
 use color_eyre::eyre::Result;
 
 /// User-configurable settings for the background command.
@@ -43,21 +45,21 @@ impl BGCommand {
         state: std::sync::Arc<crate::shared_state::SharedState>,
         palette: crate::palette::converter::Palette,
     ) -> Self {
-        let mut tattoy = super::tattoyer::Tattoyer::new(
+        let tattoy = super::tattoyer::Tattoyer::new(
             "bg_command".to_owned(),
+            Arc::clone(&state),
             state.config.read().await.bg_command.layer,
             state.config.read().await.bg_command.opacity,
             output_channel,
-        );
-        let tty_size = state.get_tty_size().await;
-        tattoy.set_tty_size(tty_size.width, tty_size.height);
+        )
+        .await;
 
         let command = state.config.read().await.bg_command.command.clone();
         let _span = tracing::span!(tracing::Level::TRACE, "BGCommand").entered();
         let shadow_terminal = shadow_terminal::active_terminal::ActiveTerminal::start(
             shadow_terminal::shadow_terminal::Config {
-                width: tty_size.width,
-                height: tty_size.height,
+                width: tattoy.width,
+                height: tattoy.height,
                 command: command.iter().map(std::convert::Into::into).collect(),
                 scrollback_size: 100,
                 scrollback_step: 1,

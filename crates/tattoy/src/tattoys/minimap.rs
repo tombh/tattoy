@@ -60,11 +60,18 @@ pub struct Minimap {
 
 impl Minimap {
     /// Instantiate
-    fn new(
+    async fn new(
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: Arc<crate::shared_state::SharedState>,
     ) -> Self {
-        let tattoy = Tattoyer::new("minimap".to_owned(), 90, 1.0, output_channel);
+        let tattoy = Tattoyer::new(
+            "minimap".to_owned(),
+            Arc::clone(&state),
+            90,
+            1.0,
+            output_channel,
+        )
+        .await;
         Self {
             tattoy,
             scrollback: image::ImageBuffer::default(),
@@ -81,7 +88,7 @@ impl Minimap {
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: Arc<crate::shared_state::SharedState>,
     ) -> Result<()> {
-        let mut minimap = Self::new(output, state);
+        let mut minimap = Self::new(output, state).await;
         let mut protocol = protocol_tx.subscribe();
 
         #[expect(
@@ -214,11 +221,6 @@ impl Minimap {
 
     /// Tick the render
     async fn render(&mut self) -> Result<()> {
-        if !self.tattoy.is_ready() {
-            tracing::trace!("Not rendering minimap as Tattoy isn't ready yet.");
-            return Ok(());
-        }
-
         let Some(transition_state) = self.get_transition_state().await else {
             return Ok(());
         };
