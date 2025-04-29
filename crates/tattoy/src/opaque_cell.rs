@@ -26,6 +26,8 @@ pub(crate) struct OpaqueCell<'cell> {
     cell: &'cell mut Cell,
     /// The true colour value to use when the cell doesn't have a colour.
     default_colour: termwiz::color::SrgbaTuple,
+    /// The opacity of the cell above.
+    cell_above_opacity: f32,
 }
 
 impl<'cell> OpaqueCell<'cell> {
@@ -33,6 +35,7 @@ impl<'cell> OpaqueCell<'cell> {
     pub const fn new(
         cell: &'cell mut Cell,
         maybe_default_bg_colour: Option<termwiz::color::SrgbaTuple>,
+        cell_above_opacity: f32,
     ) -> Self {
         let default_bg_colour = match maybe_default_bg_colour {
             Some(colour) => colour,
@@ -42,6 +45,7 @@ impl<'cell> OpaqueCell<'cell> {
         Self {
             cell,
             default_colour: default_bg_colour,
+            cell_above_opacity,
         }
     }
 
@@ -73,16 +77,20 @@ impl<'cell> OpaqueCell<'cell> {
 
     /// Blend this cell's foreground colour with a new colour.
     fn blend(&mut self, kind: &Kind, incoming_colour: termwiz::color::SrgbaTuple) {
-        let this_colour = match kind {
+        let this_colour_attribute = match kind {
             Kind::Foreground => self.cell.attrs().foreground(),
             Kind::Background => self.cell.attrs().background(),
         };
 
-        let maybe_colour = match Self::extract_colour(this_colour) {
-            Some(colour) => colour,
+        let colour = match Self::extract_colour(this_colour_attribute) {
+            Some(raw_colour) => raw_colour,
             None => self.default_colour,
         };
-        let blended_colour = maybe_colour.interpolate(incoming_colour, incoming_colour.3.into());
+
+        let blended_colour = colour.interpolate(
+            incoming_colour,
+            f64::from(incoming_colour.3 * self.cell_above_opacity),
+        );
         let attribute = Self::make_true_colour_attribute(blended_colour);
 
         match kind {

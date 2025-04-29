@@ -64,6 +64,8 @@ pub(crate) struct Config {
     pub minimap: crate::tattoys::minimap::Config,
     /// The shaders
     pub shader: crate::tattoys::shaders::main::Config,
+    /// Background command
+    pub bg_command: crate::tattoys::bg_command::Config,
 }
 
 impl Default for Config {
@@ -97,6 +99,7 @@ impl Default for Config {
             plugins: Vec::default(),
             minimap: crate::tattoys::minimap::Config::default(),
             shader: crate::tattoys::shaders::main::Config::default(),
+            bg_command: crate::tattoys::bg_command::Config::default(),
         }
     }
 }
@@ -342,12 +345,12 @@ impl Config {
 
     /// Load the terminal's palette as true colour values.
     pub async fn load_palette(
-        state: &std::sync::Arc<crate::shared_state::SharedState>,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<Option<crate::palette::converter::Palette>> {
-        let path = crate::palette::parser::Parser::palette_config_path(state).await;
+        let path = crate::palette::parser::Parser::palette_config_path(&state).await;
         if path.exists() {
             tracing::info!("Loading the terminal palette's true colours from config");
-            let data = std::fs::read_to_string(path)?;
+            let data = tokio::fs::read_to_string(path).await?;
             let map = toml::from_str::<crate::palette::converter::PaletteHashMap>(&data)?;
             let palette = crate::palette::converter::Palette { map };
             Ok(Some(palette))

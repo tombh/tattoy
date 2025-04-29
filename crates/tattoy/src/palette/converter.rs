@@ -115,4 +115,48 @@ impl Palette {
         let colour_attribute = self.true_colour_attribute_from_index(index);
         attributes.set_background(colour_attribute);
     }
+
+    /// Convert TTY cell palette indexes into their true colour values.
+    pub fn convert_cells_to_true_colour(&self, output: &mut shadow_terminal::output::Output) {
+        match output {
+            shadow_terminal::output::Output::Diff(surface_diff) => {
+                let changes = match surface_diff {
+                    shadow_terminal::output::SurfaceDiff::Scrollback(diff) => &mut diff.changes,
+                    shadow_terminal::output::SurfaceDiff::Screen(diff) => &mut diff.changes,
+                    _ => {
+                        tracing::error!(
+                            "Unrecognised surface diff when converting cells to true colour"
+                        );
+                        &mut Vec::new()
+                    }
+                };
+
+                for change in changes {
+                    if let termwiz::surface::change::Change::AllAttributes(attributes) = change {
+                        self.cell_attributes_to_true_colour(attributes);
+                    }
+                }
+            }
+            shadow_terminal::output::Output::Complete(complete_surface) => {
+                let cells = match complete_surface {
+                    shadow_terminal::output::CompleteSurface::Scrollback(scrollback) => {
+                        scrollback.surface.screen_cells()
+                    }
+                    shadow_terminal::output::CompleteSurface::Screen(screen) => {
+                        screen.surface.screen_cells()
+                    }
+                    _ => {
+                        tracing::error!("Unhandled surface from Shadow Terminal");
+                        Vec::new()
+                    }
+                };
+                for line in cells {
+                    for cell in line {
+                        self.cell_attributes_to_true_colour(cell.attrs_mut());
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
 }

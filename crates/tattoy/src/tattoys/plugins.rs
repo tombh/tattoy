@@ -45,6 +45,7 @@ impl Plugin {
         let tattoy = super::tattoyer::Tattoyer::new(
             config.name.clone(),
             config.layer.unwrap_or(DEFAULT_LAYER),
+            1.0,
             output_channel,
         );
         let (parsed_messages_tx, parsed_messages_rx) = tokio::sync::mpsc::channel(16);

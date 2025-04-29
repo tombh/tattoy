@@ -349,7 +349,7 @@ impl Renderer {
             .get_mut(usize::from(x))
             .context(format!("No x coord ({x}) for cell"))?;
 
-        Self::composite_cell(composited_cell, &self.indicator_cell);
+        Self::composite_cell(composited_cell, &self.indicator_cell, 1.0);
 
         Ok(())
     }
@@ -395,6 +395,7 @@ impl Renderer {
                             &tattoy_cells,
                             x.into(),
                             y.into(),
+                            tattoy.opacity,
                         )?;
                     }
                 }
@@ -412,7 +413,7 @@ impl Renderer {
         for y in 0..self.height {
             for x in 0..self.width {
                 if usize::from(x) < pty_frame_size.0 && usize::from(y) < pty_frame_size.1 {
-                    Self::composite_cell_at_coordinate(frame, &pty_cells, x.into(), y.into())?;
+                    Self::composite_cell_at_coordinate(frame, &pty_cells, x.into(), y.into(), 1.0)?;
                 }
             }
         }
@@ -440,6 +441,7 @@ impl Renderer {
         frame: &[&mut [Cell]],
         x: usize,
         y: usize,
+        opacity: f32,
     ) -> Result<()> {
         let composited_cell = base
             .get_mut(y)
@@ -452,16 +454,17 @@ impl Renderer {
             .get(x)
             .context(format!("No x coord ({x}) for cell"))?;
 
-        Self::composite_cell(composited_cell, cell_above);
+        Self::composite_cell(composited_cell, cell_above, opacity);
 
         Ok(())
     }
 
     /// Composite 2 cells together.
-    fn composite_cell(composited_cell: &mut Cell, cell_above: &Cell) {
+    fn composite_cell(composited_cell: &mut Cell, cell_above: &Cell, opacity: f32) {
         let character_above = cell_above.str().to_owned();
         let is_character_above_text = !character_above.is_empty() && character_above != " ";
         if is_character_above_text {
+            // All this is just because there doesn't seem to be a `cell.set_str("f")` method.
             let old_background = composited_cell.attrs().background();
             let old_foreground = composited_cell.attrs().foreground();
             *composited_cell = cell_above.clone();
@@ -469,7 +472,7 @@ impl Renderer {
             composited_cell.attrs_mut().set_foreground(old_foreground);
         }
 
-        let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None);
+        let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None, opacity);
         opaque.blend_all(cell_above);
     }
 
@@ -541,13 +544,13 @@ mod test {
         second: (usize, usize, crate::surface::Colour),
     ) -> Cell {
         let mut renderer = make_renderer().await;
-        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
         tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
         renderer
             .tattoys
             .insert(tattoy_below.id.clone(), tattoy_below);
 
-        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2);
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
         tattoy_above
             .add_pixel(second.0, second.1, second.2)
             .unwrap();
@@ -565,7 +568,7 @@ mod test {
     #[tokio::test]
     async fn blending_text() {
         let mut renderer = make_renderer().await;
-        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
         tattoy_below.add_text(
             0,
             0,
@@ -577,7 +580,7 @@ mod test {
             .tattoys
             .insert(tattoy_below.id.clone(), tattoy_below);
 
-        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2);
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
         tattoy_above.add_text(0, 0, " ".into(), Some((0.0, 0.0, 0.0, 0.5)), None);
         renderer
             .tattoys
@@ -604,13 +607,13 @@ mod test {
     #[tokio::test]
     async fn blending_text_with_default_bg_below() {
         let mut renderer = make_renderer().await;
-        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1);
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
         tattoy_below.add_text(0, 0, "a".into(), None, Some(crate::surface::WHITE));
         renderer
             .tattoys
             .insert(tattoy_below.id.clone(), tattoy_below);
 
-        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2);
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
         tattoy_above.add_text(0, 0, " ".into(), Some((1.0, 1.0, 1.0, 0.5)), None);
         renderer
             .tattoys

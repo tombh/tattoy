@@ -64,7 +64,7 @@ impl Minimap {
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: Arc<crate::shared_state::SharedState>,
     ) -> Self {
-        let tattoy = Tattoyer::new("minimap".to_owned(), 90, output_channel);
+        let tattoy = Tattoyer::new("minimap".to_owned(), 90, 1.0, output_channel);
         Self {
             tattoy,
             scrollback: image::ImageBuffer::default(),

@@ -57,10 +57,26 @@ pub(crate) fn start_tattoys(
                 ));
             }
 
-            let maybe_palette = crate::config::main::Config::load_palette(&state).await?;
+            // This breaks some tests when put at the top of this block. I don't know why.
+            // Maybe contention on the state lock? Or just a timing issue because loading and
+            // deserialising the palette TOML takes a moment?
+            let maybe_palette =
+                crate::config::main::Config::load_palette(Arc::clone(&state)).await?;
             let Some(palette) = maybe_palette.as_ref() else {
-                color_eyre::eyre::bail!("A palette is needed for running plugins");
+                color_eyre::eyre::bail!("You must first parse your terminal's palette.");
             };
+
+            if enabled_tattoys.contains(&"bg_command".to_owned())
+                || state.config.read().await.bg_command.enabled
+            {
+                tracing::info!("Starting 'bg_command' tattoy...");
+                tattoy_futures.spawn(crate::tattoys::bg_command::BGCommand::start(
+                    input.clone(),
+                    output.clone(),
+                    Arc::clone(&state),
+                    palette.clone(),
+                ));
+            }
 
             for plugin_config in &state.config.read().await.plugins {
                 if let Some(is_enabled) = plugin_config.enabled {

@@ -362,4 +362,30 @@ mod e2e {
             .await
             .unwrap();
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn background_command() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let conf_dir = temp_dir.into_path();
+        let conf_path = conf_dir.join("tattoy.toml");
+        let mut conf_file = std::fs::File::create(conf_path).unwrap();
+        let config = "
+            [bg_command]
+            enabled = true
+            command = ['bash', '-c', 'watch \"echo testing background command\"']
+            layer = -1
+            opacity = 1.0
+        ";
+        conf_file.write_all(config.as_bytes()).unwrap();
+
+        let mut tattoy = start_tattoy(Some(conf_dir.to_string_lossy().into())).await;
+        tattoy
+            .wait_for_string_at("tattoy", 0, 0, None)
+            .await
+            .unwrap();
+        tattoy
+            .wait_for_string("testing background command", None)
+            .await
+            .unwrap();
+    }
 }

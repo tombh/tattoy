@@ -11,7 +11,8 @@ pub(crate) struct Scrollbar {
 impl Scrollbar {
     /// Instantiate
     fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
-        let tattoy = super::tattoyer::Tattoyer::new("scrollbar".to_owned(), 100, output_channel);
+        let tattoy =
+            super::tattoyer::Tattoyer::new("scrollbar".to_owned(), 100, 1.0, output_channel);
         Self { tattoy }
     }
 

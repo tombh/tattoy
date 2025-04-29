@@ -27,13 +27,13 @@ impl Proxy {
     /// The `surfaces_tx` channel sends `termwiz::surface::Surface` updates representing the current
     /// content of the shadow terminal.
     async fn new(
-        state: &Arc<SharedState>,
+        state: Arc<SharedState>,
         shadow_terminal: shadow_terminal::active_terminal::ActiveTerminal,
         surfaces_tx: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<Self> {
         Ok(Self {
-            state: Arc::clone(state),
+            state: Arc::clone(&state),
             shadow_terminal,
             surfaces_tx,
             tattoy_protocol,
@@ -43,7 +43,7 @@ impl Proxy {
 
     /// Start the main loop listening for signals and data to and from the shadow terminal.
     pub async fn start(
-        state: &Arc<SharedState>,
+        state: Arc<SharedState>,
         surfaces_tx: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         config: shadow_terminal::shadow_terminal::Config,
@@ -81,7 +81,9 @@ impl Proxy {
     /// Handle output from the Shadow Terminal.
     async fn handle_output(&self, mut output: shadow_terminal::output::Output) -> Result<()> {
         tracing::trace!("Received output from Shadow Terminal: {output:?}");
-        self.convert_cells_to_true_colour(&mut output);
+        if let Some(palette) = self.palette.as_ref() {
+            palette.convert_cells_to_true_colour(&mut output);
+        }
 
         match output.clone() {
             shadow_terminal::output::Output::Diff(diff) => {
@@ -234,54 +236,6 @@ impl Proxy {
             .send(crate::run::Protocol::Output(output));
         if let Err(err) = output_update_result {
             tracing::error!("Couldn't notify protocol channel about new PTY output: {err:?}");
-        }
-    }
-
-    /// Convert palette indexes into their true colour values.
-    fn convert_cells_to_true_colour(&self, output: &mut shadow_terminal::output::Output) {
-        let Some(palette) = &self.palette else {
-            return;
-        };
-
-        match output {
-            shadow_terminal::output::Output::Diff(surface_diff) => {
-                let changes = match surface_diff {
-                    shadow_terminal::output::SurfaceDiff::Scrollback(diff) => &mut diff.changes,
-                    shadow_terminal::output::SurfaceDiff::Screen(diff) => &mut diff.changes,
-                    _ => {
-                        tracing::error!(
-                            "Unrecognised surface diff when converting cells to true colour"
-                        );
-                        &mut Vec::new()
-                    }
-                };
-
-                for change in changes {
-                    if let termwiz::surface::change::Change::AllAttributes(attributes) = change {
-                        palette.cell_attributes_to_true_colour(attributes);
-                    }
-                }
-            }
-            shadow_terminal::output::Output::Complete(complete_surface) => {
-                let cells = match complete_surface {
-                    shadow_terminal::output::CompleteSurface::Scrollback(scrollback) => {
-                        scrollback.surface.screen_cells()
-                    }
-                    shadow_terminal::output::CompleteSurface::Screen(screen) => {
-                        screen.surface.screen_cells()
-                    }
-                    _ => {
-                        tracing::error!("Unhandled surface from Shadow Terminal");
-                        Vec::new()
-                    }
-                };
-                for line in cells {
-                    for cell in line {
-                        palette.cell_attributes_to_true_colour(cell.attrs_mut());
-                    }
-                }
-            }
-            _ => (),
         }
     }
 }
