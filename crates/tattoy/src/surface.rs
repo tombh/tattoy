@@ -31,6 +31,8 @@ pub(crate) struct Surface {
     /// layering value below 0 will make the tattoy appear below the user's terminal content,
     /// and any value above 0 will make it appear above the user's terminal content.
     pub layer: i16,
+    /// The transparency of the surface.
+    pub opacity: f32,
     /// A surface of terminal cells
     pub surface: termwiz::surface::Surface,
 }
@@ -38,12 +40,13 @@ pub(crate) struct Surface {
 impl Surface {
     /// Create a Compositor/Tattoy
     #[must_use]
-    pub fn new(id: String, width: usize, height: usize, layer: i16) -> Self {
+    pub fn new(id: String, width: usize, height: usize, layer: i16, opacity: f32) -> Self {
         Self {
             id,
             width,
             height,
             layer,
+            opacity,
             surface: termwiz::surface::Surface::new(width, height),
         }
     }
@@ -197,7 +200,7 @@ mod test {
 
     #[test]
     fn add_new_pixels() {
-        let mut surface = Surface::new("test".into(), 2, 2, -1);
+        let mut surface = Surface::new("test".into(), 2, 2, -1, 1.0);
 
         let cell = &surface.surface.screen_cells()[0][0];
         assert_eq!(cell.str(), " ");
@@ -244,7 +247,7 @@ mod test {
 
     #[test]
     fn add_new_pixel_at_bottom_of_cell() {
-        let mut surface = Surface::new("test".into(), 1, 1, -1);
+        let mut surface = Surface::new("test".into(), 1, 1, -1, 1.0);
 
         surface.add_pixel(0, 1, WHITE).unwrap();
         let cell = &surface.surface.screen_cells()[0][0];
@@ -261,7 +264,7 @@ mod test {
 
     #[test]
     fn add_pixels_on_or_near_other_pixels() {
-        let mut surface = Surface::new("test".into(), 2, 1, -1);
+        let mut surface = Surface::new("test".into(), 2, 1, -1, 1.0);
         surface.add_pixel(0, 0, WHITE).unwrap();
 
         let fg = Surface::make_colour_attribute(WHITE);

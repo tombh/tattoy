@@ -8,6 +8,8 @@ pub(crate) struct Tattoyer {
     pub id: String,
     /// The compositing layer that the tattoy is rendered to. 0 is the PTY screen itself.
     pub layer: i16,
+    /// The transparency of layer.
+    pub opacity: f32,
     /// A channel to send final rendered output.
     pub output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     /// The surface on which to construct this tattoy's frame.
@@ -33,13 +35,15 @@ impl Tattoyer {
     pub(crate) fn new(
         id: String,
         layer: i16,
+        opacity: f32,
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     ) -> Self {
         Self {
             id: id.clone(),
             layer,
+            opacity,
             output_channel,
-            surface: crate::surface::Surface::new(id, 0, 0, layer),
+            surface: crate::surface::Surface::new(id, 0, 0, layer, opacity),
             width: 0,
             height: 0,
             scrollback: shadow_terminal::output::CompleteScrollback::default(),
@@ -62,6 +66,7 @@ impl Tattoyer {
             self.width.into(),
             self.height.into(),
             self.layer,
+            self.opacity,
         );
     }
 

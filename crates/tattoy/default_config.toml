@@ -39,6 +39,12 @@ opacity = 0.75
 # Tattoy's config directory.
 path = "shaders/point_lights.glsl"
 
+[bg_command]
+enabled = false
+opacity = 0.75
+layer = -5
+command = ["echo", "Hello World"]
+
 [keybindings]
 # Whether Tattoy renders anything apart from the TTY. They TTY is always rendered,
 # so toggling this will disable all tattoys, effects, eye-candy, etc.

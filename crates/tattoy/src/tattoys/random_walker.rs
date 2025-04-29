@@ -23,7 +23,7 @@ impl RandomWalker {
     /// Instatiate
     fn new(output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>) -> Self {
         let tattoy =
-            super::tattoyer::Tattoyer::new("random_walker".to_owned(), -10, output_channel);
+            super::tattoyer::Tattoyer::new("random_walker".to_owned(), -10, 1.0, output_channel);
         let position: Position = (0, 0);
         let colour: crate::surface::Colour = (
             rand::thread_rng().gen_range(0.1..1.0),

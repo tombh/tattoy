@@ -5,6 +5,8 @@
 //! and output must be sent and read over channels. This module is more likely useful for
 //! real-world usecases, such as terminal multiplexing for example.
 
+use tracing::Instrument as _;
+
 /// An active terminal is running in a Tokio task, so we don't have direct access to the
 /// underlying `wezterm_term::Terminal`. Instead we interact with it and the PTY through Tokio
 /// channels.
@@ -35,7 +37,13 @@ impl ActiveTerminal {
             crate::shadow_terminal::ShadowTerminal::new(config, surface_output_tx);
         let control_tx = shadow_terminal.channels.control_tx.clone();
 
-        let task_handle = tokio::spawn(async move { shadow_terminal.run(pty_input_rx).await });
+        let current_span = tracing::Span::current();
+        let task_handle = tokio::spawn(async move {
+            shadow_terminal
+                .run(pty_input_rx)
+                .instrument(current_span)
+                .await;
+        });
         tracing::debug!("Shadow terminal started.");
 
         Self {

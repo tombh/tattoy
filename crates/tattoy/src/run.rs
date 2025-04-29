@@ -69,6 +69,13 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     }
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
+    let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
+    state_arc
+        .set_tty_size(
+            users_tty_size.cols.try_into()?,
+            users_tty_size.rows.try_into()?,
+        )
+        .await;
 
     let (renderer, surfaces_tx) = Renderer::start(Arc::clone(state_arc), protocol_tx.clone());
 
@@ -82,9 +89,8 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         Arc::clone(state_arc),
     );
 
-    let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     crate::terminal_proxy::proxy::Proxy::start(
-        state_arc,
+        Arc::clone(state_arc),
         surfaces_tx,
         protocol_tx.clone(),
         shadow_terminal::shadow_terminal::Config {

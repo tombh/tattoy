@@ -34,7 +34,7 @@ jobs:
         run: sudo apt-get install libxcb1-dev libdbus-1-dev
       - if: matrix.os == 'macos-latest'
         name: Install MacOS dependencies
-        run: brew install bash nano
+        run: brew install bash nano watch
       - if: matrix.os == 'windows-latest'
         name: Install Windows package manager
         uses: crazy-max/ghaction-chocolatey@v3

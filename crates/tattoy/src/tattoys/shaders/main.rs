@@ -43,7 +43,7 @@ impl Shaders<'_> {
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<Self> {
-        let tattoy = Tattoyer::new("shaders".to_owned(), -10, output_channel);
+        let tattoy = Tattoyer::new("shaders".to_owned(), -10, 1.0, output_channel);
         let shader_directory = state.config_path.read().await.clone();
         let shader_path = state.config.read().await.shader.path.clone();
         let gpu = super::gpu::GPU::new(shader_directory.join(shader_path)).await?;
