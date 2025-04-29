@@ -6,6 +6,8 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 
 /// The default compositing layer the plugin is rendered to. Can be manually set inn the config.
 const DEFAULT_LAYER: i16 = -10;
+/// The default transparency for the plugin output.
+const DEFAULT_OPACITY: f32 = 1.0;
 
 /// User-configurable settings for the minimap
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -16,6 +18,8 @@ pub struct Config {
     path: std::path::PathBuf,
     /// The layer upon which the plugin is rendered.
     layer: Option<i16>,
+    /// The transparency of the plugin output.
+    opacity: Option<f32>,
     /// Whether the plugin is enabled.
     pub enabled: Option<bool>,
 }
@@ -47,7 +51,7 @@ impl Plugin {
             config.name.clone(),
             state,
             config.layer.unwrap_or(DEFAULT_LAYER),
-            1.0,
+            config.opacity.unwrap_or(DEFAULT_OPACITY),
             output_channel,
         )
         .await;
