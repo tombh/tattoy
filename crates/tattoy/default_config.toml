@@ -25,6 +25,16 @@ saturation = 0.0
 brightness = 0.0
 hue = 0.0
 
+# Automatically increases the foreground colour of text (in all languages) so that it
+# reaches the specified target contrast. It uses the WCAG 2.1 algorithm to define the
+# contrast. For normal text on the web they recommend a minimum contrast of 4.5. Note
+# that only the foreground colour is ever changed (as background colours are used for
+# UIs). The target contrast is searched for by lightening, then darkening and if
+# neither reach the target contrast then the larger of the 2 found contrasts is used.
+[text_contrast]
+enabled = true
+target_contrast = 2.0
+
 [minimap]
 enabled = false
 animation_speed = 0.15

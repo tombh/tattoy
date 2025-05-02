@@ -32,6 +32,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 xcap = "0.3.2"
 wgpu = { version = "24.0", default-features = false, features = [ "dx12", "metal", "glsl" ] }
+palette.workspace = true
 
 [lints]
 workspace = true

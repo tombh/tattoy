@@ -1,6 +1,10 @@
 //! This is hopefully a central place to handle all the colour blending needs when compositing the
 //! various tattoy frames and PTY screen.
 
+use palette::{
+    color_difference::Wcag21RelativeContrast as _, DarkenAssign as _, IntoColor as _,
+    LightenAssign as _,
+};
 use termwiz::cell::Cell;
 
 /// This is the default colour for when an opaque cell is over a "blank" cell.
@@ -123,5 +127,96 @@ impl<'cell> OpaqueCell<'cell> {
                 self.blend(&Kind::Background, colour);
             }
         }
+    }
+
+    /// Ensure that the colour difference between the background and foreground is sufficient
+    /// enough to be readable.
+    pub fn ensure_readable_contrast(&mut self, target_contrast: f32) {
+        // I think these default colours are only assigned for the very first composited layer?
+        let fg_raw =
+            Self::extract_colour(self.cell.attrs().foreground()).unwrap_or(self.default_colour);
+        let bg_raw =
+            Self::extract_colour(self.cell.attrs().background()).unwrap_or(self.default_colour);
+
+        let fg_original = palette::rgb::Rgba::new(fg_raw.0, fg_raw.1, fg_raw.2, fg_raw.3);
+        let bg = palette::rgb::Rgb::new(bg_raw.0, bg_raw.1, bg_raw.2);
+
+        let contrast = fg_original.relative_contrast(bg);
+        if contrast >= target_contrast {
+            return;
+        }
+
+        let maybe_maxed_out_lightness =
+            self.find_and_set_min_contrast(fg_original, bg, target_contrast, true);
+        if let Some(lightest) = maybe_maxed_out_lightness {
+            let maybe_maxed_out_darkness =
+                self.find_and_set_min_contrast(fg_original, bg, target_contrast, false);
+            if let Some(darkest) = maybe_maxed_out_darkness {
+                let lightest_contrast = bg.relative_contrast(lightest.into_color());
+                let darkest_contrast = bg.relative_contrast(darkest.into_color());
+                if lightest_contrast >= darkest_contrast {
+                    self.set_colour_from_rgba(lightest);
+                    tracing::trace!(
+                        "Contrast for {} not reached, setting to max contrast +{lightest_contrast}",
+                        self.cell.str()
+                    );
+                } else {
+                    self.set_colour_from_rgba(darkest);
+                    tracing::trace!(
+                        "Contrast for {} not reached, setting to max contrast -{darkest_contrast}",
+                        self.cell.str()
+                    );
+                }
+            }
+        }
+    }
+
+    /// Find the foreground colour that achieves the target contrast.
+    fn find_and_set_min_contrast(
+        &mut self,
+        mut fg: palette::rgb::Rgba,
+        bg: palette::rgb::Rgb,
+        target_contrast: f32,
+        is_lighten: bool,
+    ) -> Option<palette::Srgba> {
+        let step = 0.005;
+
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_sign_loss,
+            clippy::cast_possible_truncation,
+            reason = "
+                I don't want to install a whole crate just to get fallible float to integer
+                conversions 🙄
+            "
+        )]
+        let max_attempts = (1.0 / step) as u16;
+
+        for _ in 0..max_attempts {
+            if is_lighten {
+                fg.lighten_fixed_assign(step);
+            } else {
+                fg.darken_fixed_assign(step);
+            }
+
+            let contrast = fg.relative_contrast(bg);
+            if contrast >= target_contrast {
+                self.set_colour_from_rgba(fg);
+                return None;
+            }
+        }
+
+        Some(fg)
+    }
+
+    /// Sets the cell's colour from a `palette` crate colour.
+    fn set_colour_from_rgba(&mut self, colour: palette::rgb::Rgba) {
+        let color_attribute = Self::make_true_colour_attribute(termwiz::color::SrgbaTuple(
+            colour.red,
+            colour.green,
+            colour.blue,
+            colour.alpha,
+        ));
+        self.cell.attrs_mut().set_foreground(color_attribute);
     }
 }

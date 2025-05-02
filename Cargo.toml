@@ -12,6 +12,7 @@ members = [
 
 [workspace.dependencies]
 color-eyre = "0.6.3"
+palette = "0.7.6"
 rand = "0.8.5"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = { version = "1.0.140", features = [ "preserve_order" ]}

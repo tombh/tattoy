@@ -502,15 +502,12 @@ impl SteppableTerminal {
         Ok(())
     }
 
-    /// Wait for the given background colour at the given coordinates
-    ///
-    /// # Errors
-    /// * If it can't get the screen contents.
-    /// * If it no cell is found at the coords
+    /// Wait for.the given colout at the given coordinates.
     #[inline]
-    pub async fn wait_for_bg_color_at(
+    async fn wait_for_color_at(
         &mut self,
         maybe_colour: Option<(f32, f32, f32, f32)>,
+        is_fg_colour: bool,
         x: usize,
         y: usize,
         maybe_timeout: Option<u32>,
@@ -526,14 +523,16 @@ impl SteppableTerminal {
                 .await
                 .with_whatever_context(|err| format!("Couldn't render output: {err:?}"))?;
             let cell = self.get_cell_at(x, y)?;
-
-            if cell
+            let attributes = cell
                 .clone()
                 .with_whatever_context(|| format!("Couldn't find cell at: {x}x{y}"))?
                 .attrs()
-                .background()
-                == colour
-            {
+                .clone();
+
+            if is_fg_colour && attributes.foreground() == colour {
+                break;
+            }
+            if !is_fg_colour && attributes.background() == colour {
                 break;
             }
             if i == timeout {
@@ -547,6 +546,78 @@ impl SteppableTerminal {
         }
 
         Ok(())
+    }
+
+    /// Wait for the given background colour at the given coordinates
+    ///
+    /// # Errors
+    /// * If it can't get the screen contents.
+    /// * If it no cell is found at the coords
+    #[inline]
+    pub async fn wait_for_bg_color_at(
+        &mut self,
+        maybe_colour: Option<(f32, f32, f32, f32)>,
+        x: usize,
+        y: usize,
+        maybe_timeout: Option<u32>,
+    ) -> Result<(), crate::errors::SteppableTerminalError> {
+        self.wait_for_color_at(maybe_colour, false, x, y, maybe_timeout)
+            .await
+    }
+
+    /// Wait for the given foreground colour at the given coordinates
+    ///
+    /// # Errors
+    /// * If it can't get the screen contents.
+    /// * If it no cell is found at the coords
+    #[inline]
+    pub async fn wait_for_fg_color_at(
+        &mut self,
+        maybe_colour: Option<(f32, f32, f32, f32)>,
+        x: usize,
+        y: usize,
+        maybe_timeout: Option<u32>,
+    ) -> Result<(), crate::errors::SteppableTerminalError> {
+        self.wait_for_color_at(maybe_colour, true, x, y, maybe_timeout)
+            .await
+    }
+
+    /// Wait for the given foreground and background colour at the given coordinates
+    ///
+    /// # Errors
+    /// * If it can't get the screen contents.
+    /// * If it no cell is found at the coords
+    #[inline]
+    pub async fn wait_for_colors_at(
+        &mut self,
+        background_colour: Option<(f32, f32, f32, f32)>,
+        foreground_colour: Option<(f32, f32, f32, f32)>,
+        x: usize,
+        y: usize,
+        maybe_timeout: Option<u32>,
+    ) -> Result<(), crate::errors::SteppableTerminalError> {
+        self.wait_for_color_at(foreground_colour, true, x, y, maybe_timeout)
+            .await?;
+        self.wait_for_color_at(background_colour, false, x, y, maybe_timeout)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Get the colour of a cell from its colour attribute.
+    #[inline]
+    #[must_use]
+    pub const fn extract_colour(
+        colour_attribute: termwiz::color::ColorAttribute,
+    ) -> Option<termwiz::color::SrgbaTuple> {
+        match colour_attribute {
+            termwiz::color::ColorAttribute::TrueColorWithPaletteFallback(srgba_tuple, _)
+            | termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(srgba_tuple) => {
+                Some(srgba_tuple)
+            }
+            termwiz::color::ColorAttribute::PaletteIndex(_)
+            | termwiz::color::ColorAttribute::Default => None,
+        }
     }
 
     /// Convenience function for making Termwiz colours.
