@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dev-dependencies]
+palette.workspace = true
 shadow-terminal = { path = "../shadow_terminal" }
 tempfile.workspace = true
 termwiz.workspace = true

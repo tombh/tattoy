@@ -58,6 +58,8 @@ pub(crate) struct Config {
     pub show_tattoy_indicator: bool,
     /// Colour grading
     pub color: Color,
+    /// Auto adjusting of text contrast
+    pub text_contrast: TextContrast,
     /// Plugins config
     pub plugins: Vec<crate::tattoys::plugins::Config>,
     /// The minimap
@@ -96,6 +98,7 @@ impl Default for Config {
             keybindings: super::input::KeybindingsRaw::new(),
             show_tattoy_indicator: true,
             color: Color::default(),
+            text_contrast: TextContrast::default(),
             plugins: Vec::default(),
             minimap: crate::tattoys::minimap::Config::default(),
             shader: crate::tattoys::shaders::main::Config::default(),
@@ -125,6 +128,23 @@ impl Default for Color {
     }
 }
 
+/// Config for auto adjusting text contrast.
+#[derive(serde::Deserialize, Debug, Clone)]
+pub(crate) struct TextContrast {
+    /// Whether it's enabled
+    pub enabled: bool,
+    /// The target contrast
+    pub target_contrast: f32,
+}
+
+impl Default for TextContrast {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            target_contrast: 2.0,
+        }
+    }
+}
 impl Config {
     /// Canonical path to the config directory.
     pub async fn directory(

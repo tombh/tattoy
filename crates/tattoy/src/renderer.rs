@@ -61,6 +61,7 @@ impl Renderer {
         let size = Self::get_users_tty_size()?;
         let width = size.cols.try_into()?;
         let height = size.rows.try_into()?;
+
         let renderer = Self {
             state,
             width,
@@ -321,7 +322,7 @@ impl Renderer {
         if self.is_a_plugin_replacing_the_pty_layer() && is_rendering_enabled {
             self.render_tattoys(&mut frame, std::cmp::Ordering::Equal)?;
         } else {
-            self.render_pty(&mut frame)?;
+            self.render_pty(&mut frame).await?;
         }
 
         if is_rendering_enabled {
@@ -349,7 +350,7 @@ impl Renderer {
             .get_mut(usize::from(x))
             .context(format!("No x coord ({x}) for cell"))?;
 
-        Self::composite_cell(composited_cell, &self.indicator_cell, 1.0);
+        Self::composite_cell(composited_cell, &self.indicator_cell, 1.0, None);
 
         Ok(())
     }
@@ -396,6 +397,7 @@ impl Renderer {
                             x.into(),
                             y.into(),
                             tattoy.opacity,
+                            None,
                         )?;
                     }
                 }
@@ -406,14 +408,24 @@ impl Renderer {
     }
 
     /// Render the PTY to the compositor frame.
-    fn render_pty(&mut self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
+    async fn render_pty(&mut self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
         let pty_frame_size = self.pty.dimensions();
         let pty_cells = self.pty.screen_cells();
+
+        let target_text = self.state.config.read().await.text_contrast.clone();
+        let target_text_contrast = target_text.enabled.then_some(target_text.target_contrast);
 
         for y in 0..self.height {
             for x in 0..self.width {
                 if usize::from(x) < pty_frame_size.0 && usize::from(y) < pty_frame_size.1 {
-                    Self::composite_cell_at_coordinate(frame, &pty_cells, x.into(), y.into(), 1.0)?;
+                    Self::composite_cell_at_coordinate(
+                        frame,
+                        &pty_cells,
+                        x.into(),
+                        y.into(),
+                        1.0,
+                        target_text_contrast,
+                    )?;
                 }
             }
         }
@@ -442,6 +454,7 @@ impl Renderer {
         x: usize,
         y: usize,
         opacity: f32,
+        target_text_contrast: Option<f32>,
     ) -> Result<()> {
         let composited_cell = base
             .get_mut(y)
@@ -454,13 +467,18 @@ impl Renderer {
             .get(x)
             .context(format!("No x coord ({x}) for cell"))?;
 
-        Self::composite_cell(composited_cell, cell_above, opacity);
+        Self::composite_cell(composited_cell, cell_above, opacity, target_text_contrast);
 
         Ok(())
     }
 
     /// Composite 2 cells together.
-    fn composite_cell(composited_cell: &mut Cell, cell_above: &Cell, opacity: f32) {
+    fn composite_cell(
+        composited_cell: &mut Cell,
+        cell_above: &Cell,
+        opacity: f32,
+        maybe_target_text_contrast: Option<f32>,
+    ) {
         let character_above = cell_above.str().to_owned();
         let is_character_above_text = !character_above.is_empty() && character_above != " ";
         if is_character_above_text {
@@ -474,6 +492,13 @@ impl Renderer {
 
         let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None, opacity);
         opaque.blend_all(cell_above);
+        if let Some(target_text_contrast) = maybe_target_text_contrast {
+            // TODO:
+            // * Check that the colour is from the terminal palette.
+            if character_above.chars().all(char::is_alphanumeric) {
+                opaque.ensure_readable_contrast(target_text_contrast);
+            }
+        }
     }
 
     /// Apply colour changes, like saturation, hue, contrast, etc.

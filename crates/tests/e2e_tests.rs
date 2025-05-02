@@ -13,6 +13,7 @@
 mod e2e {
     use std::io::Write as _;
 
+    use palette::color_difference::Wcag21RelativeContrast as _;
     use shadow_terminal::{
         shadow_terminal::Config,
         steppable_terminal::{Input, SteppableTerminal},
@@ -387,5 +388,36 @@ mod e2e {
             .wait_for_string("testing background command", None)
             .await
             .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn auto_text_contrast() {
+        fn contrast(cell: &termwiz::cell::Cell) -> f32 {
+            let fg_raw = SteppableTerminal::extract_colour(cell.attrs().foreground()).unwrap();
+            let bg_raw = SteppableTerminal::extract_colour(cell.attrs().background()).unwrap();
+            let fg = palette::Srgb::new(fg_raw.0, fg_raw.1, fg_raw.2);
+            let bg = palette::Srgb::new(bg_raw.0, bg_raw.1, bg_raw.2);
+            bg.relative_contrast(fg)
+        }
+
+        let mut tattoy = start_tattoy(None).await;
+        tattoy
+            .send_command("resources/print_low_contrast_samples.sh")
+            .unwrap();
+        tattoy.wait_for_string("middle", None).await.unwrap();
+        tattoy.wait_for_string("dark", None).await.unwrap();
+        tattoy.wait_for_string("light", None).await.unwrap();
+
+        let middle = tattoy.get_cell_at(0, 1).unwrap().unwrap();
+        assert_eq!(middle.str(), "m");
+        assert!(contrast(&middle) > 1.9);
+
+        let dark = tattoy.get_cell_at(0, 2).unwrap().unwrap();
+        assert_eq!(dark.str(), "d");
+        assert!(contrast(&dark) > 1.9);
+
+        let light = tattoy.get_cell_at(0, 3).unwrap().unwrap();
+        assert_eq!(light.str(), "l");
+        assert!(contrast(&light) > 1.9);
     }
 }
