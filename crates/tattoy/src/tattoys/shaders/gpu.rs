@@ -34,46 +34,45 @@ pub(crate) struct GPU<'gpu> {
     pub shader_path: std::path::PathBuf,
     /// The time at which rendering began.
     started: std::time::Instant,
+
+    /// The `wgpu` device.
+    pub device: wgpu::Device,
+    /// The GPU render queue.
+    pub queue: wgpu::Queue,
+
+    /// The layout of all the data that is bound to the shader.
+    bindgroup_layout: wgpu::BindGroupLayout,
+
     /// Useful varibale data for shaders. Eg, mouse coordinates, wall time, etc
     pub variables: Variables,
     /// The buffer containing shader variable data.
     variables_buffer: wgpu::Buffer,
-    /// The layout of the variables buffer binding.
-    variables_bindgroup_layout: wgpu::BindGroupLayout,
-    /// The texture descriptor
-    texture_descriptor: wgpu::TextureDescriptor<'gpu>,
 
-    /// The `wgpu` device.
-    device: wgpu::Device,
-    /// The GPU render queue.
-    queue: wgpu::Queue,
-
+    /// The output texture descriptor
+    output_texture_descriptor: wgpu::TextureDescriptor<'gpu>,
     /// The texture on which the final render is placed.
-    texture: wgpu::Texture,
-    /// The final render's texture view.
-    texture_view: wgpu::TextureView,
+    output_texture: wgpu::Texture,
     /// The raw data for the final render.
     output_buffer: wgpu::Buffer,
+
+    /// The texture for the contents of the TTY.
+    pub ichannel_texture: wgpu::Texture,
+
     /// The GPU render pipeline.
     pipeline: Option<wgpu::RenderPipeline>,
 }
 
 impl GPU<'_> {
-    // TODO: This does not scale. We will need to dynamically recreate the texture to factors of
-    // 256 on terminal resizes.
-    //
-    /// The size of the square GPU texture used to create the fullscren triangle upon which the
-    /// Shadertoy shaders draw pixels.
-    const TEXTURE_SIZE: u32 = 512;
-
-    /// Needed for GPU buffers and such.
-    fn u32_size() -> Result<u32> {
-        Ok(std::mem::size_of::<u32>().try_into()?)
-    }
-
     /// Instantiate
-    pub async fn new(shader_path: std::path::PathBuf) -> Result<Self> {
-        let variables = Variables::default();
+    pub async fn new(shader_path: std::path::PathBuf, width: u16, height: u16) -> Result<Self> {
+        tracing::info!(
+            "Initialising GPU pipeline for {shader_path:?} with dimensions {width}x{height}"
+        );
+
+        let variables = Variables {
+            iResolution: [width.into(), height.into(), 0.0],
+            ..Default::default()
+        };
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -91,10 +90,58 @@ impl GPU<'_> {
             .request_device(&wgpu::DeviceDescriptor::default(), None)
             .await?;
 
-        let texture_descriptor = wgpu::TextureDescriptor {
+        let output_texture_descriptor =
+            Self::output_texture_descriptor(width.into(), height.into());
+        let output_texture = device.create_texture(&output_texture_descriptor);
+        let output_buffer = device.create_buffer(&Self::output_buffer_descriptor(
+            width.into(),
+            height.into(),
+        )?);
+
+        let variables_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[variables]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let bindgroup_layout = device.create_bind_group_layout(&Self::bindgroup_layout());
+
+        let ichannel_texture =
+            device.create_texture(&Self::ichannel_texture_descriptor(width, height));
+        let mut gpu = Self {
+            shader_path,
+            started: std::time::Instant::now(),
+
+            device,
+            queue,
+
+            variables,
+            variables_buffer,
+            bindgroup_layout,
+
+            output_texture_descriptor,
+            output_texture,
+            output_buffer,
+
+            ichannel_texture,
+
+            pipeline: None,
+        };
+
+        gpu.build_pipeline().await?;
+
+        Ok(gpu)
+    }
+
+    /// The output texture descriptor.
+    fn output_texture_descriptor(width: u32, height: u32) -> wgpu::TextureDescriptor<'static> {
+        let aligned_width = Self::align_dimension(width);
+        let aligned_height = Self::align_dimension(height);
+        tracing::debug!("Resizing output texture: {aligned_width}x{aligned_height}");
+        wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: Self::TEXTURE_SIZE,
-                height: Self::TEXTURE_SIZE,
+                width: aligned_width,
+                height: Self::align_dimension(height),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -104,30 +151,36 @@ impl GPU<'_> {
             usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: None,
             view_formats: &[],
-        };
+        }
+    }
 
-        let texture = device.create_texture(&texture_descriptor);
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
+    /// The output buffer descriptor.
+    fn output_buffer_descriptor(
+        width: u32,
+        height: u32,
+    ) -> Result<wgpu::BufferDescriptor<'static>> {
         let output_buffer_size: wgpu::BufferAddress =
-            (Self::u32_size()? * Self::TEXTURE_SIZE * Self::TEXTURE_SIZE).into();
-        let output_buffer_desc = wgpu::BufferDescriptor {
+            (Self::u32_size()? * Self::align_dimension(width) * Self::align_dimension(height))
+                .into();
+        Ok(wgpu::BufferDescriptor {
             size: output_buffer_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             label: None,
             mapped_at_creation: false,
-        };
-        let output_buffer = device.create_buffer(&output_buffer_desc);
+        })
+    }
 
-        let variables_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[variables]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+    /// Align a buffer or texture dimension to a consistent multiple.
+    const fn align_dimension(number: u32) -> u32 {
+        let multiple = 256;
+        number.div_ceil(multiple) - 1 + multiple
+    }
 
-        let variables_bindgroup_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
+    /// Create the bind group layout that defines where the various shader data is located.
+    const fn bindgroup_layout() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -136,31 +189,26 @@ impl GPU<'_> {
                         min_binding_size: None,
                     },
                     count: None,
-                }],
-                label: Some("variables_bind_group_layout"),
-            });
-
-        let mut gpu = Self {
-            shader_path,
-            started: std::time::Instant::now(),
-
-            variables,
-            variables_buffer,
-            variables_bindgroup_layout,
-            texture_descriptor,
-
-            device,
-            queue,
-
-            texture,
-            texture_view,
-            output_buffer,
-            pipeline: None,
-        };
-
-        gpu.build_pipeline().await?;
-
-        Ok(gpu)
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            label: Some("bind_group_layout"),
+        }
     }
 
     /// (Re)build the render pipeline
@@ -170,7 +218,7 @@ impl GPU<'_> {
             self.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
-                    bind_group_layouts: &[&self.variables_bindgroup_layout],
+                    bind_group_layouts: &[&self.bindgroup_layout],
                     push_constant_ranges: &[],
                 });
 
@@ -189,7 +237,7 @@ impl GPU<'_> {
                     module: &fragment_shader,
                     entry_point: Some("main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: self.texture_descriptor.format,
+                        format: self.output_texture_descriptor.format,
                         blend: Some(wgpu::BlendState {
                             alpha: wgpu::BlendComponent::REPLACE,
                             color: wgpu::BlendComponent::REPLACE,
@@ -227,6 +275,68 @@ impl GPU<'_> {
         Ok(())
     }
 
+    /// The bind group for all data sent to the shader.
+    fn create_bind_group(&self) -> wgpu::BindGroup {
+        let ichannel_sampler = self
+            .device
+            .create_sampler(&wgpu::SamplerDescriptor::default());
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.bindgroup_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.variables_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self
+                            .ichannel_texture
+                            .create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&ichannel_sampler),
+                },
+            ],
+            label: Some("bind_group"),
+        })
+    }
+
+    /// Get the size of the actual render image. It is the same size as the user's terminal except
+    /// that the height is twice the number of rows because of the UTF8 half-block trick.
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "Resolution is safely within reasonable limits of f32"
+    )]
+    pub(crate) const fn get_image_size(&self) -> (u16, u16) {
+        let width = self.variables.iResolution[0] as u16;
+        let height = self.variables.iResolution[1] as u16;
+        (width, height)
+    }
+
+    /// Needed for GPU buffers and such.
+    fn u32_size() -> Result<u32> {
+        Ok(std::mem::size_of::<u32>().try_into()?)
+    }
+
+    /// Rebuild the output texture and buffer.
+    fn rebuild_output_buffer(&mut self) -> Result<()> {
+        let image_size = self.get_image_size();
+        self.output_texture_descriptor =
+            Self::output_texture_descriptor(image_size.0.into(), image_size.1.into());
+        self.output_texture = self.device.create_texture(&self.output_texture_descriptor);
+        self.output_buffer = self.device.create_buffer(&Self::output_buffer_descriptor(
+            image_size.0.into(),
+            image_size.1.into(),
+        )?);
+        Ok(())
+    }
+
     /// Upda the shader variables with the current elapse wall time since the render began.
     #[expect(
         clippy::as_conversions,
@@ -239,15 +349,17 @@ impl GPU<'_> {
     }
 
     /// Update the `iResolution` variable for the shaders to consume.
-    pub fn update_resolution(&mut self, width: u16, height: u16) {
+    pub fn update_resolution(&mut self, width: u16, height: u16) -> Result<()> {
         self.variables.iResolution = [width.into(), height.into(), 0.0];
+        self.recreate_ichannel_texture();
+        self.rebuild_output_buffer()
     }
 
     /// Update the `iMouse` variable for the shaders to consume.
-    pub fn update_mouse_position(&mut self, x: u16, y_cell: u16) {
-        let height = self.variables.iResolution[1];
-        let y: f32 = (y_cell * 2).into();
-        self.variables.iMouse = [x.into(), height - y];
+    pub fn update_mouse_position(&mut self, col: u16, row: u16) {
+        let image_height = self.variables.iResolution[1];
+        let y: f32 = (row * 2).into();
+        self.variables.iMouse = [col.into(), image_height - y];
     }
 
     /// Tick the render
@@ -264,11 +376,15 @@ impl GPU<'_> {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
+        let view = &self
+            .output_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
         {
             let render_pass_desc = wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.texture_view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -288,15 +404,18 @@ impl GPU<'_> {
 
             if let Some(pipeline) = self.pipeline.as_ref() {
                 render_pass.set_pipeline(pipeline);
-                render_pass.set_bind_group(0, &self.variables_binding(), &[]);
+                render_pass.set_bind_group(0, &self.create_bind_group(), &[]);
                 render_pass.draw(0..3, 0..1);
             }
         }
 
+        let image_size = self.get_image_size();
+        let aligned_width = Self::align_dimension(image_size.0.into());
+        let aligned_height = Self::align_dimension(image_size.1.into());
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 aspect: wgpu::TextureAspect::All,
-                texture: &self.texture,
+                texture: &self.output_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
@@ -304,13 +423,13 @@ impl GPU<'_> {
                 buffer: &self.output_buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(Self::u32_size()? * Self::TEXTURE_SIZE),
-                    rows_per_image: Some(Self::TEXTURE_SIZE),
+                    bytes_per_row: Some(Self::u32_size()? * aligned_width),
+                    rows_per_image: Some(aligned_height),
                 },
             },
             wgpu::Extent3d {
-                width: Self::TEXTURE_SIZE,
-                height: Self::TEXTURE_SIZE,
+                width: aligned_width,
+                height: aligned_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -338,9 +457,12 @@ impl GPU<'_> {
         self.device.poll(wgpu::Maintain::Wait);
         rx.await??;
 
+        let image_size = self.get_image_size();
+        let aligned_width = Self::align_dimension(image_size.0.into());
+        let aligned_height = Self::align_dimension(image_size.1.into());
         let raw_image = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-            Self::TEXTURE_SIZE,
-            Self::TEXTURE_SIZE,
+            aligned_width,
+            aligned_height,
             buffer_slice.get_mapped_range(),
         )
         .context("Couldn't convert raw GPU buffer to image")?;
@@ -349,20 +471,12 @@ impl GPU<'_> {
     }
 
     /// Convert the raw GPU image to more friendly RGB floating point pixels.
-    #[expect(
-        clippy::as_conversions,
-        clippy::cast_sign_loss,
-        clippy::cast_possible_truncation,
-        reason = "Resolution is safely within reasonable limits of f32"
-    )]
     fn extract_rgb32f_image(
         &self,
         imaged: &image::ImageBuffer<image::Rgba<u8>, wgpu::BufferView<'_>>,
     ) -> image::ImageBuffer<image::Rgb<f32>, Vec<f32>> {
-        let width = self.variables.iResolution[0] as u32;
-        let height = self.variables.iResolution[1] as u32;
-
-        image::Rgb32FImage::from_fn(width, height, |x, y| {
+        let image_size = self.get_image_size();
+        image::Rgb32FImage::from_fn(image_size.0.into(), image_size.1.into(), |x, y| {
             if let Some(pixel) = imaged.get_pixel_checked(x, y) {
                 [
                     f32::from(pixel[0]) / 255.0,
@@ -416,17 +530,5 @@ impl GPU<'_> {
             });
 
         Ok((vertex_shader, fragment_shader))
-    }
-
-    /// The bind group for the uniform variables buffer.
-    fn variables_binding(&self) -> wgpu::BindGroup {
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.variables_bindgroup_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.variables_buffer.as_entire_binding(),
-            }],
-            label: Some("varibales_bind_group"),
-        })
     }
 }

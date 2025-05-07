@@ -131,7 +131,21 @@ impl<'cell> OpaqueCell<'cell> {
 
     /// Ensure that the colour difference between the background and foreground is sufficient
     /// enough to be readable.
-    pub fn ensure_readable_contrast(&mut self, target_contrast: f32) {
+    pub fn ensure_readable_contrast(
+        &mut self,
+        target_contrast: f32,
+        apply_to_readable_text_only: bool,
+    ) {
+        // TODO:
+        // * Check that the colour is from the terminal palette.
+        if apply_to_readable_text_only && !self.cell.str().chars().all(char::is_alphanumeric) {
+            return;
+        }
+
+        if self.cell.str() == "▀" || self.cell.str() == "▄" {
+            return;
+        }
+
         // I think these default colours are only assigned for the very first composited layer?
         let fg_raw =
             Self::extract_colour(self.cell.attrs().foreground()).unwrap_or(self.default_colour);

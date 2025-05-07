@@ -1,6 +1,6 @@
 //! Shared state and behaviour useful to all tattoys.#
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{ContextCompat as _, Result};
 
 /// Shared state and behaviour useful to all tattoys.
 pub(crate) struct Tattoyer {
@@ -257,5 +257,69 @@ impl Tattoyer {
         }
 
         None
+    }
+
+    /// Convert the PTY's contents to a pixel image representation.
+    pub fn convert_pty_to_pixel_image(
+        &mut self,
+        kind: &shadow_terminal::output::SurfaceKind,
+    ) -> Result<image::DynamicImage> {
+        let pixels_per_line = 2;
+
+        let surface = match kind {
+            shadow_terminal::output::SurfaceKind::Scrollback => &mut self.scrollback.surface,
+            shadow_terminal::output::SurfaceKind::Screen => &mut self.screen.surface,
+            _ => {
+                color_eyre::eyre::bail!("Unkown surface kind: {kind:?}");
+            }
+        };
+        let surface_width = surface.dimensions().0;
+        let surface_height = surface.dimensions().1;
+
+        tracing::trace!(
+            "Converting PTY of {kind:?} to a pixels, size: {}x{}. Sample content:\n{:.200}\n...",
+            surface_width,
+            surface_height,
+            surface.screen_chars_to_string()
+        );
+
+        let mut image = image::DynamicImage::new_rgba8(
+            surface_width.try_into()?,
+            (surface_height * pixels_per_line).try_into()?,
+        );
+        let image_buffer = image
+            .as_mut_rgba8()
+            .context("Couldn't get mutable reference to scrollback image")?;
+
+        let cells = &surface.screen_cells();
+        for (x, y, pixel) in image_buffer.enumerate_pixels_mut() {
+            let line = cells
+                .get(usize::try_from(y)?.div_euclid(pixels_per_line))
+                .context("Couldn't get surface line")?;
+
+            let cell = &line
+                .get(usize::try_from(x)?)
+                .context("Couldn't get surface cell from line")?;
+
+            let cell_colour = if cell.str() == " " {
+                crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background())
+                    .map_or(crate::opaque_cell::DEFAULT_COLOUR, |background_colour| {
+                        background_colour
+                    })
+            } else {
+                let maybe_colour =
+                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().foreground());
+
+                if let Some(colour) = maybe_colour {
+                    colour
+                } else {
+                    color_eyre::eyre::bail!("Using Minimap without a parsed palette");
+                }
+            };
+
+            *pixel = image::Rgba(cell_colour.to_srgb_u8().into());
+        }
+
+        Ok(image)
     }
 }

@@ -9,3 +9,23 @@ layout(binding = 0) uniform Variables
   float iTime;
   int   iFrame;
 };
+
+layout(binding = 1) uniform texture2D iChannelTexture;
+layout(binding = 2) uniform sampler iChannel0;
+
+#define textureSampler texture
+#define textureSamplerLod textureLod
+
+vec4 iChannel1 = iChannel0;
+
+vec4 textureSampler(sampler iChannelSampler, vec2 coords) {
+	return texture(sampler2D(iChannelTexture, iChannelSampler), coords);
+}
+
+vec4 textureSampler(sampler iChannelSampler, vec2 coords, float bias) {
+	return texture(sampler2D(iChannelTexture, iChannelSampler), coords, bias);
+}
+
+vec4 textureSamplerLod(sampler iChannelSampler, vec2 coords, float lod) {
+	return textureLod(sampler2D(iChannelTexture, iChannelSampler), coords, lod);
+}
