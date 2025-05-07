@@ -6,6 +6,10 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 use crate::tattoys::tattoyer::Tattoyer;
 
 /// All the user config for the shader tattoy.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "We need the bools for the config"
+)]
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 pub(crate) struct Config {
@@ -15,6 +19,17 @@ pub(crate) struct Config {
     pub path: std::path::PathBuf,
     /// The opacity of the rendered shader layer.
     pub opacity: f32,
+    /// The shader is still sent and run on the GPU but it's not rendered to a layer on the
+    /// terminal. This is most likely useful in conjunction with `render_shader_colours_to_text`,
+    /// as "contents" of the shader are rendered via the terminal's text.
+    pub render: bool,
+    /// Whether to upload a pixel representation of the user's terminal. Useful for shader's that
+    /// replace the text of the terminal, as Ghostty shaders do.
+    pub upload_tty_as_pixels: bool,
+    /// Define the terminal's text colours based on the colour of the shader pixel at the same
+    /// position. This would most likely be used in conjunction with auto contrast enabled,
+    /// otherwise the text won't actually be readable.
+    pub render_shader_colours_to_text: bool,
 }
 
 impl Default for Config {
@@ -23,6 +38,9 @@ impl Default for Config {
             enabled: false,
             path: "shaders/point_lights.glsl".into(),
             opacity: 0.75,
+            render: true,
+            upload_tty_as_pixels: true,
+            render_shader_colours_to_text: false,
         }
     }
 }
@@ -43,8 +61,14 @@ impl Shaders<'_> {
     ) -> Result<Self> {
         let shader_directory = state.config_path.read().await.clone();
         let shader_path = state.config.read().await.shader.path.clone();
-        let gpu = super::gpu::GPU::new(shader_directory.join(shader_path)).await?;
-        let tattoy = Tattoyer::new("shaders".to_owned(), state, -10, 1.0, output_channel).await;
+        let tty_size = *state.tty_size.read().await;
+        let gpu = super::gpu::GPU::new(
+            shader_directory.join(shader_path),
+            tty_size.width,
+            tty_size.height * 2,
+        )
+        .await?;
+        let tattoy = Tattoyer::new("shader".to_owned(), state, -10, 1.0, output_channel).await;
         Ok(Self { tattoy, gpu })
     }
 
@@ -97,7 +121,28 @@ impl Shaders<'_> {
                     }
                 }
 
+                if let crate::run::Protocol::Resize { width, height } = &message {
+                    self.gpu.update_resolution(*width, height * 2)?;
+                }
+
+                let is_screen_changed = Tattoyer::is_screen_output_changed(&message);
                 self.tattoy.handle_common_protocol_messages(message)?;
+
+                let is_upload_tty_as_pixels = self
+                    .tattoy
+                    .state
+                    .config
+                    .read()
+                    .await
+                    .shader
+                    .upload_tty_as_pixels;
+                if is_upload_tty_as_pixels && is_screen_changed {
+                    let pty_image = self.tattoy.convert_pty_to_pixel_image(
+                        &shadow_terminal::output::SurfaceKind::Screen,
+                    )?;
+                    let rotated = pty_image.flipv();
+                    self.gpu.update_ichannel_texture_data(&rotated.into());
+                }
             }
             Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
         }
@@ -155,8 +200,6 @@ impl Shaders<'_> {
 
     /// Tick the render
     async fn render(&mut self) -> Result<()> {
-        self.gpu
-            .update_resolution(self.tattoy.width, self.tattoy.height * 2);
         let cursor = self.tattoy.screen.surface.cursor_position();
         self.gpu
             .update_mouse_position(cursor.0.try_into()?, cursor.1.try_into()?);

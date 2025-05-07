@@ -10,6 +10,7 @@ pub mod config {
     pub mod input;
     pub mod main;
 }
+pub mod compositor;
 pub mod loader;
 pub mod opaque_cell;
 pub mod raw_input;
@@ -42,6 +43,7 @@ pub mod tattoys {
     /// Shadertoy-like shaders
     pub mod shaders {
         pub mod gpu;
+        pub mod ichannel;
         pub mod main;
     }
 }

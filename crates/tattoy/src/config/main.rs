@@ -135,6 +135,8 @@ pub(crate) struct TextContrast {
     pub enabled: bool,
     /// The target contrast
     pub target_contrast: f32,
+    /// Whether to adjust the contrast for readable text only, or all text.
+    pub apply_to_readable_text_only: bool,
 }
 
 impl Default for TextContrast {
@@ -142,6 +144,7 @@ impl Default for TextContrast {
         Self {
             enabled: true,
             target_contrast: 2.0,
+            apply_to_readable_text_only: true,
         }
     }
 }

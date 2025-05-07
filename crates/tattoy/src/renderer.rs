@@ -3,7 +3,7 @@
 use std::str::FromStr as _;
 use std::sync::Arc;
 
-use color_eyre::eyre::{bail, ContextCompat as _, Result};
+use color_eyre::eyre::{bail, Result};
 use termwiz::cell::{Cell, CellAttributes};
 
 use termwiz::surface::Surface as TermwizSurface;
@@ -11,6 +11,7 @@ use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
 use termwiz::terminal::buffered::BufferedTerminal;
 use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
 
+use crate::compositor::Compositor;
 use crate::run::FrameUpdate;
 use crate::shared_state::SharedState;
 
@@ -49,6 +50,8 @@ pub(crate) struct Renderer {
     pub tattoys: std::collections::HashMap<String, crate::surface::Surface>,
     /// A shadow version of the user's conventional terminal
     pub pty: TermwizSurface,
+    /// The base composited frame onto which all tattoys are rendered.
+    pub frame: termwiz::surface::Surface,
     /// A little indicator to show that Tattoy is running.
     indicator_cell: Cell,
     /// Is the cursor currently visible?
@@ -68,6 +71,7 @@ impl Renderer {
             height,
             tattoys: std::collections::HashMap::default(),
             pty: TermwizSurface::new(width.into(), height.into()),
+            frame: TermwizSurface::new(width.into(), height.into()),
             indicator_cell: Self::indicator_cell()?,
             is_cursor_visible: true,
         };
@@ -238,6 +242,11 @@ impl Renderer {
         }
     }
 
+    /// Reset the frame for every render.
+    fn reset_frame(&mut self) {
+        self.frame = TermwizSurface::new(self.width.into(), self.height.into());
+    }
+
     /// Do a single render to the user's actual terminal. It uses a diffing algorithm to make
     /// the minimum number of changes.
     async fn render(
@@ -250,7 +259,8 @@ impl Renderer {
             FrameUpdate::TattoySurface(surface) => {
                 let surface_id = surface.id.clone();
                 self.tattoys.insert(surface_id.clone(), surface);
-                if surface_id != "random_walker" && surface_id != "shaders" {
+                // TODO: convert IDs to something more constant.
+                if surface_id != "random_walker" && surface_id != "shader" {
                     tracing::trace!("Rendering {} frame update", surface_id);
                 }
             }
@@ -267,14 +277,14 @@ impl Renderer {
             return Ok(());
         }
 
-        let new_frame = self.composite().await?;
+        self.composite().await?;
 
         // Hide the cursor without flushing.
         composited_terminal.add_change(TermwizChange::CursorVisibility(
             termwiz::surface::CursorVisibility::Hidden,
         ));
 
-        let changes = composited_terminal.diff_screens(&new_frame);
+        let changes = composited_terminal.diff_screens(&self.frame);
         composited_terminal.add_changes(changes);
 
         let (cursor_x, cursor_y) = self.pty.cursor_position();
@@ -310,47 +320,32 @@ impl Renderer {
 
     // TODO: A failed render shouldn't crash the whole tick.
     /// Composite all the tattoys and the PTY together into a single surface (frame).
-    async fn composite(&mut self) -> Result<TermwizSurface> {
-        let mut surface = TermwizSurface::new(self.width.into(), self.height.into());
-        let mut frame = surface.screen_cells();
+    async fn composite(&mut self) -> Result<()> {
         let is_rendering_enabled = *self.state.is_rendering_enabled.read().await;
+        self.reset_frame();
 
         if is_rendering_enabled {
-            self.render_tattoys_below(&mut frame)?;
+            self.render_tattoys_below().await?;
         }
 
         if self.is_a_plugin_replacing_the_pty_layer() && is_rendering_enabled {
-            self.render_tattoys(&mut frame, std::cmp::Ordering::Equal)?;
+            self.render_tattoys(std::cmp::Ordering::Equal).await?;
         } else {
-            self.render_pty(&mut frame).await?;
+            self.render_pty().await?;
         }
 
         if is_rendering_enabled {
-            self.render_tattoys_above(&mut frame)?;
-            self.colour_grade(&mut frame).await?;
+            self.render_tattoys_above().await?;
+            self.colour_grade().await?;
         }
-
-        self.add_indicator(&mut frame).await?;
-
-        Ok(surface)
-    }
-
-    /// Add a little indicator in the top-right to show that Tattoy is running.
-    async fn add_indicator(&self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
-        if !self.state.config.read().await.show_tattoy_indicator {
-            return Ok(());
+        if self.state.config.read().await.show_tattoy_indicator {
+            Compositor::add_indicator(
+                &mut self.frame.screen_cells(),
+                &self.indicator_cell,
+                (self.width - 1).into(),
+                0,
+            )?;
         }
-
-        let x = self.width - 1;
-        let y = 0usize;
-
-        let composited_cell = frame
-            .get_mut(y)
-            .context(format!("No y coord ({y}) for cell"))?
-            .get_mut(usize::from(x))
-            .context(format!("No x coord ({x}) for cell"))?;
-
-        Self::composite_cell(composited_cell, &self.indicator_cell, 1.0, None);
 
         Ok(())
     }
@@ -361,21 +356,17 @@ impl Renderer {
     }
 
     /// Render all the tattoys that appear below the PTY.
-    fn render_tattoys_below(&mut self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
-        self.render_tattoys(frame, std::cmp::Ordering::Less)
+    async fn render_tattoys_below(&mut self) -> Result<()> {
+        self.render_tattoys(std::cmp::Ordering::Less).await
     }
 
     /// Render all the tattoys that appear above the PTY.
-    fn render_tattoys_above(&mut self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
-        self.render_tattoys(frame, std::cmp::Ordering::Greater)
+    async fn render_tattoys_above(&mut self) -> Result<()> {
+        self.render_tattoys(std::cmp::Ordering::Greater).await
     }
 
     /// Render a tattoy onto the compositor frame.
-    fn render_tattoys(
-        &mut self,
-        frame: &mut Vec<&mut [Cell]>,
-        comparator: std::cmp::Ordering,
-    ) -> Result<()> {
+    async fn render_tattoys(&mut self, comparator: std::cmp::Ordering) -> Result<()> {
         let mut tattoys: Vec<&mut crate::surface::Surface> = self
             .tattoys
             .values_mut()
@@ -383,23 +374,25 @@ impl Renderer {
             .collect();
         tattoys.sort_by_key(|tattoy| tattoy.layer);
 
+        let frame_size = self.frame.dimensions();
+        let mut frame_cells = self.frame.screen_cells();
         for tattoy in &mut tattoys {
+            if tattoy.id == *"shader" && !self.state.config.read().await.shader.render {
+                continue;
+            }
             let tattoy_frame_size = tattoy.surface.dimensions();
+            if tattoy_frame_size != frame_size {
+                tracing::warn!(
+                    "Not rendering '{}' as its size doesn't match the current frame size",
+                    tattoy.id
+                );
+                continue;
+            }
             let tattoy_cells = tattoy.surface.screen_cells();
 
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    if usize::from(x) < tattoy_frame_size.0 && usize::from(y) < tattoy_frame_size.1
-                    {
-                        Self::composite_cell_at_coordinate(
-                            frame,
-                            &tattoy_cells,
-                            x.into(),
-                            y.into(),
-                            tattoy.opacity,
-                            None,
-                        )?;
-                    }
+            for (frame_line, tattoy_line) in frame_cells.iter_mut().zip(tattoy_cells) {
+                for (frame_cell, tattoy_cell) in frame_line.iter_mut().zip(tattoy_line) {
+                    Compositor::composite_cells(frame_cell, tattoy_cell, tattoy.opacity);
                 }
             }
         }
@@ -408,29 +401,75 @@ impl Renderer {
     }
 
     /// Render the PTY to the compositor frame.
-    async fn render_pty(&mut self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
-        let pty_frame_size = self.pty.dimensions();
+    async fn render_pty(&mut self) -> Result<()> {
+        let frame_size = self.frame.dimensions();
+        let mut frame_cells = self.frame.screen_cells();
+
+        let pty_size = self.pty.dimensions();
         let pty_cells = self.pty.screen_cells();
 
-        let target_text = self.state.config.read().await.text_contrast.clone();
-        let target_text_contrast = target_text.enabled.then_some(target_text.target_contrast);
+        if pty_size != frame_size {
+            tracing::warn!("Not rendering PTY as its size doesn't match the current frame size");
+            return Ok(());
+        }
 
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if usize::from(x) < pty_frame_size.0 && usize::from(y) < pty_frame_size.1 {
-                    Self::composite_cell_at_coordinate(
-                        frame,
-                        &pty_cells,
-                        x.into(),
-                        y.into(),
-                        1.0,
-                        target_text_contrast,
-                    )?;
+        let config = self.state.config.read().await;
+        let text_contrast = config.text_contrast.clone();
+        let apply_to_readable_text_only = config.text_contrast.apply_to_readable_text_only;
+        let render_shader_colours_to_text = config.shader.render_shader_colours_to_text;
+        drop(config);
+
+        let maybe_shader_cells = if render_shader_colours_to_text {
+            Self::get_shader_cells(self.tattoys.get_mut("shader"), frame_size)
+        } else {
+            None
+        };
+
+        for (y, (frame_line, pty_line)) in frame_cells.iter_mut().zip(pty_cells).enumerate() {
+            for (x, (frame_cell, pty_cell)) in frame_line.iter_mut().zip(pty_line).enumerate() {
+                Compositor::composite_cells(frame_cell, pty_cell, 1.0);
+
+                if let Some(shader_cells) = maybe_shader_cells.as_ref() {
+                    // TODO: it'd be nice to include this with the other iterators, I tried but
+                    // just couldn't figure it out.
+                    let shader_cell = Compositor::get_cell(shader_cells, x, y)?;
+                    Compositor::composite_fg_colour_only(frame_cell, shader_cell);
+                }
+
+                if text_contrast.enabled {
+                    Compositor::auto_text_contrast(
+                        frame_cell,
+                        text_contrast.target_contrast,
+                        apply_to_readable_text_only,
+                    );
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// If there's a shader frame then get it.
+    fn get_shader_cells(
+        maybe_shader: Option<&mut crate::surface::Surface>,
+        frame_size: (usize, usize),
+    ) -> Option<Vec<&mut [Cell]>> {
+        if let Some(shader) = maybe_shader {
+            if shader.surface.dimensions() == frame_size {
+                let shader_cells = shader.surface.screen_cells();
+                Some(shader_cells)
+            } else {
+                tracing::debug!(
+                    "Not using shader to render PTY colours as the shader frame size doesn't matchd"
+                );
+                None
+            }
+        } else {
+            tracing::debug!(
+                "Not using shader to render PTY colours as the shader tattoy is not enabled, or not ready"
+            );
+            None
+        }
     }
 
     /// Fetch the freshly made PTY frame from the shared state.
@@ -447,65 +486,11 @@ impl Renderer {
         });
     }
 
-    /// Add a single cell to the compositor frame.
-    fn composite_cell_at_coordinate(
-        base: &mut Vec<&mut [Cell]>,
-        frame: &[&mut [Cell]],
-        x: usize,
-        y: usize,
-        opacity: f32,
-        target_text_contrast: Option<f32>,
-    ) -> Result<()> {
-        let composited_cell = base
-            .get_mut(y)
-            .context(format!("No y coord ({y}) for cell"))?
-            .get_mut(x)
-            .context(format!("No x coord ({x}) for cell"))?;
-        let cell_above = frame
-            .get(y)
-            .context(format!("No y coord ({y}) for cell"))?
-            .get(x)
-            .context(format!("No x coord ({x}) for cell"))?;
-
-        Self::composite_cell(composited_cell, cell_above, opacity, target_text_contrast);
-
-        Ok(())
-    }
-
-    /// Composite 2 cells together.
-    fn composite_cell(
-        composited_cell: &mut Cell,
-        cell_above: &Cell,
-        opacity: f32,
-        maybe_target_text_contrast: Option<f32>,
-    ) {
-        let character_above = cell_above.str().to_owned();
-        let is_character_above_text = !character_above.is_empty() && character_above != " ";
-        if is_character_above_text {
-            // All this is just because there doesn't seem to be a `cell.set_str("f")` method.
-            let old_background = composited_cell.attrs().background();
-            let old_foreground = composited_cell.attrs().foreground();
-            *composited_cell = cell_above.clone();
-            composited_cell.attrs_mut().set_background(old_background);
-            composited_cell.attrs_mut().set_foreground(old_foreground);
-        }
-
-        let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None, opacity);
-        opaque.blend_all(cell_above);
-        if let Some(target_text_contrast) = maybe_target_text_contrast {
-            // TODO:
-            // * Check that the colour is from the terminal palette.
-            if character_above.chars().all(char::is_alphanumeric) {
-                opaque.ensure_readable_contrast(target_text_contrast);
-            }
-        }
-    }
-
     /// Apply colour changes, like saturation, hue, contrast, etc.
     //
     // TODO: consider including this in the final compositing layer, just for the performance
     // gain of not having to iterate over every cell again.
-    async fn colour_grade(&self, frame: &mut Vec<&mut [Cell]>) -> Result<()> {
+    async fn colour_grade(&mut self) -> Result<()> {
         let config = self.state.config.read().await;
 
         let saturation: f64 = config.color.saturation.into();
@@ -513,7 +498,7 @@ impl Renderer {
         let hue: f64 = config.color.hue.into();
         drop(config);
 
-        for line in &mut frame.iter_mut() {
+        for line in &mut self.frame.screen_cells().iter_mut() {
             for cell in line.iter_mut() {
                 let foreground = cell.attrs().foreground();
                 if let Some(mut gradable) =
@@ -583,8 +568,8 @@ mod test {
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
-        let mut new_frame = renderer.composite().await.unwrap();
-        let cell = &new_frame.screen_cells()[0][0];
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
         assert_eq!(cell.str(), "▀");
 
         cell.clone()
@@ -611,8 +596,8 @@ mod test {
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
-        let mut new_frame = renderer.composite().await.unwrap();
-        let cell = &new_frame.screen_cells()[0][0];
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
 
         assert_eq!(cell.str(), "a");
         assert_eq!(
@@ -644,8 +629,8 @@ mod test {
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
-        let mut new_frame = renderer.composite().await.unwrap();
-        let cell = &new_frame.screen_cells()[0][0];
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
 
         assert_eq!(
             cell.attrs().background(),
