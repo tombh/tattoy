@@ -21,6 +21,12 @@ pub const ONE_MICROSECOND: u64 = 1_000_000;
 /// The number of milliseconds in a second.
 pub const MILLIS_PER_SECOND: f32 = 1_000.0;
 
+/// The minimum rate at which we check that the user's terminal has resized.
+///
+/// Each time a new frame is rendered a terminal size check is also made, which may lead to checks
+/// occuring at a higher rate than this.
+pub const CHECK_FOR_RESIZE_RATE: u64 = 30;
+
 /// The maximum number of unrendered frames to keep in the renderer's backlog.
 ///
 /// When the renderer starts struggling such that it can't render a frame before the next one
@@ -191,15 +197,23 @@ impl Renderer {
         )]
         loop {
             tokio::select! {
-                // For some reason `surfaces.recv()` doesn't let the Tokio scheduler do its thing.
-                // Even though there might be a new frame, the scheduler doesn't seem to trigger.
-                // So instead we just force the scheduler with this timer.
-                () = tokio::time::sleep(tokio::time::Duration::from_micros(1)) => {
-                    if surfaces.is_empty() {
-                        continue;
-                    }
-                    self.handle_frame_update(&mut surfaces, &mut composited_terminal, &protocol_tx).await?;
+                Some(update) = surfaces.recv() => {
+                    self.handle_frame_update(
+                        update, surfaces.len(),
+                        &mut composited_terminal,
+                        &protocol_tx
+                    ).await?;
+                }
+
+                // When surface updates are not being sent frequently enough, then we depend
+                // on this select branch for checking whether the end user's terminal has
+                // resized. Recall that this branch's future is cancelled whenever another
+                // select branch triggers, so we shouldn't have an over-abundance of resize
+                // checks.
+                () = tokio::time::sleep(tokio::time::Duration::from_millis(CHECK_FOR_RESIZE_RATE)) => {
+                    self.check_for_user_resize(&mut composited_terminal, &protocol_tx).await?;
                 },
+
                 Ok(message) = protocol_rx.recv() => {
                     self.handle_protocol_message(&message);
                     if matches!(message, crate::run::Protocol::End) {
@@ -219,18 +233,14 @@ impl Renderer {
     /// Handle PTY output and all Tattoy frames.
     async fn handle_frame_update(
         &mut self,
-        surfaces: &mut tokio::sync::mpsc::Receiver<FrameUpdate>,
+        update: FrameUpdate,
+        backlog: usize,
         composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
         protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
-        let Some(update) = surfaces.recv().await else {
-            return Ok(());
-        };
-
         self.check_for_user_resize(composited_terminal, protocol_tx)
             .await?;
-        self.render(surfaces.len(), update, composited_terminal)
-            .await?;
+        self.render(backlog, update, composited_terminal).await?;
 
         Ok(())
     }
