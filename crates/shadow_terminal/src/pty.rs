@@ -365,7 +365,7 @@ impl PTY {
         }
     }
 
-    /// Add bytes to the beginning
+    /// Insert bytes into a buffer.
     pub fn add_bytes_to_buffer(
         buffer: &mut BytesFromSTDIN,
         bytes: &[u8],

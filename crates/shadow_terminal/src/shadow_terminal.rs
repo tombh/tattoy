@@ -243,7 +243,14 @@ impl ShadowTerminal {
 
     /// Accumulate PTY outputs.
     fn accumulate_pty_output(&mut self, bytes: &crate::pty::BytesFromPTY) {
-        self.accumulated_pty_output.append(&mut bytes.to_vec());
+        // TODO: I feel like this loop is either inefficient, naive, or both.
+        for byte in bytes {
+            if byte == &0 {
+                break;
+            }
+            self.accumulated_pty_output.push(*byte);
+        }
+
         let next_output_broadcast = tokio::time::Instant::now()
             + tokio::time::Duration::from_micros(TIME_TO_WAIT_FOR_MORE_PTY_OUTPUT);
         self.wait_for_output_until = Some(next_output_broadcast);
@@ -286,7 +293,7 @@ impl ShadowTerminal {
         if let Err(error) = result {
             tracing::error!("{error:?}");
         }
-        self.accumulated_pty_output = Vec::new();
+        self.accumulated_pty_output.clear();
         self.wait_for_output_until = None;
         Ok(())
     }
