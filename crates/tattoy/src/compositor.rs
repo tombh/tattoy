@@ -43,7 +43,11 @@ impl Compositor {
         base_cell: &mut termwiz::cell::Cell,
         cell_above: &termwiz::cell::Cell,
     ) {
-        if base_cell.str().chars().all(char::is_whitespace) {
+        if base_cell
+            .str()
+            .chars()
+            .all(|character| character.is_whitespace() || character == '▀' || character == '▄')
+        {
             return;
         }
 
