@@ -174,14 +174,14 @@ impl Plugin {
                     .cell_attributes_to_true_colour(cell.clone().attrs_mut());
 
                 let bg_attribute =
-                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background());
+                    crate::blender::Blender::extract_colour(cell.attrs().background());
                 let bg = match bg_attribute {
                     Some(attribute) => attribute.to_tuple_rgba(),
                     None => self.palette.default_background_colour().into(),
                 };
 
                 let fg_attribute =
-                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().foreground());
+                    crate::blender::Blender::extract_colour(cell.attrs().foreground());
                 let fg = match fg_attribute {
                     Some(attribute) => attribute.to_tuple_rgba(),
                     None => self.palette.default_foreground_colour().into(),

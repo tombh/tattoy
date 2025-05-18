@@ -511,9 +511,7 @@ impl Renderer {
         for line in &mut self.frame.screen_cells().iter_mut() {
             for cell in line.iter_mut() {
                 let foreground = cell.attrs().foreground();
-                if let Some(mut gradable) =
-                    crate::opaque_cell::OpaqueCell::extract_colour(foreground)
-                {
+                if let Some(mut gradable) = crate::blender::Blender::extract_colour(foreground) {
                     gradable = gradable.saturate(saturation);
                     gradable = gradable.lighten(light);
                     gradable = gradable.adjust_hue_fixed(hue);
@@ -523,9 +521,7 @@ impl Renderer {
                 }
 
                 let background = cell.attrs().background();
-                if let Some(mut gradable) =
-                    crate::opaque_cell::OpaqueCell::extract_colour(background)
-                {
+                if let Some(mut gradable) = crate::blender::Blender::extract_colour(background) {
                     gradable = gradable.saturate(saturation);
                     gradable = gradable.lighten(light);
                     gradable = gradable.adjust_hue_fixed(hue);
