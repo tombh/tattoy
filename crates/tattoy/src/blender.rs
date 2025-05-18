@@ -25,7 +25,7 @@ enum Kind {
 
 /// Just a convenience wrapper around Termwiz's `[Cell]`. Compositing cells is a bit tricky, so
 /// having a dedicated module hopefully makes things a bit simpler.
-pub(crate) struct OpaqueCell<'cell> {
+pub(crate) struct Blender<'cell> {
     /// The normal underlying cell
     cell: &'cell mut Cell,
     /// The true colour value to use when the cell doesn't have a colour.
@@ -34,7 +34,7 @@ pub(crate) struct OpaqueCell<'cell> {
     cell_above_opacity: f32,
 }
 
-impl<'cell> OpaqueCell<'cell> {
+impl<'cell> Blender<'cell> {
     /// Instantiate
     pub const fn new(
         cell: &'cell mut Cell,

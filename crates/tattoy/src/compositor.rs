@@ -74,8 +74,8 @@ impl Compositor {
             composited_cell.attrs_mut().set_foreground(old_foreground);
         }
 
-        let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None, opacity);
-        opaque.blend_all(cell_above);
+        let mut blender = crate::blender::Blender::new(composited_cell, None, opacity);
+        blender.blend_all(cell_above);
     }
 
     /// Automatically adjust text contrast.
@@ -84,8 +84,8 @@ impl Compositor {
         target_text_contrast: f32,
         apply_to_readable_text_only: bool,
     ) {
-        let mut opaque = crate::opaque_cell::OpaqueCell::new(composited_cell, None, 1.0);
-        opaque.ensure_readable_contrast(target_text_contrast, apply_to_readable_text_only);
+        let mut blender = crate::blender::Blender::new(composited_cell, None, 1.0);
+        blender.ensure_readable_contrast(target_text_contrast, apply_to_readable_text_only);
     }
 
     /// Add a little indicator in the top-right to show that Tattoy is running.
