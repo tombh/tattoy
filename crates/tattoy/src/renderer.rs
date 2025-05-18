@@ -470,7 +470,7 @@ impl Renderer {
                 Some(shader_cells)
             } else {
                 tracing::debug!(
-                    "Not using shader to render PTY colours as the shader frame size doesn't matchd"
+                    "Not using shader to render PTY colours as the shader frame size doesn't match"
                 );
                 None
             }

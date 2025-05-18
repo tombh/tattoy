@@ -161,10 +161,6 @@ impl Plugin {
 
     /// Send Tattoy's PTY output to the plugin.
     fn send_pty_output(&mut self) -> Result<()> {
-        if self.tattoy.width == 0 || self.tattoy.height == 0 {
-            return Ok(());
-        }
-
         let mut cells = Vec::<tattoy_protocol::Cell>::new();
         for (y, line) in self.tattoy.screen.surface.screen_cells().iter().enumerate() {
             for (x, cell) in line.iter().enumerate() {

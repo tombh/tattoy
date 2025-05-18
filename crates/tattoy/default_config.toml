@@ -50,6 +50,7 @@ max_width = 10
 [shader]
 enabled = false
 opacity = 0.75
+layer = -10
 # Whether to render the computed shader from the GPU. The shader pixels can still be
 # used for other purposes such as defining the foreground colour of the terminal's text,
 # see `render_shader_colours_to_text`.
