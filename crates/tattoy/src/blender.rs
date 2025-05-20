@@ -113,18 +113,23 @@ impl<'cell> Blender<'cell> {
                 self.blend(&Kind::Foreground, colour);
             }
         } else {
-            if let Some(colour) = Self::extract_colour(self.cell.attrs().foreground()) {
-                let is_blending_2_pixels = self.cell.str() == "▀" && cell_above.str() == "▀";
-                if !is_blending_2_pixels {
-                    // Blend this cell's own foreground colour with this cell's own background colour.
+            let is_cell_below_pixel = self.cell.str() == "▀" || self.cell.str() == "▄";
+            let is_cell_above_pixel = cell_above.str() == "▀" || cell_above.str() == "▄";
+            let is_blending_2_pixels = is_cell_below_pixel && is_cell_above_pixel;
+
+            if let Some(colour) = Self::extract_colour(cell_above.attrs().foreground()) {
+                if is_blending_2_pixels && (self.cell.str() != cell_above.str()) {
                     self.blend(&Kind::Background, colour);
+                } else {
+                    self.blend(&Kind::Foreground, colour);
                 }
             }
-            if let Some(colour) = Self::extract_colour(cell_above.attrs().foreground()) {
-                self.blend(&Kind::Foreground, colour);
-            }
             if let Some(colour) = Self::extract_colour(cell_above.attrs().background()) {
-                self.blend(&Kind::Background, colour);
+                if is_blending_2_pixels && (self.cell.str() != cell_above.str()) {
+                    self.blend(&Kind::Foreground, colour);
+                } else {
+                    self.blend(&Kind::Background, colour);
+                }
             }
         }
     }

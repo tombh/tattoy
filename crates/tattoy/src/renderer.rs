@@ -556,28 +556,30 @@ mod test {
     }
 
     async fn blend_pixels(
-        first: (usize, usize, crate::surface::Colour),
-        second: (usize, usize, crate::surface::Colour),
+        maybe_first: Option<(usize, usize, crate::surface::Colour)>,
+        maybe_second: Option<(usize, usize, crate::surface::Colour)>,
     ) -> Cell {
         let mut renderer = make_renderer().await;
         let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
-        tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
+        if let Some(first) = maybe_first {
+            tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
+        }
         renderer
             .tattoys
             .insert(tattoy_below.id.clone(), tattoy_below);
 
         let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
-        tattoy_above
-            .add_pixel(second.0, second.1, second.2)
-            .unwrap();
+        if let Some(second) = maybe_second {
+            tattoy_above
+                .add_pixel(second.0, second.1, second.2)
+                .unwrap();
+        }
         renderer
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
         renderer.composite().await.unwrap();
         let cell = &renderer.frame.screen_cells()[0][0];
-        assert_eq!(cell.str(), "▀");
-
         cell.clone()
     }
 
@@ -647,8 +649,44 @@ mod test {
     }
 
     #[tokio::test]
-    async fn fg_bg_pixels_in_same_cell_dont_blend() {
-        let cell = blend_pixels((0, 0, crate::surface::WHITE), (0, 1, crate::surface::RED)).await;
+    async fn blending_pixels_over_text() {
+        let mut renderer = make_renderer().await;
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
+        tattoy_below.add_text(0, 0, "a".into(), None, Some(crate::surface::WHITE));
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 0.5);
+        tattoy_above.add_pixel(0, 0, crate::surface::RED).unwrap();
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
+
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.5, 0.5, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_and_lower_pixels_in_same_cell_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::WHITE)),
+            Some((0, 1, crate::surface::RED)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
@@ -664,8 +702,29 @@ mod test {
     }
 
     #[tokio::test]
-    async fn foreground_pixels_without_alpha_dont_blend() {
-        let cell = blend_pixels((0, 0, crate::surface::RED), (0, 0, crate::surface::WHITE)).await;
+    async fn pixel_in_lower_half_doesnt_affect_unset_upper_half() {
+        let cell = blend_pixels(None, Some((0, 1, crate::surface::RED))).await;
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.0, 0.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::RED)),
+            Some((0, 0, crate::surface::WHITE)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
@@ -679,23 +738,33 @@ mod test {
     }
 
     #[tokio::test]
-    async fn background_pixels_without_alpha_dont_blend() {
-        let cell = blend_pixels((0, 1, crate::surface::RED), (0, 1, crate::surface::WHITE)).await;
+    async fn lower_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 1, crate::surface::RED)),
+            Some((0, 1, crate::surface::WHITE)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▄");
         assert_eq!(
             cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::Default
-        );
-        assert_eq!(
-            cell.attrs().background(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
                 termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
             )
         );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
     }
 
     #[tokio::test]
-    async fn foreground_pixels_with_alpha_blend() {
-        let cell = blend_pixels((0, 0, crate::surface::RED), (0, 0, (1.0, 1.0, 1.0, 0.5))).await;
+    async fn upper_pixels_with_alpha_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::RED)),
+            Some((0, 0, (1.0, 1.0, 1.0, 0.5))),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
@@ -709,17 +778,22 @@ mod test {
     }
 
     #[tokio::test]
-    async fn background_pixels_with_alpha_blend() {
-        let cell = blend_pixels((0, 1, crate::surface::RED), (0, 1, (1.0, 1.0, 1.0, 0.5))).await;
+    async fn lower_pixels_with_alpha_blend() {
+        let cell = blend_pixels(
+            Some((0, 1, crate::surface::RED)),
+            Some((0, 1, (1.0, 1.0, 1.0, 0.5))),
+        )
+        .await;
+        assert_eq!(cell.str(), "▄");
         assert_eq!(
             cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::Default
-        );
-        assert_eq!(
-            cell.attrs().background(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
                 termwiz::color::SrgbaTuple(1.0, 0.33333334, 0.33333334, 1.0)
             )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
         );
     }
 }
