@@ -63,19 +63,30 @@ impl Compositor {
         cell_above: &termwiz::cell::Cell,
         opacity: f32,
     ) {
-        let character_above = cell_above.str().to_owned();
-        let is_character_above_text = !character_above.is_empty() && character_above != " ";
-        if is_character_above_text {
-            // All this is just because there doesn't seem to be a `cell.set_str("f")` method.
-            let old_background = composited_cell.attrs().background();
-            let old_foreground = composited_cell.attrs().foreground();
-            *composited_cell = cell_above.clone();
-            composited_cell.attrs_mut().set_background(old_background);
-            composited_cell.attrs_mut().set_foreground(old_foreground);
+        let character_above = cell_above.str();
+        let is_composited_cell_pixel = composited_cell.str() == "▀" || composited_cell.str() == "▄";
+        let is_character_above_pixel = character_above == "▀" || character_above == "▄";
+        let is_character_above_empty = character_above.is_empty() || character_above == " ";
+        let is_character_above_text = !is_character_above_empty && !is_character_above_pixel;
+        let is_pixel_onto_non_pixel = is_character_above_pixel && !is_composited_cell_pixel;
+
+        if is_character_above_text || is_pixel_onto_non_pixel {
+            *composited_cell = termwiz::cell::Cell::new(
+                character_above.chars().nth(0).unwrap_or(' '),
+                composited_cell.attrs().clone(),
+            );
         }
 
         let mut blender = crate::blender::Blender::new(composited_cell, None, opacity);
         blender.blend_all(cell_above);
+
+        // The convention we use for pixel graphics is that we always try to render using the upper
+        // half block. But there is one edge case were we have to use a lower half block. So in the
+        // case where we composite a lower half onto an upper half we are actually escaping that edge
+        // case so we can return back to the convention of defaulting to the upper half block.
+        if composited_cell.str() == "▄" && character_above == "▀" {
+            *composited_cell = termwiz::cell::Cell::new('▀', composited_cell.attrs().clone());
+        }
     }
 
     /// Automatically adjust text contrast.
