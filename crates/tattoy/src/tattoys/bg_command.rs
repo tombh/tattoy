@@ -113,6 +113,8 @@ impl BGCommand {
     ) -> Result<()> {
         self.palette.convert_cells_to_true_colour(&mut output);
         self.tattoy.initialise_surface();
+        self.tattoy.opacity = self.tattoy.state.config.read().await.bg_command.opacity;
+        self.tattoy.layer = self.tattoy.state.config.read().await.bg_command.layer;
 
         #[expect(
             clippy::collapsible_match,

@@ -363,7 +363,7 @@ impl GPU<'_> {
     }
 
     /// Tick the render
-    pub async fn render(&mut self) -> Result<image::ImageBuffer<image::Rgb<f32>, Vec<f32>>> {
+    pub async fn render(&mut self) -> Result<image::ImageBuffer<image::Rgba<f32>, Vec<f32>>> {
         self.update_wall_time();
 
         self.queue.write_buffer(
@@ -444,7 +444,7 @@ impl GPU<'_> {
     /// Convert the raw data from the GPU into a iterable image of f32-based true colour pixels.
     async fn convert_final_render_to_image(
         &self,
-    ) -> Result<image::ImageBuffer<image::Rgb<f32>, Vec<f32>>> {
+    ) -> Result<image::ImageBuffer<image::Rgba<f32>, Vec<f32>>> {
         let buffer_slice = self.output_buffer.slice(..);
 
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -467,25 +467,26 @@ impl GPU<'_> {
         )
         .context("Couldn't convert raw GPU buffer to image")?;
 
-        Ok(self.extract_rgb32f_image(&raw_image))
+        Ok(self.extract_rgba32f_image(&raw_image))
     }
 
     /// Convert the raw GPU image to more friendly RGB floating point pixels.
-    fn extract_rgb32f_image(
+    fn extract_rgba32f_image(
         &self,
         imaged: &image::ImageBuffer<image::Rgba<u8>, wgpu::BufferView<'_>>,
-    ) -> image::ImageBuffer<image::Rgb<f32>, Vec<f32>> {
+    ) -> image::ImageBuffer<image::Rgba<f32>, Vec<f32>> {
         let image_size = self.get_image_size();
-        image::Rgb32FImage::from_fn(image_size.0.into(), image_size.1.into(), |x, y| {
+        image::Rgba32FImage::from_fn(image_size.0.into(), image_size.1.into(), |x, y| {
             if let Some(pixel) = imaged.get_pixel_checked(x, y) {
                 [
                     f32::from(pixel[0]) / 255.0,
                     f32::from(pixel[1]) / 255.0,
                     f32::from(pixel[2]) / 255.0,
+                    f32::from(pixel[3]) / 255.0,
                 ]
                 .into()
             } else {
-                [0.0, 0.0, 0.0].into()
+                [0.0, 0.0, 0.0, 0.0].into()
             }
         })
     }

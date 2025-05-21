@@ -21,6 +21,12 @@ pub const ONE_MICROSECOND: u64 = 1_000_000;
 /// The number of milliseconds in a second.
 pub const MILLIS_PER_SECOND: f32 = 1_000.0;
 
+/// The minimum rate at which we check that the user's terminal has resized.
+///
+/// Each time a new frame is rendered a terminal size check is also made, which may lead to checks
+/// occuring at a higher rate than this.
+pub const CHECK_FOR_RESIZE_RATE: u64 = 30;
+
 /// The maximum number of unrendered frames to keep in the renderer's backlog.
 ///
 /// When the renderer starts struggling such that it can't render a frame before the next one
@@ -191,15 +197,23 @@ impl Renderer {
         )]
         loop {
             tokio::select! {
-                // For some reason `surfaces.recv()` doesn't let the Tokio scheduler do its thing.
-                // Even though there might be a new frame, the scheduler doesn't seem to trigger.
-                // So instead we just force the scheduler with this timer.
-                () = tokio::time::sleep(tokio::time::Duration::from_micros(1)) => {
-                    if surfaces.is_empty() {
-                        continue;
-                    }
-                    self.handle_frame_update(&mut surfaces, &mut composited_terminal, &protocol_tx).await?;
+                Some(update) = surfaces.recv() => {
+                    self.handle_frame_update(
+                        update, surfaces.len(),
+                        &mut composited_terminal,
+                        &protocol_tx
+                    ).await?;
+                }
+
+                // When surface updates are not being sent frequently enough, then we depend
+                // on this select branch for checking whether the end user's terminal has
+                // resized. Recall that this branch's future is cancelled whenever another
+                // select branch triggers, so we shouldn't have an over-abundance of resize
+                // checks.
+                () = tokio::time::sleep(tokio::time::Duration::from_millis(CHECK_FOR_RESIZE_RATE)) => {
+                    self.check_for_user_resize(&mut composited_terminal, &protocol_tx).await?;
                 },
+
                 Ok(message) = protocol_rx.recv() => {
                     self.handle_protocol_message(&message);
                     if matches!(message, crate::run::Protocol::End) {
@@ -219,18 +233,14 @@ impl Renderer {
     /// Handle PTY output and all Tattoy frames.
     async fn handle_frame_update(
         &mut self,
-        surfaces: &mut tokio::sync::mpsc::Receiver<FrameUpdate>,
+        update: FrameUpdate,
+        backlog: usize,
         composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
         protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
-        let Some(update) = surfaces.recv().await else {
-            return Ok(());
-        };
-
         self.check_for_user_resize(composited_terminal, protocol_tx)
             .await?;
-        self.render(surfaces.len(), update, composited_terminal)
-            .await?;
+        self.render(backlog, update, composited_terminal).await?;
 
         Ok(())
     }
@@ -460,7 +470,7 @@ impl Renderer {
                 Some(shader_cells)
             } else {
                 tracing::debug!(
-                    "Not using shader to render PTY colours as the shader frame size doesn't matchd"
+                    "Not using shader to render PTY colours as the shader frame size doesn't match"
                 );
                 None
             }
@@ -501,9 +511,7 @@ impl Renderer {
         for line in &mut self.frame.screen_cells().iter_mut() {
             for cell in line.iter_mut() {
                 let foreground = cell.attrs().foreground();
-                if let Some(mut gradable) =
-                    crate::opaque_cell::OpaqueCell::extract_colour(foreground)
-                {
+                if let Some(mut gradable) = crate::blender::Blender::extract_colour(foreground) {
                     gradable = gradable.saturate(saturation);
                     gradable = gradable.lighten(light);
                     gradable = gradable.adjust_hue_fixed(hue);
@@ -513,9 +521,7 @@ impl Renderer {
                 }
 
                 let background = cell.attrs().background();
-                if let Some(mut gradable) =
-                    crate::opaque_cell::OpaqueCell::extract_colour(background)
-                {
+                if let Some(mut gradable) = crate::blender::Blender::extract_colour(background) {
                     gradable = gradable.saturate(saturation);
                     gradable = gradable.lighten(light);
                     gradable = gradable.adjust_hue_fixed(hue);
@@ -550,28 +556,30 @@ mod test {
     }
 
     async fn blend_pixels(
-        first: (usize, usize, crate::surface::Colour),
-        second: (usize, usize, crate::surface::Colour),
+        maybe_first: Option<(usize, usize, crate::surface::Colour)>,
+        maybe_second: Option<(usize, usize, crate::surface::Colour)>,
     ) -> Cell {
         let mut renderer = make_renderer().await;
         let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
-        tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
+        if let Some(first) = maybe_first {
+            tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
+        }
         renderer
             .tattoys
             .insert(tattoy_below.id.clone(), tattoy_below);
 
         let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
-        tattoy_above
-            .add_pixel(second.0, second.1, second.2)
-            .unwrap();
+        if let Some(second) = maybe_second {
+            tattoy_above
+                .add_pixel(second.0, second.1, second.2)
+                .unwrap();
+        }
         renderer
             .tattoys
             .insert(tattoy_above.id.clone(), tattoy_above);
 
         renderer.composite().await.unwrap();
         let cell = &renderer.frame.screen_cells()[0][0];
-        assert_eq!(cell.str(), "▀");
-
         cell.clone()
     }
 
@@ -641,8 +649,44 @@ mod test {
     }
 
     #[tokio::test]
-    async fn fg_bg_pixels_in_same_cell_dont_blend() {
-        let cell = blend_pixels((0, 0, crate::surface::WHITE), (0, 1, crate::surface::RED)).await;
+    async fn blending_pixels_over_text() {
+        let mut renderer = make_renderer().await;
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
+        tattoy_below.add_text(0, 0, "a".into(), None, Some(crate::surface::WHITE));
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 0.5);
+        tattoy_above.add_pixel(0, 0, crate::surface::RED).unwrap();
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
+
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.5, 0.5, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_and_lower_pixels_in_same_cell_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::WHITE)),
+            Some((0, 1, crate::surface::RED)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
@@ -658,8 +702,29 @@ mod test {
     }
 
     #[tokio::test]
-    async fn foreground_pixels_without_alpha_dont_blend() {
-        let cell = blend_pixels((0, 0, crate::surface::RED), (0, 0, crate::surface::WHITE)).await;
+    async fn pixel_in_lower_half_doesnt_affect_unset_upper_half() {
+        let cell = blend_pixels(None, Some((0, 1, crate::surface::RED))).await;
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.0, 0.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::RED)),
+            Some((0, 0, crate::surface::WHITE)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
@@ -673,23 +738,33 @@ mod test {
     }
 
     #[tokio::test]
-    async fn background_pixels_without_alpha_dont_blend() {
-        let cell = blend_pixels((0, 1, crate::surface::RED), (0, 1, crate::surface::WHITE)).await;
+    async fn lower_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 1, crate::surface::RED)),
+            Some((0, 1, crate::surface::WHITE)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▄");
         assert_eq!(
             cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::Default
-        );
-        assert_eq!(
-            cell.attrs().background(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
                 termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
             )
         );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
     }
 
     #[tokio::test]
-    async fn foreground_pixels_with_alpha_blend() {
-        let cell = blend_pixels((0, 0, crate::surface::RED), (0, 0, (1.0, 1.0, 1.0, 0.5))).await;
+    async fn upper_pixels_with_alpha_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::RED)),
+            Some((0, 0, (1.0, 1.0, 1.0, 0.5))),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
@@ -703,17 +778,22 @@ mod test {
     }
 
     #[tokio::test]
-    async fn background_pixels_with_alpha_blend() {
-        let cell = blend_pixels((0, 1, crate::surface::RED), (0, 1, (1.0, 1.0, 1.0, 0.5))).await;
+    async fn lower_pixels_with_alpha_blend() {
+        let cell = blend_pixels(
+            Some((0, 1, crate::surface::RED)),
+            Some((0, 1, (1.0, 1.0, 1.0, 0.5))),
+        )
+        .await;
+        assert_eq!(cell.str(), "▄");
         assert_eq!(
             cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::Default
-        );
-        assert_eq!(
-            cell.attrs().background(),
             termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
                 termwiz::color::SrgbaTuple(1.0, 0.33333334, 0.33333334, 1.0)
             )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
         );
     }
 }

@@ -161,10 +161,6 @@ impl Plugin {
 
     /// Send Tattoy's PTY output to the plugin.
     fn send_pty_output(&mut self) -> Result<()> {
-        if self.tattoy.width == 0 || self.tattoy.height == 0 {
-            return Ok(());
-        }
-
         let mut cells = Vec::<tattoy_protocol::Cell>::new();
         for (y, line) in self.tattoy.screen.surface.screen_cells().iter().enumerate() {
             for (x, cell) in line.iter().enumerate() {
@@ -178,14 +174,14 @@ impl Plugin {
                     .cell_attributes_to_true_colour(cell.clone().attrs_mut());
 
                 let bg_attribute =
-                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background());
+                    crate::blender::Blender::extract_colour(cell.attrs().background());
                 let bg = match bg_attribute {
                     Some(attribute) => attribute.to_tuple_rgba(),
                     None => self.palette.default_background_colour().into(),
                 };
 
                 let fg_attribute =
-                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().foreground());
+                    crate::blender::Blender::extract_colour(cell.attrs().foreground());
                 let fg = match fg_attribute {
                     Some(attribute) => attribute.to_tuple_rgba(),
                     None => self.palette.default_foreground_colour().into(),

@@ -302,13 +302,13 @@ impl Tattoyer {
                 .context("Couldn't get surface cell from line")?;
 
             let cell_colour = if cell.str() == " " {
-                crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().background())
-                    .map_or(crate::opaque_cell::DEFAULT_COLOUR, |background_colour| {
+                crate::blender::Blender::extract_colour(cell.attrs().background())
+                    .map_or(crate::blender::DEFAULT_COLOUR, |background_colour| {
                         background_colour
                     })
             } else {
                 let maybe_colour =
-                    crate::opaque_cell::OpaqueCell::extract_colour(cell.attrs().foreground());
+                    crate::blender::Blender::extract_colour(cell.attrs().foreground());
 
                 if let Some(colour) = maybe_colour {
                     colour

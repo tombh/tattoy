@@ -19,6 +19,8 @@ pub(crate) struct Config {
     pub path: std::path::PathBuf,
     /// The opacity of the rendered shader layer.
     pub opacity: f32,
+    /// The layer (or z-index) into which the shaders are rendered.
+    pub layer: i16,
     /// The shader is still sent and run on the GPU but it's not rendered to a layer on the
     /// terminal. This is most likely useful in conjunction with `render_shader_colours_to_text`,
     /// as "contents" of the shader are rendered via the terminal's text.
@@ -38,6 +40,7 @@ impl Default for Config {
             enabled: false,
             path: "shaders/point_lights.glsl".into(),
             opacity: 0.75,
+            layer: -10,
             render: true,
             upload_tty_as_pixels: true,
             render_shader_colours_to_text: false,
@@ -68,7 +71,10 @@ impl Shaders<'_> {
             tty_size.height * 2,
         )
         .await?;
-        let tattoy = Tattoyer::new("shader".to_owned(), state, -10, 1.0, output_channel).await;
+        let layer = state.config.read().await.shader.layer;
+        let opacity = state.config.read().await.shader.opacity;
+        let tattoy =
+            Tattoyer::new("shader".to_owned(), state, layer, opacity, output_channel).await;
         Ok(Self { tattoy, gpu })
     }
 
@@ -205,7 +211,8 @@ impl Shaders<'_> {
             .update_mouse_position(cursor.0.try_into()?, cursor.1.try_into()?);
 
         self.tattoy.initialise_surface();
-        let opacity = self.tattoy.state.config.read().await.shader.opacity;
+        self.tattoy.opacity = self.tattoy.state.config.read().await.shader.opacity;
+        self.tattoy.layer = self.tattoy.state.config.read().await.shader.layer;
         let image = self.gpu.render().await?;
 
         let tty_height_in_pixels = u32::from(self.tattoy.height) * 2;
@@ -218,11 +225,9 @@ impl Shaders<'_> {
                     .context(format!("Couldn't get pixel: {x}x{y_reversed}"))?
                     .0;
 
-                self.tattoy.surface.add_pixel(
-                    x.into(),
-                    y.try_into()?,
-                    (pixel[0], pixel[1], pixel[2], opacity),
-                )?;
+                self.tattoy
+                    .surface
+                    .add_pixel(x.into(), y.try_into()?, pixel.into())?;
             }
         }
 

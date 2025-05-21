@@ -51,7 +51,15 @@ impl Surface {
         }
     }
 
-    /// Add a pixel ("▀", "▄") to a tattoy surface
+    /// Add a pixel ("▀", "▄") to a tattoy surface.
+    ///
+    /// The rule is that we default to rendering any pair of colours using the upper half block.
+    /// Therefore that the upper "pixel" is rendered with the cell's foreground and the lower
+    /// "pixel" is rendered with the cell's background colour.
+    ///
+    /// However, there is one edge case that requires this to be inverted: when an empty cell
+    /// needs a pixel in the lower half. It is impossible to do this with an upper half block
+    /// *whilst retaining the ANSI-coded default background colour*.
     pub fn add_pixel(&mut self, x: usize, y: usize, colour: Colour) -> Result<()> {
         let (col, row) = self.coords_to_tty(x, y)?;
         self.surface.add_change(TermwizChange::CursorPosition {
@@ -59,34 +67,55 @@ impl Surface {
             y: TermwizPosition::Absolute(row),
         });
 
-        // Add foreground colour, whilst retaining the background colour.
-        if y.rem_euclid(2) == 0 {
-            let fg_colour_change = Self::make_fg_colour(colour);
-            let bg_colour_attribute = self.get_cell_bg(col, row)?;
+        let cell = self.get_cell_at(col, row)?;
+        let is_empty_upper = cell.str() != "▀";
+        let is_upper_half = y.rem_euclid(2) == 0;
+        let is_lower_half = !is_upper_half;
+        let is_adding_to_bottom_of_empty_upper = is_empty_upper && is_lower_half;
 
-            let changes = vec![
-                fg_colour_change,
-                TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
-                    bg_colour_attribute,
-                )),
-            ];
-            self.surface.add_changes(changes);
-
-        // Add background colour, whilst retaining the foreground colour.
+        let mut fg_colour = if is_upper_half {
+            Self::make_fg_colour(colour)
         } else {
-            let bg_colour_change = Self::make_bg_colour(colour);
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
+                cell.attrs().foreground(),
+            ))
+        };
 
-            let fg_colour_attribute = self.get_cell_fg(col, row)?;
-            let changes = vec![
-                TermwizChange::Attribute(termwiz::cell::AttributeChange::Foreground(
-                    fg_colour_attribute,
-                )),
-                bg_colour_change,
-            ];
-            self.surface.add_changes(changes);
+        #[expect(
+            clippy::useless_let_if_seq,
+            reason = "I think the verbosity is useful here"
+        )]
+        let mut bg_colour = if is_upper_half {
+            TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
+                cell.attrs().background(),
+            ))
+        } else {
+            Self::make_bg_colour(colour)
+        };
+
+        if is_adding_to_bottom_of_empty_upper {
+            fg_colour = Self::make_fg_colour(colour);
+            bg_colour = TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
+                cell.attrs().background(),
+            ));
         }
 
-        self.surface.add_change("▀");
+        // This is when we add a pixel to a cell that only has a lower-half colour.
+        let is_converting_lower_to_full = is_upper_half && cell.str() == "▄";
+        if is_converting_lower_to_full {
+            fg_colour = Self::make_fg_colour(colour);
+            bg_colour = TermwizChange::Attribute(termwiz::cell::AttributeChange::Background(
+                cell.attrs().foreground(),
+            ));
+        }
+
+        self.surface.add_changes(vec![fg_colour, bg_colour]);
+        if is_adding_to_bottom_of_empty_upper {
+            self.surface.add_change("▄");
+        } else {
+            self.surface.add_change("▀");
+        }
+
         Ok(())
     }
 
@@ -162,18 +191,6 @@ impl Surface {
         Ok((col, row))
     }
 
-    /// Get the cell's foreground colour.
-    fn get_cell_fg(&mut self, col: usize, row: usize) -> Result<termwiz::color::ColorAttribute> {
-        let cell = self.get_cell_at(col, row)?;
-        Ok(cell.attrs().foreground())
-    }
-
-    /// Get the cell's background colour.
-    fn get_cell_bg(&mut self, col: usize, row: usize) -> Result<termwiz::color::ColorAttribute> {
-        let cell = self.get_cell_at(col, row)?;
-        Ok(cell.attrs().background())
-    }
-
     /// Get thell at the given column and row.
     fn get_cell_at(&mut self, col: usize, row: usize) -> Result<termwiz::cell::Cell> {
         let cells = self.surface.screen_cells();
@@ -246,15 +263,51 @@ mod test {
     }
 
     #[test]
-    fn add_new_pixel_at_bottom_of_cell() {
+    fn add_pixel_at_bottom_of_empty_cell() {
         let mut surface = Surface::new("test".into(), 1, 1, -1, 1.0);
 
         surface.add_pixel(0, 1, WHITE).unwrap();
         let cell = &surface.surface.screen_cells()[0][0];
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            Surface::make_colour_attribute(WHITE)
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[test]
+    fn overwrite_pixel_at_bottom_of_empty_cell() {
+        let mut surface = Surface::new("test".into(), 1, 1, -1, 1.0);
+
+        surface.add_pixel(0, 1, RED).unwrap();
+        surface.add_pixel(0, 1, WHITE).unwrap();
+        let cell = &surface.surface.screen_cells()[0][0];
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            Surface::make_colour_attribute(WHITE)
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[test]
+    fn convert_cell_from_bottom_to_full() {
+        let mut surface = Surface::new("test".into(), 1, 1, -1, 1.0);
+
+        surface.add_pixel(0, 1, WHITE).unwrap();
+        surface.add_pixel(0, 0, RED).unwrap();
+        let cell = &surface.surface.screen_cells()[0][0];
         assert_eq!(cell.str(), "▀");
         assert_eq!(
             cell.attrs().foreground(),
-            termwiz::color::ColorAttribute::Default
+            Surface::make_colour_attribute(RED)
         );
         assert_eq!(
             cell.attrs().background(),
