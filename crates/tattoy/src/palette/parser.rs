@@ -210,24 +210,25 @@ impl Parser {
             return Ok(None);
         }
 
-        let monitors = xcap::Monitor::all()?;
-        if monitors.is_empty() {
-            color_eyre::eyre::bail!("No monitors found to take screenshot on");
-        }
-
-        if monitors.len() > 1 {
-            for monitor in monitors.clone() {
-                if monitor.is_primary() {
-                    return Ok(Some(monitor.capture_image()?));
-                }
+        for window in xcap::Window::all()? {
+            if window.is_focused() {
+                return Ok(Some(window.capture_image()?));
             }
         }
 
+        tracing::debug!("No windows found, trying to capture monitor instead");
+
+        let monitors = xcap::Monitor::all()?;
+        if monitors.is_empty() {
+            color_eyre::eyre::bail!("No windows and no monitors found to take screenshot on");
+        }
+
+        // This assumes that the first monitor is the current monitor. Could be wrong.
         if let Some(monitor) = monitors.first() {
             return Ok(Some(monitor.capture_image()?));
         }
 
-        color_eyre::eyre::bail!("No monitors found to take screenshot on");
+        color_eyre::eyre::bail!("No windows and monitors found to take screenshot on");
     }
 
     /// Save the default palette config to the user's Tattoy config path.
