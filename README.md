@@ -33,11 +33,12 @@ Tattoy largely works on Windows, but I don't have a local Windows machine to eas
 * Have a Rust installed already: https://www.rust-lang.org/tools/install
 * Clone the repo: `git clone https://github.com/tombh/tattoy`
 * On Linux you may need these dependencies, eg (for Debian/Ubuntu): `sudo apt install libxcb1-dev libdbus-1-dev pkg-config`.
-* Soon you'll be able to skip installation once pre-built binaries are available.
+* Run `cargo install --path crates/tattoy`
+* (Soon you'll be able to skip installation once pre-built binaries are available.)
 
 ## Usage
-* Parse your palette: `cargo run --release -- --capture-palette` or `cargo run --release -- --parse-palette path_to_screenshot.png`
-* Once you've parsed your palette, start with: `cargo run --release`
+* Run `tattoy`.
+* On first launch you will be asked to parse your palette. You can always re-parse your palette with `tattoy --capture-palette`.
 * Configurable through the automatically generated config file at `$XDG_CONFIG_DIR/tattoy/tattoy.toml` (not in the repo's `crates/tattoy/default_config.toml`).
 * Note that Tattoy replaces your terminal, it may even look exactly the same as your existing terminal at first. So it can't be exited with `CTRL+C`. You exit as you would exit a normal shell, therefore with `CTRL+D` or running the `exit` command.
 

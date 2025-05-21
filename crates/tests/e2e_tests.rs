@@ -52,7 +52,7 @@ mod e2e {
         };
 
         std::fs::copy(
-            "resources/palette.toml",
+            "../tattoy/default_palette.toml",
             std::path::PathBuf::new()
                 .join(config_path.clone())
                 .join("palette.toml"),

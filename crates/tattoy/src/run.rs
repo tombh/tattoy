@@ -57,15 +57,23 @@ pub(crate) enum Protocol {
 /// Main entrypoint
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let cli_args = setup(state_arc).await?;
+    let palette_config_exists =
+        crate::palette::parser::Parser::palette_config_exists(state_arc).await;
 
     if cli_args.capture_palette {
         crate::palette::parser::Parser::run(state_arc, None).await?;
-        return Ok(());
+        #[expect(clippy::exit, reason = "We don't want to actually run Tattoy")]
+        std::process::exit(0);
     }
 
     if let Some(screenshot) = cli_args.parse_palette {
         crate::palette::parser::Parser::run(state_arc, Some(&screenshot)).await?;
-        return Ok(());
+        #[expect(clippy::exit, reason = "We don't want to actually run Tattoy")]
+        std::process::exit(0);
+    }
+
+    if !palette_config_exists {
+        crate::palette::parser::Parser::run(state_arc, None).await?;
     }
 
     let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
