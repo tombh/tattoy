@@ -239,3 +239,265 @@ impl<'cell> Blender<'cell> {
         self.cell.attrs_mut().set_foreground(color_attribute);
     }
 }
+
+#[expect(
+    clippy::indexing_slicing,
+    clippy::unreadable_literal,
+    reason = "Tests aren't so strict"
+)]
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    async fn make_renderer() -> crate::renderer::Renderer {
+        let renderer = crate::renderer::Renderer {
+            width: 1,
+            height: 1,
+            ..crate::renderer::Renderer::default()
+        };
+        *renderer.state.is_rendering_enabled.write().await = true;
+        renderer
+    }
+
+    async fn blend_pixels(
+        maybe_first: Option<(usize, usize, crate::surface::Colour)>,
+        maybe_second: Option<(usize, usize, crate::surface::Colour)>,
+    ) -> Cell {
+        let mut renderer = make_renderer().await;
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
+        if let Some(first) = maybe_first {
+            tattoy_below.add_pixel(first.0, first.1, first.2).unwrap();
+        }
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
+        if let Some(second) = maybe_second {
+            tattoy_above
+                .add_pixel(second.0, second.1, second.2)
+                .unwrap();
+        }
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
+        cell.clone()
+    }
+
+    #[tokio::test]
+    async fn blending_text() {
+        let mut renderer = make_renderer().await;
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
+        tattoy_below.add_text(
+            0,
+            0,
+            "a".into(),
+            Some(crate::surface::RED),
+            Some(crate::surface::WHITE),
+        );
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
+        tattoy_above.add_text(0, 0, " ".into(), Some((0.0, 0.0, 0.0, 0.5)), None);
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
+
+        assert_eq!(cell.str(), "a");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(0.6666667, 0.6666667, 0.6666667, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(0.6666667, 0.0, 0.0, 1.0)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn blending_text_with_default_bg_below() {
+        let mut renderer = make_renderer().await;
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
+        tattoy_below.add_text(0, 0, "a".into(), None, Some(crate::surface::WHITE));
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 1.0);
+        tattoy_above.add_text(0, 0, " ".into(), Some((1.0, 1.0, 1.0, 0.5)), None);
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
+
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(0.33333334, 0.33333334, 0.33333334, 1.0)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn blending_pixels_over_text() {
+        let mut renderer = make_renderer().await;
+        let mut tattoy_below = crate::surface::Surface::new("below".into(), 1, 1, 1, 1.0);
+        tattoy_below.add_text(0, 0, "a".into(), None, Some(crate::surface::WHITE));
+        renderer
+            .tattoys
+            .insert(tattoy_below.id.clone(), tattoy_below);
+
+        let mut tattoy_above = crate::surface::Surface::new("above".into(), 1, 1, 2, 0.5);
+        tattoy_above.add_pixel(0, 0, crate::surface::RED).unwrap();
+        renderer
+            .tattoys
+            .insert(tattoy_above.id.clone(), tattoy_above);
+
+        renderer.composite().await.unwrap();
+        let cell = &renderer.frame.screen_cells()[0][0];
+
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.5, 0.5, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_and_lower_pixels_in_same_cell_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::WHITE)),
+            Some((0, 1, crate::surface::RED)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.0, 0.0, 1.0)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn pixel_in_lower_half_doesnt_affect_unset_upper_half() {
+        let cell = blend_pixels(None, Some((0, 1, crate::surface::RED))).await;
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.0, 0.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::RED)),
+            Some((0, 0, crate::surface::WHITE)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn lower_pixels_without_alpha_dont_blend() {
+        let cell = blend_pixels(
+            Some((0, 1, crate::surface::RED)),
+            Some((0, 1, crate::surface::WHITE)),
+        )
+        .await;
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 1.0, 1.0, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn upper_pixels_with_alpha_blend() {
+        let cell = blend_pixels(
+            Some((0, 0, crate::surface::RED)),
+            Some((0, 0, (1.0, 1.0, 1.0, 0.5))),
+        )
+        .await;
+        assert_eq!(cell.str(), "▀");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.33333334, 0.33333334, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+
+    #[tokio::test]
+    async fn lower_pixels_with_alpha_blend() {
+        let cell = blend_pixels(
+            Some((0, 1, crate::surface::RED)),
+            Some((0, 1, (1.0, 1.0, 1.0, 0.5))),
+        )
+        .await;
+        assert_eq!(cell.str(), "▄");
+        assert_eq!(
+            cell.attrs().foreground(),
+            termwiz::color::ColorAttribute::TrueColorWithDefaultFallback(
+                termwiz::color::SrgbaTuple(1.0, 0.33333334, 0.33333334, 1.0)
+            )
+        );
+        assert_eq!(
+            cell.attrs().background(),
+            termwiz::color::ColorAttribute::Default
+        );
+    }
+}
