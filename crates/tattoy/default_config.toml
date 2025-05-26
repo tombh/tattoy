@@ -1,8 +1,3 @@
-# The terminal emulator environment variable. This is still a grey area to me.
-# Currently "xterm-256color" is the only values that avoids some input bugs.
-# Please play with this and report your findings!
-term = "xterm-256color"
-
 # The command to run in Tattoy. Defaults to your current shell defined in the
 # `SHELL` env var.
 # command = "/usr/bin/zsh"

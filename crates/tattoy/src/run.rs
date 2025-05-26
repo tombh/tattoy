@@ -250,10 +250,6 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     //   true color terminal anyway.
     std::env::set_var("COLORTERM", "truecolor");
 
-    let term = state.config.read().await.term.clone();
-    tracing::debug!("Setting `TERM` env to: '{term}'");
-    std::env::set_var("TERM", term);
-
     tracing::info!("Starting Tattoy");
     tracing::debug!("Loaded config: {:?}", state.config.read().await);
 

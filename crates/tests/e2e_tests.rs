@@ -93,6 +93,7 @@ mod e2e {
             TATTOY_UNDER_TEST=1 \
             PWD='{pwd:?}' \
             PS1='{prompt}' \
+            TERM=xterm-256color \
             {rust_log_filters} \
             "
         );
@@ -364,6 +365,7 @@ mod e2e {
             .unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     #[tokio::test(flavor = "multi_thread")]
     async fn bad_plugin() {
         let temp_dir = tempfile::tempdir().unwrap();
