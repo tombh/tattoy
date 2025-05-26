@@ -44,7 +44,6 @@ pub const CHECK_FOR_RESIZE_RATE: u64 = 30;
 const MAX_FRAME_BACKLOG: usize = 100;
 
 /// `Render`
-#[derive(Default)]
 pub(crate) struct Renderer {
     /// Shared app state
     pub state: Arc<SharedState>,
@@ -66,15 +65,15 @@ pub(crate) struct Renderer {
 
 impl Renderer {
     /// Create a renderer to render to a user's terminal
-    pub fn new(state: Arc<SharedState>) -> Result<Self> {
-        let size = Self::get_users_tty_size()?;
-        let width = size.cols.try_into()?;
-        let height = size.rows.try_into()?;
+    pub async fn new(state: Arc<SharedState>) -> Result<Self> {
+        let size = *state.tty_size.read().await;
+        let width = size.width;
+        let height = size.height;
 
         let renderer = Self {
             state,
-            width,
-            height,
+            width: size.width,
+            height: size.height,
             tattoys: std::collections::HashMap::default(),
             pty: TermwizSurface::new(width.into(), height.into()),
             frame: TermwizSurface::new(width.into(), height.into()),
@@ -112,7 +111,7 @@ impl Renderer {
         let handle = tokio::spawn(async move {
             // This would be much simpler if async closures where stable, because then we could use
             // the `?` syntax.
-            match Self::new(Arc::clone(&state)) {
+            match Self::new(Arc::clone(&state)).await {
                 Ok(mut renderer) => {
                     let result = renderer.run(surfaces_rx, protocol_tx.clone()).await;
 
@@ -191,6 +190,9 @@ impl Renderer {
         let mut composited_terminal = BufferedTerminal::new(copy_of_users_terminal)?;
 
         tracing::debug!("Starting render loop");
+
+        protocol_tx.send(crate::run::Protocol::Initialised("renderer".into()))?;
+
         #[expect(
             clippy::integer_division_remainder_used,
             reason = "`tokio::select!` generates this."
@@ -384,6 +386,9 @@ impl Renderer {
             .collect();
         tattoys.sort_by_key(|tattoy| tattoy.layer);
 
+        // TODO: Do we have a way to ignore tattoy surfaces that don't actually have any data in
+        // them? Say like the scrollbar, we shouldn't even try to iterate over it if it's not
+        // displayed.
         let frame_size = self.frame.dimensions();
         let mut frame_cells = self.frame.screen_cells();
         for tattoy in &mut tattoys {

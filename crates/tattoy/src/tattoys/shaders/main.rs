@@ -2,6 +2,7 @@
 //! <https://shadertoy.com>.
 
 use color_eyre::eyre::{ContextCompat as _, Result};
+use futures_util::FutureExt as _;
 
 use crate::tattoys::tattoyer::Tattoyer;
 
@@ -80,12 +81,58 @@ impl Shaders<'_> {
 
     /// Our main entrypoint.
     pub(crate) async fn start(
-        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<()> {
-        let mut shaders = Self::new(output, state).await?;
-        let mut protocol = protocol_tx.subscribe();
+        let may_panic = std::panic::AssertUnwindSafe(async {
+            let result = Self::main(output, &state).await;
+
+            if let Err(error) = result {
+                tracing::error!("GPU pipeline error: {error:?}");
+                state
+                    .send_notification(
+                        "GPU pipeline error",
+                        crate::tattoys::notifications::message::Level::Error,
+                        Some(error.root_cause().to_string()),
+                        true,
+                    )
+                    .await;
+                Err(error)
+            } else {
+                Ok(())
+            }
+        });
+
+        if let Err(error) = may_panic.catch_unwind().await {
+            let message = if let Some(message) = error.downcast_ref::<String>() {
+                message
+            } else if let Some(message) = error.downcast_ref::<&str>() {
+                message
+            } else {
+                "Caught a panic with an unknown type."
+            };
+            tracing::error!("Shader panic: {message:?}");
+            state
+                .send_notification(
+                    "GPU pipeline panic",
+                    crate::tattoys::notifications::message::Level::Error,
+                    Some(message.into()),
+                    true,
+                )
+                .await;
+        }
+
+        Ok(())
+    }
+
+    /// Enter the main render loop. We put it in its own function so that we can easily handle any
+    /// errors.
+    async fn main(
+        output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
+        state: &std::sync::Arc<crate::shared_state::SharedState>,
+    ) -> Result<()> {
+        let mut protocol = state.protocol_tx.subscribe();
+        let mut shaders = Self::new(output, std::sync::Arc::clone(state)).await?;
 
         #[expect(
             clippy::integer_division_remainder_used,

@@ -247,13 +247,19 @@ impl<'cell> Blender<'cell> {
 )]
 #[cfg(test)]
 mod test {
+
     use super::*;
 
     async fn make_renderer() -> crate::renderer::Renderer {
+        let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
+        let state = crate::shared_state::SharedState::init(1, 1, protocol_tx)
+            .await
+            .unwrap();
+        state.config.write().await.show_tattoy_indicator = false;
         let renderer = crate::renderer::Renderer {
             width: 1,
             height: 1,
-            ..crate::renderer::Renderer::default()
+            ..crate::renderer::Renderer::new(state).await.unwrap()
         };
         *renderer.state.is_rendering_enabled.write().await = true;
         renderer

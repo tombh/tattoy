@@ -35,10 +35,16 @@ pub mod utils;
 pub mod tattoys {
     pub mod bg_command;
     pub mod minimap;
+
+    /// Notifications in the terminal UI
+    pub mod notifications {
+        pub mod main;
+        pub mod message;
+    }
+
     pub mod plugins;
     pub mod random_walker;
     pub mod scrollbar;
-    pub mod tattoyer;
 
     /// Shadertoy-like shaders
     pub mod shaders {
@@ -46,6 +52,8 @@ pub mod tattoys {
         pub mod ichannel;
         pub mod main;
     }
+
+    pub mod tattoyer;
 }
 
 use color_eyre::eyre::Result;
@@ -59,7 +67,8 @@ use color_eyre::eyre::Result;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    let state_arc = shared_state::SharedState::init().await?;
+    let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
+    let state_arc = shared_state::SharedState::init_with_users_tty_size(protocol_tx).await?;
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
     println!("{}", utils::RESET_SCREEN);
 

@@ -1,6 +1,7 @@
 //! Run custom external code that gets rendered as tattoys
 
-use std::io::Write as _;
+use core::panic;
+use std::io::{Read as _, Write as _};
 
 use color_eyre::eyre::{ContextCompat as _, Result};
 
@@ -49,7 +50,7 @@ impl Plugin {
     ) -> Result<Self> {
         let tattoy = super::tattoyer::Tattoyer::new(
             config.name.clone(),
-            state,
+            std::sync::Arc::clone(&state),
             config.layer.unwrap_or(DEFAULT_LAYER),
             config.opacity.unwrap_or(DEFAULT_OPACITY),
             output_channel,
@@ -57,7 +58,12 @@ impl Plugin {
         .await;
         let (parsed_messages_tx, parsed_messages_rx) = tokio::sync::mpsc::channel(16);
 
-        let result = Self::spawn(&config.path, listener_rx, parsed_messages_tx);
+        tracing::debug!(
+            "Spawing plugin, '{}', with: {}",
+            config.name,
+            config.path.display()
+        );
+        let result = Self::spawn(config.clone(), listener_rx, parsed_messages_tx, state);
         match result {
             Ok(mut child) => {
                 let stdin = child
@@ -86,14 +92,36 @@ impl Plugin {
         config: Config,
         palette: crate::palette::converter::Palette,
         state: std::sync::Arc<crate::shared_state::SharedState>,
-        tattoy_protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
     ) -> Result<()> {
         tracing::info!("Starting plugin: {}", config.name);
 
         let (listener_tx, listener_rx) = tokio::sync::oneshot::channel();
-        let mut plugin = Self::new(&config, listener_rx, output, palette, state).await?;
-        let mut tattoy_protocol_receiver = tattoy_protocol_tx.subscribe();
+        let mut tattoy_protocol_receiver = state.protocol_tx.subscribe();
+
+        let plugin_result = Self::new(
+            &config,
+            listener_rx,
+            output,
+            palette,
+            std::sync::Arc::clone(&state),
+        )
+        .await;
+        let mut plugin = match plugin_result {
+            Ok(plugin) => plugin,
+            Err(error) => {
+                let message = format!("Plugin {}: {error:?}", config.name);
+                state
+                    .send_notification(
+                        format!("'{}' plugin error", config.name).as_str(),
+                        crate::tattoys::notifications::message::Level::Error,
+                        Some(error.root_cause().to_string()),
+                        false,
+                    )
+                    .await;
+                color_eyre::eyre::bail!(message);
+            }
+        };
 
         #[expect(
             clippy::integer_division_remainder_used,
@@ -216,15 +244,19 @@ impl Plugin {
 
     /// Spawn the plugin process.
     fn spawn(
-        path: &std::path::Path,
+        config: Config,
         mut listener_rx: tokio::sync::oneshot::Receiver<crate::run::Protocol>,
         parsed_messages_tx: tokio::sync::mpsc::Sender<tattoy_protocol::PluginOutputMessages>,
+        state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<std::process::Child> {
         let mut cmd = std::process::Command::new(
-            path.to_str()
+            config
+                .path
+                .to_str()
                 .context("Couldn't convert plugin path to string")?,
         );
         cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
         cmd.stdin(std::process::Stdio::piped());
 
         let mut child = cmd.spawn()?;
@@ -239,13 +271,23 @@ impl Plugin {
         //     https://github.com/serde-rs/json/issues/316
         let mut stdout_reader = std::io::BufReader::new(stdout);
 
+        let mut stderr = child
+            .stderr
+            .take()
+            .context("Couldn't take STDERR from plugin.")?;
+
         let tokio_runtime = tokio::runtime::Handle::current();
         std::thread::spawn(move || {
             tokio_runtime.block_on(async {
                 tracing::trace!("Starting to parse JSON stream from plugin...");
+                let mut did_plugin_exit_by_itself = false;
                 loop {
                     tracing::debug!("(Re)starting parser");
-                    Self::listener(&mut stdout_reader, &parsed_messages_tx).await;
+                    let result = Self::listener(&mut stdout_reader, &parsed_messages_tx).await;
+                    if result.is_err() {
+                        did_plugin_exit_by_itself = true;
+                        break;
+                    }
                     match listener_rx.try_recv() {
                         Ok(message) => {
                             if matches!(message, crate::run::Protocol::End) {
@@ -254,12 +296,34 @@ impl Plugin {
                         }
                         Err(error) => match error {
                             tokio::sync::oneshot::error::TryRecvError::Empty => (),
-                            tokio::sync::oneshot::error::TryRecvError::Closed => break,
+                            tokio::sync::oneshot::error::TryRecvError::Closed => {
+                                did_plugin_exit_by_itself = true;
+                                break;
+                            }
                         },
                     }
-                    tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                 }
                 tracing::debug!("Leaving plugin listener loop.");
+
+                if did_plugin_exit_by_itself {
+                    let mut error_output = String::new();
+                    stderr
+                        .read_to_string(&mut error_output)
+                        .unwrap_or_else(|error| {
+                            tracing::error!("Couldn't read STDERR from plugin process: {error:?}");
+                            0
+                        });
+                    error_output = format!("STDERR output:\n{error_output}");
+                    state
+                        .send_notification(
+                            format!("'{}' plugin exited", config.name).as_str(),
+                            crate::tattoys::notifications::message::Level::Error,
+                            Some(error_output),
+                            false,
+                        )
+                        .await;
+                }
             });
         });
 
@@ -276,9 +340,17 @@ impl Plugin {
     async fn listener(
         reader: &mut std::io::BufReader<std::process::ChildStdout>,
         parsed_messages_tx: &tokio::sync::mpsc::Sender<tattoy_protocol::PluginOutputMessages>,
-    ) {
+    ) -> Result<()> {
         let mut messages = serde_json::Deserializer::from_reader(reader)
             .into_iter::<tattoy_protocol::PluginOutputMessages>();
+
+        // This is how we detect whether the plugin process has exited. I don't actually know how
+        // reliable this is. Ideally we'd listen to `child.wait()` in a separate thread.
+        if messages.by_ref().peekable().peek().is_none() {
+            let message = "STDIN has gone away";
+            tracing::warn!(message);
+            color_eyre::eyre::bail!(message);
+        }
 
         for parse_result in messages.by_ref() {
             match parse_result {
@@ -293,6 +365,8 @@ impl Plugin {
                 Err(error) => tracing::error!("Error parsing plugin message: {error:?}"),
             }
         }
+
+        Ok(())
     }
 
     /// Tick the render

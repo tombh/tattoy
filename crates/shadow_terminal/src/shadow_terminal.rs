@@ -342,22 +342,6 @@ impl ShadowTerminal {
         Ok(())
     }
 
-    // The output of the PTY seems to be capped at 4095 bytes. Making the size of
-    // [`crate::pty::BytesFromPTY`] bigger than that doesn't seem to make a difference. This means
-    // that for large screen updates `self.build_current_surface()` can be called an unnecessary
-    // number of times.
-    //
-    // Possible solutions:
-    //   * Ideally get the PTY to send bigger payloads.
-    //   * Only call `self.build_current_surface()` at a given frame rate, probably 60fps.
-    //     This could be augmented with a check for the size so the payloads smaller than
-    //     4095 get rendered immediately.
-    //   * When receiving a payload of exactly 4095 bytes, wait a fixed amount of time for
-    //     more payloads, because in most cases 4095 means that there wasn't enough room to
-    //     fit everything in a single payload.
-    //   * Make `self.build_current_surface()` able to detect new payloads as they happen
-    //     so it can cancel itself and immediately start working on the new one.
-    //
     /// Send the current state of the shadow terminal as a Termwiz surface or changeset to whoever
     /// is externally listening.
     async fn send_outputs(&mut self) -> Result<(), crate::errors::ShadowTerminalError> {

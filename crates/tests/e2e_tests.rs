@@ -365,6 +365,44 @@ mod e2e {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn bad_plugin() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let conf_dir = temp_dir.into_path();
+        let conf_path = conf_dir.join("tattoy.toml");
+        let plugin_path = shadow_terminal::tests::helpers::workspace_dir()
+            .join("crates")
+            .join("tests")
+            .join("resources")
+            .join("bad_plugin.sh");
+
+        let mut conf_file = std::fs::File::create(conf_path).unwrap();
+        let config = format!(
+            r#"
+            [notifications]
+            enabled = true
+            opacity = 0.9
+            level = "info"
+            duration = 5.0
+            
+            [[plugins]]
+            enabled = true
+            name = "bad-plugin"
+            path = "{}"
+            opacity = 1.0
+            "#,
+            plugin_path.as_path().to_string_lossy()
+        );
+        conf_file.write_all(config.as_bytes()).unwrap();
+
+        let mut tattoy = start_tattoy(Some(conf_dir.to_string_lossy().into())).await;
+
+        tattoy
+            .wait_for_string("Something went wrong", None)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn background_command() {
         let temp_dir = tempfile::tempdir().unwrap();
         let conf_dir = temp_dir.into_path();
@@ -373,9 +411,10 @@ mod e2e {
         let config = "
             [bg_command]
             enabled = true
-            command = ['bash', '-c', 'watch \"echo testing background command\"']
+            command = ['bash', '-c', 'watch echo testing background command']
             layer = -1
             opacity = 1.0
+            expect_exit = false
         ";
         conf_file.write_all(config.as_bytes()).unwrap();
 

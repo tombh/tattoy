@@ -45,10 +45,11 @@ impl Palette {
         self.true_colour_tuple_from_index(0)
     }
 
-    /// Terminal emulator convention is that the default foreground colour is the second colour in
-    /// the terminal's palette.
+    /// This perhaps naively assumes that the default foreground colour is always found at palette
+    /// index 15. This could well be a bad idea, in which case we should add the default foreground
+    /// (and background) colour to the palatte swatch for parsing.
     pub fn default_foreground_colour(&self) -> termwiz::color::SrgbaTuple {
-        self.true_colour_tuple_from_index(1)
+        self.true_colour_tuple_from_index(15)
     }
 
     /// Print all the true colour versions of the terminal's palette as found in the screenshot.
