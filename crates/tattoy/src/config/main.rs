@@ -39,9 +39,6 @@ pub(crate) enum LogLevel {
 #[derive(serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 pub(crate) struct Config {
-    /// The `TERM` value to send to the underlying PTY. This may not actually be needed, but
-    /// currently "TERM=xterm-256color" is fixing some bugs for me.
-    pub term: String,
     /// The command to run in the underlying PTY, defaults to the users shell as dedfined in the
     /// `SHELL` env variable.
     pub command: String,
@@ -91,7 +88,6 @@ impl Default for Config {
         let log_path = log_directory.join("tattoy").join("tattoy.log");
 
         Self {
-            term: "xterm-256color".to_owned(),
             command,
             log_level: LogLevel::Off,
             log_path,
