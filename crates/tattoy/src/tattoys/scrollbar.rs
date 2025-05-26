@@ -22,12 +22,11 @@ impl Scrollbar {
 
     /// Our main entrypoint.
     pub(crate) async fn start(
-        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: std::sync::Arc<crate::shared_state::SharedState>,
     ) -> Result<()> {
+        let mut protocol = state.protocol_tx.subscribe();
         let mut scrollbar = Self::new(output, state).await;
-        let mut protocol = protocol_tx.subscribe();
 
         #[expect(
             clippy::integer_division_remainder_used,

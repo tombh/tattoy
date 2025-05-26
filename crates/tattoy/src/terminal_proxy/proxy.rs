@@ -18,7 +18,7 @@ pub(crate) struct Proxy {
     /// The Tattoy protocol
     pub tattoy_protocol: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     /// A hash map linking palette indexes to true colour values.
-    palette: Option<crate::palette::converter::Palette>,
+    palette: crate::palette::converter::Palette,
 }
 
 impl Proxy {
@@ -51,8 +51,8 @@ impl Proxy {
         let shadow_terminal = shadow_terminal::active_terminal::ActiveTerminal::start(config);
 
         let mut tattoy_protocol_rx = tattoy_protocol.subscribe();
-        let mut proxy = Self::new(state, shadow_terminal, surfaces_tx, tattoy_protocol).await?;
-
+        let mut proxy =
+            Self::new(state, shadow_terminal, surfaces_tx, tattoy_protocol.clone()).await?;
         #[expect(
             clippy::integer_division_remainder_used,
             reason = "This is caused by the `tokio::select!`"
@@ -81,9 +81,7 @@ impl Proxy {
     /// Handle output from the Shadow Terminal.
     async fn handle_output(&self, mut output: shadow_terminal::output::Output) -> Result<()> {
         tracing::trace!("Received output from Shadow Terminal: {output:?}");
-        if let Some(palette) = self.palette.as_ref() {
-            palette.convert_cells_to_true_colour(&mut output);
-        }
+        self.palette.convert_cells_to_true_colour(&mut output);
 
         match output.clone() {
             shadow_terminal::output::Output::Diff(diff) => {

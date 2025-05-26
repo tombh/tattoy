@@ -2,7 +2,6 @@
 
 use color_eyre::eyre::ContextCompat as _;
 use color_eyre::eyre::Result;
-use notify::Watcher as _;
 
 /// A copy of the default config file. It gets copied to the user's config folder the first time
 /// they start Tattoy.
@@ -68,6 +67,8 @@ pub(crate) struct Config {
     pub shader: crate::tattoys::shaders::main::Config,
     /// Background command
     pub bg_command: crate::tattoys::bg_command::Config,
+    /// Notifications
+    pub notifications: crate::tattoys::notifications::main::Config,
 }
 
 impl Default for Config {
@@ -103,6 +104,7 @@ impl Default for Config {
             minimap: crate::tattoys::minimap::Config::default(),
             shader: crate::tattoys::shaders::main::Config::default(),
             bg_command: crate::tattoys::bg_command::Config::default(),
+            notifications: crate::tattoys::notifications::main::Config::default(),
         }
     }
 }
@@ -277,25 +279,35 @@ impl Config {
     /// the contents of the new config file.
     pub fn watch(
         state: std::sync::Arc<crate::shared_state::SharedState>,
-        tattoy_protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> tokio::task::JoinHandle<Result<()>> {
         tokio::spawn(async move {
             let path = Self::directory(&state).await;
             tracing::debug!("Watching config ({path:?}) for changes.");
 
             let (config_file_change_tx, mut config_file_change_rx) = tokio::sync::mpsc::channel(1);
-            let mut tattoy_protocol_rx = tattoy_protocol_tx.subscribe();
+            let mut tattoy_protocol_rx = state.protocol_tx.subscribe();
 
-            let mut watcher = notify::RecommendedWatcher::new(
-                move |res| {
-                    let result = config_file_change_tx.blocking_send(res);
-                    if let Err(error) = result {
-                        tracing::error!("Sending config file watcher notification: {error:?}");
+            let mut debouncer = notify_debouncer_full::new_debouncer(
+                std::time::Duration::from_millis(100),
+                None,
+                move |result: notify_debouncer_full::DebounceEventResult| match result {
+                    Ok(events) => {
+                        for event in events {
+                            let send_result = config_file_change_tx.blocking_send(event.clone());
+                            if let Err(error) = send_result {
+                                tracing::error!(
+                                    "Sending config file watcher notification: {error:?}"
+                                );
+                            }
+                        }
                     }
+                    Err(error) => tracing::error!("File watcher: {error:?}"),
                 },
-                notify::Config::default(),
             )?;
-            watcher.watch(&path, notify::RecursiveMode::NonRecursive)?;
+            debouncer.watch(
+                &path,
+                notify_debouncer_full::notify::RecursiveMode::NonRecursive,
+            )?;
 
             #[expect(
                 clippy::integer_division_remainder_used,
@@ -303,7 +315,9 @@ impl Config {
             )]
             loop {
                 tokio::select! {
-                    Some(result) = config_file_change_rx.recv() => Self::handle_file_change_event(result, &state, &tattoy_protocol_tx).await,
+                    Some(event) = config_file_change_rx.recv() => {
+                        Self::handle_file_change_event(event, &state).await;
+                    },
                     Ok(message) = tattoy_protocol_rx.recv() => {
                         if matches!(message, crate::run::Protocol::End) {
                             break;
@@ -320,38 +334,52 @@ impl Config {
     /// Handle an event from the config file watcher. Should normally be a notification that the
     /// config file has changed.
     async fn handle_file_change_event(
-        file_event_result: std::result::Result<notify::Event, notify::Error>,
+        event: notify_debouncer_full::DebouncedEvent,
         state: &std::sync::Arc<crate::shared_state::SharedState>,
-        tattoy_protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) {
-        let Ok(event) = file_event_result else {
-            tracing::error!("Receving config file watcher event: {file_event_result:?}");
+        use notify_debouncer_full::notify::event as notify_event;
+        let notify_event::EventKind::Modify(kind) = event.kind else {
+            return;
+        };
+        let notify_event::ModifyKind::Data(_) = kind else {
             return;
         };
 
-        if !matches!(
-            event,
-            notify::Event {
-                kind: notify::event::EventKind::Modify(_),
-                ..
-            }
-        ) {
-            return;
-        }
-        tracing::debug!("Config file change detected, updating shared state.");
+        tracing::debug!(
+            "Config file change detected ({:?}), updating shared state.",
+            event.paths
+        );
 
-        let maybe_new_config = Self::load_config_into_shared_state(state).await;
-
-        match maybe_new_config {
+        match Self::load_config_into_shared_state(state).await {
             Ok(config) => {
-                let protocol_send_result =
-                    tattoy_protocol_tx.send(crate::run::Protocol::Config(config));
-                if let Err(error) = protocol_send_result {
-                    tracing::error!("Couldn't send config update on protocol channgel: {error:?}");
-                }
+                state
+                    .protocol_tx
+                    .send(crate::run::Protocol::Config(config))
+                    .unwrap_or_else(|send_error| {
+                        tracing::error!(
+                            "Couldn't send config update on protocol channel: {send_error:?}"
+                        );
+                        0
+                    });
+
+                state
+                    .send_notification(
+                        "Config updated",
+                        crate::tattoys::notifications::message::Level::Info,
+                        None,
+                        false,
+                    )
+                    .await;
             }
             Err(error) => {
-                tracing::error!("Updating shared state after config file change: {error:?}");
+                state
+                    .send_notification(
+                        "Config update error",
+                        crate::tattoys::notifications::message::Level::Error,
+                        Some(error.root_cause().to_string()),
+                        false,
+                    )
+                    .await;
             }
         }
     }
@@ -369,17 +397,19 @@ impl Config {
     /// Load the terminal's palette as true colour values.
     pub async fn load_palette(
         state: std::sync::Arc<crate::shared_state::SharedState>,
-    ) -> Result<Option<crate::palette::converter::Palette>> {
+    ) -> Result<crate::palette::converter::Palette> {
         let path = crate::palette::parser::Parser::palette_config_path(&state).await;
-        if path.exists() {
-            tracing::info!("Loading the terminal palette's true colours from config");
-            let data = tokio::fs::read_to_string(path).await?;
-            let map = toml::from_str::<crate::palette::converter::PaletteHashMap>(&data)?;
-            let palette = crate::palette::converter::Palette { map };
-            Ok(Some(palette))
-        } else {
-            tracing::debug!("Terminal palette colours config file not found in config directory");
-            Ok(None)
+        if !path.exists() {
+            color_eyre::eyre::bail!(
+                "Terminal palette colours config file not found at: {}",
+                path.display()
+            );
         }
+
+        tracing::info!("Loading the terminal palette's true colours from config");
+        let data = tokio::fs::read_to_string(path).await?;
+        let map = toml::from_str::<crate::palette::converter::PaletteHashMap>(&data)?;
+        let palette = crate::palette::converter::Palette { map };
+        Ok(palette)
     }
 }

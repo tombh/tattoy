@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use color_eyre::eyre::Result;
+use tokio::sync::RwLock;
 
 use crate::renderer::Renderer;
 
@@ -21,9 +22,10 @@ pub struct TTYSize {
 }
 
 /// All the shared data the app uses
-#[derive(Default)]
 #[non_exhaustive]
 pub(crate) struct SharedState {
+    /// The channel on which all Tattoy protocol messages are sent.
+    pub protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
     /// Location of the config directory.
     pub config_path: tokio::sync::RwLock<std::path::PathBuf>,
     /// Name of the main config file.
@@ -61,15 +63,72 @@ pub(crate) struct SharedState {
 
 impl SharedState {
     /// Initialise the shared state
-    pub async fn init() -> Result<Arc<Self>> {
-        let tty_size = Renderer::get_users_tty_size()?;
-        let state = Self::default();
+    pub async fn init(
+        width: u16,
+        height: u16,
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+    ) -> Result<Arc<Self>> {
+        let state = Self {
+            protocol_tx,
+            config_path: RwLock::default(),
+            main_config_file: RwLock::default(),
+            config: RwLock::default(),
+            keybindings: RwLock::default(),
+            tty_size: RwLock::new(TTYSize { width, height }),
+            shadow_tty_screen: RwLock::default(),
+            shadow_tty_scrollback: RwLock::default(),
+            is_scrolling: RwLock::default(),
+            is_alternate_screen: RwLock::default(),
+            pty_sequence: RwLock::default(),
+            is_logging: RwLock::default(),
+            is_rendering_enabled: RwLock::default(),
+        };
         *state.is_rendering_enabled.write().await = true;
 
-        state
-            .set_tty_size(tty_size.cols.try_into()?, tty_size.rows.try_into()?)
-            .await;
+        state.set_tty_size(width, height).await;
         Ok(Arc::new(state))
+    }
+
+    /// Convenience method to initialise the renderer with the user's terminal's size.
+    pub async fn init_with_users_tty_size(
+        protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+    ) -> Result<Arc<Self>> {
+        let tty_size = Renderer::get_users_tty_size()?;
+        Self::init(
+            tty_size.cols.try_into()?,
+            tty_size.rows.try_into()?,
+            protocol_tx,
+        )
+        .await
+    }
+
+    /// A convience function for sending a notification.
+    pub async fn send_notification(
+        &self,
+        title: &str,
+        level: crate::tattoys::notifications::message::Level,
+        mut maybe_body: Option<String>,
+        include_logs_message: bool,
+    ) {
+        if let Some(mut body) = maybe_body.clone() {
+            if include_logs_message {
+                use crate::tattoys::notifications::main::Notifications;
+                let logpath = self.config.read().await.log_path.clone();
+                let is_logging = *self.is_logging.read().await;
+                let logs_help_text = Notifications::logs_help_text(is_logging, &logpath);
+                body = format!("{body}\n\n{logs_help_text}");
+                maybe_body = Some(body);
+            }
+        }
+
+        self.protocol_tx
+            .send(crate::tattoys::notifications::message::Message::make(
+                title, level, maybe_body,
+            ))
+            .unwrap_or_else(|send_error| {
+                tracing::error!("Error sending notification: {send_error:?}");
+                0
+            });
     }
 
     /// Get a read lock and return the current TTY size

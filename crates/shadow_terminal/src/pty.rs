@@ -106,6 +106,11 @@ impl PTY {
             if let Err(error) = waiter_result {
                 tracing::error!("Waiting for PTY: {error:?}");
             }
+
+            // A crude hack to make sure that early-exiting commands still have a chance to
+            // successfully send their output.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
             let sender_result = protocol_out.send(crate::Protocol::End);
             if let Err(error) = sender_result {
                 tracing::error!("Sending `Protocol::End` after: {error:?} ");

@@ -29,6 +29,8 @@ pub(crate) enum FrameUpdate {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub(crate) enum Protocol {
+    /// A signal to indicate that a system has successfully started.
+    Initialised(String),
     /// Output from the PTY.
     Output(shadow_terminal::output::Output),
     /// The entire application is exiting.
@@ -48,6 +50,8 @@ pub(crate) enum Protocol {
     Config(crate::config::main::Config),
     /// A known user-defined keybinding event was triggered.
     KeybindEvent(crate::config::input::KeybindingAction),
+    /// User notifications in the the UI
+    Notification(crate::tattoys::notifications::message::Message),
 }
 
 // TODO:
@@ -56,6 +60,7 @@ pub(crate) enum Protocol {
 //
 /// Main entrypoint
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
+    let protocol_tx = state_arc.protocol_tx.clone();
     let cli_args = setup(state_arc).await?;
     let palette_config_exists =
         crate::palette::parser::Parser::palette_config_exists(state_arc).await;
@@ -76,7 +81,6 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         crate::palette::parser::Parser::run(state_arc, None).await?;
     }
 
-    let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
     let users_tty_size = crate::renderer::Renderer::get_users_tty_size()?;
     state_arc
         .set_tty_size(
@@ -87,12 +91,12 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
 
     let (renderer, surfaces_tx) = Renderer::start(Arc::clone(state_arc), protocol_tx.clone());
 
-    let config_handle =
-        crate::config::main::Config::watch(Arc::clone(state_arc), protocol_tx.clone());
+    let config_handle = crate::config::main::Config::watch(Arc::clone(state_arc));
     let input_thread_handle = RawInput::start(protocol_tx.clone());
+
+    override_on_panic_behaviour();
     let tattoys_handle = crate::loader::start_tattoys(
         cli_args.enabled_tattoys.clone(),
-        protocol_tx.clone(),
         surfaces_tx.clone(),
         Arc::clone(state_arc),
     );
@@ -140,6 +144,45 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     Ok(())
 }
 
+/// Block until the given system has ommitted its startup message.
+pub(crate) async fn wait_for_system(
+    mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
+    system: &str,
+) {
+    tracing::debug!("Waiting for {system} to initialise...");
+    loop {
+        let Ok(message) = protocol.recv().await else {
+            continue;
+        };
+
+        if let crate::run::Protocol::Initialised(initialised_system) = message {
+            if initialised_system == system {
+                break;
+            }
+        }
+    }
+    tracing::debug!("...{system} system initialised.");
+}
+
+/// The default behaviour prints all panics to the CLI. But we don't want that to happen in
+/// tattoy tasks. However `set_hook` globally changes behaviour, therefore it doesn't allow things
+/// like only changing behaviour for a block. So we want this to be called as late as posssible so
+/// it only affects tattoy tasks. Currently the only main-thread system that we'd want to see
+/// panics for, is the Shadow Terminal. At least a log is made. But it would be good to figure out
+/// a way to notify developers especially, that the Shadow Terminal panicked.
+fn override_on_panic_behaviour() {
+    std::panic::set_hook(Box::new(|info| {
+        let message = if let Some(message) = info.payload().downcast_ref::<String>() {
+            message
+        } else if let Some(message) = info.payload().downcast_ref::<&str>() {
+            message
+        } else {
+            "Caught a panic with an unknown type."
+        };
+        tracing::error!("Caught panic: {message:?}");
+    }));
+}
+
 /// Get the command that Tattoy will use to startup, usually something like `bash`.
 async fn get_startup_command(
     state: &std::sync::Arc<SharedState>,
@@ -181,8 +224,20 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     (*main_config_file).clone_from(&cli_args.main_config);
     drop(main_config_file);
 
-    crate::config::main::Config::setup_directory(cli_args.config_dir.clone(), state).await?;
-    crate::config::main::Config::load_config_into_shared_state(state).await?;
+    let directory_result =
+        crate::config::main::Config::setup_directory(cli_args.config_dir.clone(), state).await;
+    if let Err(directory_error) = directory_result {
+        color_eyre::eyre::bail!("Error setting up config directory: {directory_error:?}");
+    }
+
+    let config_result = crate::config::main::Config::load_config_into_shared_state(state).await;
+    if let Err(config_error) = config_result {
+        let path = crate::config::main::Config::main_config_path(state).await;
+        color_eyre::eyre::bail!(
+            "Bad config file: {config_error:?}\n\nConfig path: {}",
+            path.display()
+        );
+    }
 
     setup_logging(cli_args.clone(), state).await?;
 
@@ -193,12 +248,8 @@ async fn setup(state: &std::sync::Arc<SharedState>) -> Result<CliArgs> {
     // Assuming true colour makes Tattoy simpler.
     // * I think it's safe to assume that the vast majority of people using Tattoy will have a
     //   true color terminal anyway.
-    // * Even if a user doesn't have a true colour terminal, we should be able to internally
-    //   render as true color and then downgrade later when Tattoy does its final output.
     std::env::set_var("COLORTERM", "truecolor");
 
-    // There's probably a better way of doing this, like just inheriting it from the user. But for
-    // now always defaulting to "xterm-256color" fixes some bugs, namely mouse input in `htop`.
     let term = state.config.read().await.term.clone();
     tracing::debug!("Setting `TERM` env to: '{term}'");
     std::env::set_var("TERM", term);

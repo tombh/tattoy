@@ -20,6 +20,16 @@ frame_rate = 30
 # It can be useful to indicate that Tattoy is indeed running.
 show_tattoy_indicator = true
 
+[notifications]
+enabled = true
+opacity = 0.9
+# The minimum level of notifications to display.
+# One of: "error", "warn", "info", "debug", "trace".
+level = "info"
+# The amount of time in seconds to display each notification.
+duration = 5.0
+
+# Change various colour qualities of the final composited render.
 [color]
 saturation = 0.0
 brightness = 0.0
@@ -71,9 +81,22 @@ path = "shaders/point_lights.glsl"
 
 [bg_command]
 enabled = false
+# The command to run. The executable goes in the first position and then each argument must
+# be placed in its own quotes in the array.
+# Examples:
+# * Render a live-updating instance of the common monitoring application "top" in the background.
+#   `command = ["top"]`
+# * Play the "Bad Apple" video in the background.
+#   `command = ["mpv", "--really-quiet", "--vo=tct", "--volume=0", "https://www.youtube.com/watch?v=UkgK8eUdpAo"]`
+command = ["echo", "Hello World"]
+# Do you expect the command to exit or not?
+# Usually when a command exits Tattoy shows an error notification. But you may want to render a
+# command that outputs some static content, for example to print out some ASCII-based image:
+#   `command = ["chafa", "/path/to/wallpaper.png"]`
+# Bare in mind that there's currently no config to re-run the command on terminal resize.
+expect_exit = false
 opacity = 0.75
 layer = -5
-command = ["echo", "Hello World"]
 
 [keybindings]
 # Whether Tattoy renders anything apart from the TTY. They TTY is always rendered,
