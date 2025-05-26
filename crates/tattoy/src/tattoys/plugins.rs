@@ -163,7 +163,9 @@ impl Plugin {
             reason = "We're just handling the common cases here."
         )]
         match message {
-            crate::run::Protocol::Resize { .. } => self.send_tty_size()?,
+            crate::run::Protocol::Resize { width, height } => {
+                self.send_tty_size(*width, *height)?;
+            }
             crate::run::Protocol::Output(_) => self.send_pty_output()?,
 
             _ => (),
@@ -173,10 +175,10 @@ impl Plugin {
     }
 
     /// Send the new terminal size to the plugin.
-    fn send_tty_size(&mut self) -> Result<()> {
+    fn send_tty_size(&mut self, width: u16, height: u16) -> Result<()> {
         let json = serde_json::to_string(&tattoy_protocol::PluginInputMessages::TTYResize {
-            width: self.tattoy.width,
-            height: self.tattoy.height,
+            width,
+            height,
         })?;
 
         tracing::trace!("Sending JSON to plugin: {json}");
