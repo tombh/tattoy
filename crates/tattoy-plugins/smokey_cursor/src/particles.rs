@@ -1,17 +1,8 @@
 //! Functions that add and remove particles
 
-use rand::Rng as _;
 use std::ops::Div as _;
 
-use glam::Vec2;
-
-use super::{
-    particle::{Particle, PARTICLE_SIZE},
-    simulation::Simulation,
-};
-
-/// The number of attempts allowed to try to find a safe place to add a new particle
-const ATTEMPTS_TO_FIND_SAFE_PLACE: usize = 100;
+use super::{particle::Particle, simulation::Simulation};
 
 #[expect(
     clippy::cast_precision_loss,
@@ -77,43 +68,12 @@ impl Simulation {
 
     /// Safely add a particle without creating "explosions"
     pub fn add_particle(&mut self, x: f32, y: f32) {
-        if let Some((x_safe, y_safe)) = self.find_safe_place(x, y) {
-            let particle = Particle::default_movable(
-                self.config.scale * super::particle::PARTICLE_SIZE,
-                self.config.initial_velocity.into(),
-                x_safe,
-                y_safe,
-            );
-            self.particles.push_front(particle);
-        }
-    }
-
-    /// Based on the requested location of the new particle find a position near it, but also a
-    /// safe distance from other particles, so as not to create unrealistic "explosive" responses.
-    fn find_safe_place(&self, mut x: f32, mut y: f32) -> Option<(f32, f32)> {
-        if self.particles.is_empty() {
-            return Some((x, y));
-        }
-
-        let mut too_close;
-        for _ in 0usize..ATTEMPTS_TO_FIND_SAFE_PLACE {
-            too_close = false;
-            for particle in &self.particles {
-                let delta = particle.position - Vec2::new(x, y);
-                let distance = delta.length();
-                if distance < PARTICLE_SIZE {
-                    too_close = true;
-                    x += rand::thread_rng().gen_range(-PARTICLE_SIZE..PARTICLE_SIZE);
-                    y += rand::thread_rng().gen_range(-PARTICLE_SIZE..PARTICLE_SIZE);
-                    break;
-                }
-            }
-
-            if !too_close {
-                return Some((x, y));
-            }
-        }
-
-        None
+        let particle = Particle::default_movable(
+            self.config.scale * super::particle::PARTICLE_SIZE,
+            self.config.initial_velocity.into(),
+            x,
+            y,
+        );
+        self.particles.push_front(particle);
     }
 }

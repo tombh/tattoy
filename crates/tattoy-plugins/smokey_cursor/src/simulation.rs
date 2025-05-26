@@ -31,8 +31,6 @@ pub struct Simulation {
 }
 
 #[expect(
-    clippy::cast_precision_loss,
-    clippy::as_conversions,
     clippy::arithmetic_side_effects,
     clippy::float_arithmetic,
     reason = "This is a prototype"
@@ -40,24 +38,32 @@ pub struct Simulation {
 impl Simulation {
     /// Initialise a new simulation
     #[must_use]
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(width: u16, height: u16) -> Self {
         let config = Config {
             initial_velocity: Vec2::new(0.01, -0.1).into(),
             ..Default::default()
         };
-        Self {
-            width: width as f32 * config.scale * super::particle::PARTICLE_SIZE,
-            height: height as f32 * config.scale * super::particle::PARTICLE_SIZE,
+        let mut simulation = Self {
+            width: 0.0,
+            height: 0.0,
             particles: VecDeque::default(),
             neighbours: rstar::RTree::new(),
             config,
-        }
+        };
+        simulation.resize(width, height);
+        simulation
     }
 
     /// Is the simulation ready?
     #[must_use]
     pub fn is_ready(&self) -> bool {
         self.width > 0.0 && self.height > 0.0
+    }
+
+    /// Resize the simulation
+    pub fn resize(&mut self, width: u16, height: u16) {
+        self.width = f32::from(width) * self.config.scale * super::particle::PARTICLE_SIZE;
+        self.height = f32::from(height) * self.config.scale * super::particle::PARTICLE_SIZE;
     }
 
     /// A tick of a graphical frame render

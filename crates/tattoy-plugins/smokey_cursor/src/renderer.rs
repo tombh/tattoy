@@ -49,10 +49,7 @@ impl SmokeyCursor {
 
     /// Initialise the simulation.
     fn initialise(&mut self) {
-        self.simulation = Simulation::new(
-            usize::from(self.tty.size.0),
-            usize::from(self.tty.size.1 * 2),
-        );
+        self.simulation = Simulation::new(self.tty.size.0, self.tty.size.1 * 2);
 
         tracing::debug!("Simulation initialised.");
     }
@@ -93,7 +90,6 @@ impl SmokeyCursor {
     }
 
     /// Handle a protocol message from Tattoy.
-    #[expect(clippy::todo, reason = "TODO: support terminal resizing")]
     fn handle_message(&mut self, message: tattoy_protocol::PluginInputMessages) {
         match message {
             tattoy_protocol::PluginInputMessages::PTYUpdate {
@@ -105,7 +101,10 @@ impl SmokeyCursor {
                 self.tty.cells = cells;
                 self.tty.cursor_position = cursor;
             }
-            tattoy_protocol::PluginInputMessages::TTYResize { .. } => todo!(),
+            tattoy_protocol::PluginInputMessages::TTYResize { width, height } => {
+                self.tty.size = (width, height);
+                self.simulation.resize(width, height * 2);
+            }
 
             #[expect(
                 clippy::unreachable,
