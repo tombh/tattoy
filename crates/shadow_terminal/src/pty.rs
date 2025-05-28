@@ -494,7 +494,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn basic_output() {
-        let mut command = crate::steppable_terminal::get_canonical_shell();
+        let mut command = crate::tests::helpers::get_canonical_shell();
 
         #[cfg(not(target_os = "windows"))]
         command.push("-c".into());
@@ -513,7 +513,7 @@ mod test {
     #[cfg(not(target_os = "windows"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn interactive() {
-        let (output_task, input_channel) = run(crate::steppable_terminal::get_canonical_shell());
+        let (output_task, input_channel) = run(crate::tests::helpers::get_canonical_shell());
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         #[cfg(not(target_os = "windows"))]

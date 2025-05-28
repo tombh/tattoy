@@ -445,8 +445,6 @@ impl Renderer {
                 Compositor::composite_cells(frame_cell, pty_cell, 1.0);
 
                 if let Some(shader_cells) = maybe_shader_cells.as_ref() {
-                    // TODO: it'd be nice to include this with the other iterators, I tried but
-                    // just couldn't figure it out.
                     let shader_cell = Compositor::get_cell(shader_cells, x, y)?;
                     Compositor::composite_fg_colour_only(frame_cell, shader_cell);
                 }

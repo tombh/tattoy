@@ -1,5 +1,21 @@
 //! End to end tests
 
+#[expect(clippy::unwrap_used, reason = "It's for use in tests only")]
+#[inline]
+pub(crate) fn workspace_dir() -> std::path::PathBuf {
+    let output = std::process::Command::new(env!("CARGO"))
+        .arg("locate-project")
+        .arg("--workspace")
+        .arg("--message-format=plain")
+        .output()
+        .unwrap()
+        .stdout;
+    let cargo_path = std::path::Path::new(std::str::from_utf8(&output).unwrap().trim());
+    let workspace_dir = cargo_path.parent().unwrap().to_path_buf();
+    tracing::debug!("Using workspace directory: {workspace_dir:?}");
+    workspace_dir
+}
+
 #[expect(
     clippy::large_futures,
     clippy::unreadable_literal,
@@ -22,7 +38,7 @@ mod e2e {
     const ESCAPE: &str = "\x1b";
 
     fn tattoy_binary_path() -> String {
-        shadow_terminal::tests::helpers::workspace_dir()
+        crate::workspace_dir()
             .join("target")
             .join("debug")
             .join("tattoy")
@@ -31,7 +47,7 @@ mod e2e {
     }
 
     async fn start_tattoy(maybe_config_path: Option<String>) -> SteppableTerminal {
-        let shell = shadow_terminal::steppable_terminal::get_canonical_shell();
+        let shell = shadow_terminal::tests::helpers::get_canonical_shell();
 
         let prompt = "tattoy $ ";
 
@@ -336,7 +352,7 @@ mod e2e {
         let temp_dir = tempfile::tempdir().unwrap();
         let conf_dir = temp_dir.into_path();
         let conf_path = conf_dir.join("tattoy.toml");
-        let plugin_path = shadow_terminal::tests::helpers::workspace_dir()
+        let plugin_path = crate::workspace_dir()
             .join("target")
             .join("debug")
             .join("tattoy-inverter-plugin");
@@ -371,7 +387,7 @@ mod e2e {
         let temp_dir = tempfile::tempdir().unwrap();
         let conf_dir = temp_dir.into_path();
         let conf_path = conf_dir.join("tattoy.toml");
-        let plugin_path = shadow_terminal::tests::helpers::workspace_dir()
+        let plugin_path = crate::workspace_dir()
             .join("crates")
             .join("tests")
             .join("resources")
