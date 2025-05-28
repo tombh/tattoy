@@ -297,7 +297,9 @@ impl crate::shadow_terminal::ShadowTerminal {
                 let mut surface = termwiz::surface::Surface::new(tty_size.cols, tty_size.rows);
                 surface.add_changes(changes);
                 tracing::trace!(
-                    "Sending complete Screen ({} changes): Sample:\n{:.1000}\n...",
+                    "Sending complete Screen ({}x{}, {} changes): Sample:\n{:.1000}\n...",
+                    tty_size.cols,
+                    tty_size.rows,
                     changes_count,
                     surface.screen_chars_to_string()
                 );
@@ -330,11 +332,24 @@ impl crate::shadow_terminal::ShadowTerminal {
                 y: TermwizPosition::Absolute(y),
             });
 
+            let mut wide_character_offset = 0;
             for cell in line.cells_mut() {
+                // Wide characters, like say, "🤓", use up 2 cells in the terminal. The following
+                // cell is always left blank. The Wezterm terminal already does this, and also adding
+                // a wide character to a Termwiz surface will create these blank cells. Therefore
+                // without intervention we'll actually create blank cells from both Wezterm and
+                // Termwiz, doubling the number of needed blank cells. So we just ignore the blank
+                // cells coming from Wezterm and let Termwiz handle automating all the blank cells.
+                if wide_character_offset > 0 {
+                    wide_character_offset -= 1;
+                    continue;
+                }
+
                 let mut attributes = vec![
                     TermwizChange::AllAttributes(cell.attrs().clone()),
                     cell.str().into(),
                 ];
+                wide_character_offset = cell.width() - 1;
 
                 changes.append(&mut attributes);
             }
@@ -405,5 +420,32 @@ impl crate::shadow_terminal::ShadowTerminal {
         }
 
         Ok((line_ids, output_start))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wide_characters() {
+        let mut stepper = Box::pin(crate::tests::helpers::run(Some(100), None)).await;
+        let columns = stepper.shadow_terminal.terminal.get_size().cols;
+        let full_row = "😀".repeat(columns.div_euclid(2));
+
+        let command = format!("echo {full_row}");
+        stepper.send_command(command.as_str()).unwrap();
+
+        // The test code that dumps the terminal contents also includes the required blank cell(s)
+        // that always follow wide characters. So we need to match them too.
+        let raw_with_spaces = full_row
+            .chars()
+            .map(|character| character.to_string())
+            .collect::<Vec<String>>()
+            .join(" ");
+
+        stepper
+            .wait_for_string(&raw_with_spaces, None)
+            .await
+            .unwrap();
     }
 }

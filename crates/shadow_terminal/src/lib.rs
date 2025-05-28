@@ -27,7 +27,7 @@ mod pty;
 pub mod shadow_terminal;
 pub mod steppable_terminal;
 
-/// asdasdad
+/// Tests
 pub mod tests {
     pub mod helpers;
 }
