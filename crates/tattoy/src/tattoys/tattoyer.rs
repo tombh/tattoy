@@ -172,6 +172,8 @@ impl Tattoyer {
     /// Send a blank frame to the renderer.
     pub(crate) async fn send_blank_output(&mut self) -> Result<()> {
         self.initialise_surface();
+        self.surface.width = 0;
+        self.surface.height = 0;
         self.send_output().await
     }
 
