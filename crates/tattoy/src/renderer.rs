@@ -270,6 +270,10 @@ impl Renderer {
         match update {
             FrameUpdate::TattoySurface(surface) => {
                 let surface_id = surface.id.clone();
+                if surface.width == 0 || surface.height == 0 {
+                    self.tattoys.remove(&surface_id);
+                    return Ok(());
+                }
                 self.tattoys.insert(surface_id.clone(), surface);
                 // TODO: convert IDs to something more constant.
                 if surface_id != "random_walker" && surface_id != "shader" {
@@ -386,9 +390,6 @@ impl Renderer {
             .collect();
         tattoys.sort_by_key(|tattoy| tattoy.layer);
 
-        // TODO: Do we have a way to ignore tattoy surfaces that don't actually have any data in
-        // them? Say like the scrollbar, we shouldn't even try to iterate over it if it's not
-        // displayed.
         let frame_size = self.frame.dimensions();
         let mut frame_cells = self.frame.screen_cells();
         for tattoy in &mut tattoys {
