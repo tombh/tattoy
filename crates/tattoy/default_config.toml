@@ -15,6 +15,9 @@ frame_rate = 30
 # It can be useful to indicate that Tattoy is indeed running.
 show_tattoy_indicator = true
 
+# The number of lines in the scrollback. Any lines beyond this are removed.
+scrollback_size = 1000
+
 [notifications]
 enabled = true
 opacity = 0.9

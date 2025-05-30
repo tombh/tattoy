@@ -101,16 +101,19 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
         Arc::clone(state_arc),
     );
 
+    let scrollback_size = state_arc.config.read().await.scrollback_size;
+    let shadow_terminal_config = shadow_terminal::shadow_terminal::Config {
+        width: users_tty_size.cols.try_into()?,
+        height: users_tty_size.rows.try_into()?,
+        command: get_startup_command(state_arc, cli_args).await?,
+        scrollback_size: scrollback_size.try_into()?,
+        ..Default::default()
+    };
     crate::terminal_proxy::proxy::Proxy::start(
         Arc::clone(state_arc),
         surfaces_tx,
         protocol_tx.clone(),
-        shadow_terminal::shadow_terminal::Config {
-            width: users_tty_size.cols.try_into()?,
-            height: users_tty_size.rows.try_into()?,
-            command: get_startup_command(state_arc, cli_args).await?,
-            ..Default::default()
-        },
+        shadow_terminal_config,
     )
     .await?;
     tracing::debug!("🏁 left PTY thread, exiting Tattoy...");
