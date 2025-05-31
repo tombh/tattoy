@@ -170,8 +170,10 @@ impl Tattoyer {
     }
 
     /// Send a blank frame to the renderer.
-    pub(crate) async fn send_blank_output(&mut self) -> Result<()> {
+    pub async fn send_blank_output(&mut self) -> Result<()> {
         self.initialise_surface();
+        self.surface.width = 0;
+        self.surface.height = 0;
         self.send_output().await
     }
 
@@ -186,7 +188,7 @@ impl Tattoyer {
     }
 
     /// Check if the scrollback output has changed.
-    pub fn is_scrollback_output_changed(message: &crate::run::Protocol) -> bool {
+    pub const fn is_scrollback_output_changed(message: &crate::run::Protocol) -> bool {
         #[expect(
             clippy::wildcard_enum_match_arm,
             reason = "We only want to react to messages that cause output changes"
@@ -216,7 +218,7 @@ impl Tattoyer {
     }
 
     /// Check if the screen output has changed.
-    pub fn is_screen_output_changed(message: &crate::run::Protocol) -> bool {
+    pub const fn is_screen_output_changed(message: &crate::run::Protocol) -> bool {
         #[expect(
             clippy::wildcard_enum_match_arm,
             reason = "We only want to react to messages that cause output changes"
@@ -246,7 +248,7 @@ impl Tattoyer {
     }
 
     /// Has the contents of the PTY changed?
-    pub fn is_pty_changed(
+    pub const fn is_pty_changed(
         message: &crate::run::Protocol,
     ) -> Option<shadow_terminal::output::SurfaceKind> {
         if Self::is_scrollback_output_changed(message) {

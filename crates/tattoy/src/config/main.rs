@@ -52,6 +52,10 @@ pub(crate) struct Config {
     pub frame_rate: u32,
     /// Whether to show the little tattoy indicator in the top-right of the terminal.
     pub show_tattoy_indicator: bool,
+    /// Whether to show the startup logo.
+    pub show_startup_logo: bool,
+    /// The size of the scrollback. Lines after this will be removed.
+    pub scrollback_size: u32,
     /// Colour grading
     pub color: Color,
     /// Auto adjusting of text contrast
@@ -94,6 +98,8 @@ impl Default for Config {
             frame_rate: 30,
             keybindings: super::input::KeybindingsRaw::new(),
             show_tattoy_indicator: true,
+            show_startup_logo: true,
+            scrollback_size: 1000,
             color: Color::default(),
             text_contrast: TextContrast::default(),
             plugins: Vec::default(),
@@ -378,6 +384,8 @@ impl Config {
                     .await;
             }
         }
+
+        tracing::trace!("Config file change sent");
     }
 
     /// Get a temporary file handle.
