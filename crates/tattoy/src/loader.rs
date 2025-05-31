@@ -7,6 +7,7 @@ use color_eyre::eyre::Result;
 use crate::run::FrameUpdate;
 
 /// Start the main loader thread
+#[expect(clippy::too_many_lines, reason = "It's mostly repetitive")]
 pub(crate) fn start_tattoys(
     enabled_tattoys: Vec<String>,
     output: tokio::sync::mpsc::Sender<FrameUpdate>,
@@ -20,6 +21,17 @@ pub(crate) fn start_tattoys(
             let palette = crate::config::main::Config::load_palette(Arc::clone(&state)).await?;
             let mut tattoy_futures = tokio::task::JoinSet::new();
 
+            if enabled_tattoys.contains(&"startup_logo".to_owned())
+                || state.config.read().await.show_startup_logo
+            {
+                tracing::info!("Starting 'startup_logo' tattoy...");
+                tattoy_futures.spawn(crate::tattoys::startup_logo::StartupLogo::start(
+                    output.clone(),
+                    Arc::clone(&state),
+                    palette.clone(),
+                ));
+            }
+
             if enabled_tattoys.contains(&"notifications".to_owned())
                 || state.config.read().await.notifications.enabled
             {
@@ -27,6 +39,7 @@ pub(crate) fn start_tattoys(
                 tattoy_futures.spawn(crate::tattoys::notifications::main::Notifications::start(
                     output.clone(),
                     Arc::clone(&state),
+                    palette.clone(),
                 ));
                 crate::run::wait_for_system(state.protocol_tx.subscribe(), "notifications").await;
             }

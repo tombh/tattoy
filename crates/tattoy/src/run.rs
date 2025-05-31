@@ -59,6 +59,10 @@ pub(crate) enum Protocol {
 // return its error, and then check them all at the end?
 //
 /// Main entrypoint
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "It could be improved but it's not terrible yet"
+)]
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let protocol_tx = state_arc.protocol_tx.clone();
     let cli_args = setup(state_arc).await?;
@@ -182,7 +186,16 @@ fn override_on_panic_behaviour() {
         } else {
             "Caught a panic with an unknown type."
         };
-        tracing::error!("Caught panic: {message:?}");
+        let location = match info.location() {
+            Some(location) => format!(
+                "{}@{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            ),
+            None => "Unknown location".to_owned(),
+        };
+        tracing::error!("Caught panic ({}): {message:?}", location);
     }));
 }
 

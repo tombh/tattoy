@@ -19,7 +19,6 @@ Roadmap milestones for public release: https://github.com/tombh/tattoy/milestone
          i$$:   T$$$$$P"$$$$     T$$: `  l$$:  `$$b,.___.d$$F   $$$:
          $$$i    `"""`   `""     `""`    ``""    `4$$$$$$$P`   .$$F
           `""                                       `"""`    ;i$$F
-
 ```
 — _logo by [Sam Foster](https://cmang.org)_
 
