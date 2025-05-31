@@ -35,6 +35,7 @@ pub mod utils;
 pub mod tattoys {
     pub mod bg_command;
     pub mod minimap;
+    pub mod startup_logo;
 
     /// Notifications in the terminal UI
     pub mod notifications {

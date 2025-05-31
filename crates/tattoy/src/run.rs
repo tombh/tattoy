@@ -182,7 +182,16 @@ fn override_on_panic_behaviour() {
         } else {
             "Caught a panic with an unknown type."
         };
-        tracing::error!("Caught panic: {message:?}");
+        let location = match info.location() {
+            Some(location) => format!(
+                "{}@{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            ),
+            None => "Unknown location".to_owned(),
+        };
+        tracing::error!("Caught panic ({}): {message:?}", location);
     }));
 }
 

@@ -272,11 +272,14 @@ impl Renderer {
                 let surface_id = surface.id.clone();
                 if surface.width == 0 || surface.height == 0 {
                     self.tattoys.remove(&surface_id);
-                    return Ok(());
+                } else {
+                    self.tattoys.insert(surface_id.clone(), surface);
                 }
-                self.tattoys.insert(surface_id.clone(), surface);
                 // TODO: convert IDs to something more constant.
-                if surface_id != "random_walker" && surface_id != "shader" {
+                if surface_id != "random_walker"
+                    && surface_id != "shader"
+                    && surface_id != "startup_logo"
+                {
                     tracing::trace!("Rendering {} frame update", surface_id);
                 }
             }
