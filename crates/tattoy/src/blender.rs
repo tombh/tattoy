@@ -147,7 +147,7 @@ impl<'cell> Blender<'cell> {
             return;
         }
 
-        if self.cell.str() == "▀" || self.cell.str() == "▄" {
+        if self.cell.str() == "▀" || self.cell.str() == "▄" || self.cell.str() == " " {
             return;
         }
 

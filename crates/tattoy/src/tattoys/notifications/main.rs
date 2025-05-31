@@ -31,9 +31,9 @@ impl Notifications {
     async fn new(
         output_channel: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: std::sync::Arc<crate::shared_state::SharedState>,
+        palette: crate::palette::converter::Palette,
     ) -> Result<Self> {
-        let palette =
-            crate::config::main::Config::load_palette(std::sync::Arc::clone(&state)).await?;
+        crate::config::main::Config::load_palette(std::sync::Arc::clone(&state)).await?;
         let text_colour = palette.default_foreground_colour();
         let opacity = state.config.read().await.notifications.opacity;
         let tattoy = crate::tattoys::tattoyer::Tattoyer::new(
@@ -56,9 +56,10 @@ impl Notifications {
     pub(crate) async fn start(
         output: tokio::sync::mpsc::Sender<crate::run::FrameUpdate>,
         state: std::sync::Arc<crate::shared_state::SharedState>,
+        palette: crate::palette::converter::Palette,
     ) -> Result<()> {
         let mut protocol = state.protocol_tx.subscribe();
-        let mut notifications = Self::new(output, std::sync::Arc::clone(&state)).await?;
+        let mut notifications = Self::new(output, std::sync::Arc::clone(&state), palette).await?;
 
         state
             .protocol_tx
