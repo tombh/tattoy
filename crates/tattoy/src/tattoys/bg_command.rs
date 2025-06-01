@@ -6,6 +6,7 @@ use color_eyre::eyre::{ContextCompat as _, Result};
 
 /// User-configurable settings for the background command.
 #[derive(serde::Deserialize, Debug, Clone)]
+#[serde(default)]
 pub(crate) struct Config {
     /// Enable/disable the script
     pub enabled: bool,

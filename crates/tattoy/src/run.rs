@@ -54,10 +54,6 @@ pub(crate) enum Protocol {
     Notification(crate::tattoys::notifications::message::Message),
 }
 
-// TODO:
-// Putting any errors in shared state, feels a bit weird. Does it make more sense to have each task/thread
-// return its error, and then check them all at the end?
-//
 /// Main entrypoint
 pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     let protocol_tx = state_arc.protocol_tx.clone();
@@ -119,29 +115,18 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
     tracing::debug!("🏁 left PTY thread, exiting Tattoy...");
     broadcast_protocol_end(&protocol_tx);
 
-    tracing::trace!("Joining tattoys loader thread 🔴");
     tattoys_handle
         .join()
         .map_err(|err| color_eyre::eyre::eyre!("Tattoys handle: {err:?}"))??;
-    tracing::trace!("Left tattoys loader thread 🟢");
-
-    tracing::trace!("Joining input thread 🔴");
     if input_thread_handle.is_finished() {
         // The STDIN loop doesn't listen to the global Tattoy protocol, so it can't exit its loop.
-        // Therefore we should only join it if it finished because of its own error.
+        // Therefore we should only join it if it finished due of its own error.
         input_thread_handle
             .join()
             .map_err(|err| color_eyre::eyre::eyre!("STDIN handle: {err:?}"))??;
     }
-    tracing::trace!("Left input thread 🟢");
-
-    tracing::trace!("Awaiting renderer task 🔴");
     renderer.await??;
-    tracing::trace!("Left renderer task 🟢");
-
-    tracing::trace!("Awaiting config watcher task 🔴");
     config_handle.await??;
-    tracing::trace!("Left config watcher task 🟢");
 
     tracing::trace!("Leaving Tattoy's main `run()` function");
     Ok(())
