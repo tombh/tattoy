@@ -324,3 +324,26 @@ async fn setup_logging(cli_args: CliArgs, state: &std::sync::Arc<SharedState>) -
 
     Ok(())
 }
+
+/// Ensure that Tattoy isn't run inside another Tattoy session, unless explicitly desired.
+#[expect(
+    clippy::print_stderr,
+    clippy::exit,
+    reason = "This is a valid exit point."
+)]
+pub fn check_for_tattoy_in_tattoy() {
+    let is_running_key = "TATTOY_RUNNING";
+    let allow_nested_tattoy = "TATTOY_NEST";
+    let is_running = std::env::var(is_running_key).is_ok();
+    let is_nesting_allowed = std::env::var(allow_nested_tattoy).unwrap_or_default() == "allow";
+    if is_running && !is_nesting_allowed {
+        eprintln!(
+            "You're trying to run Tattoy inside Tattoy. Whilst this is possible, \
+             it can cause issues. If you're sure this is what you want to do then \
+             start Tattoy with the environment variable `{allow_nested_tattoy}=allow`."
+        );
+        std::process::exit(1);
+    }
+
+    std::env::set_var(is_running_key, "1");
+}
