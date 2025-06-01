@@ -68,6 +68,7 @@ use color_eyre::eyre::Result;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+    run::check_for_tattoy_in_tattoy();
     let (protocol_tx, _) = tokio::sync::broadcast::channel(1024);
     let state_arc = shared_state::SharedState::init_with_users_tty_size(protocol_tx).await?;
     let result = run::run(&std::sync::Arc::clone(&state_arc)).await;
