@@ -1,6 +1,8 @@
 [package]
 name = "tattoy-protocol"
+description = "Types to help with writing Rust-based Tattoy plugins"
 version = "0.1.0"
+license = "MIT"
 edition = "2021"
 
 [dependencies]
