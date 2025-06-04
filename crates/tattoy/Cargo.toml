@@ -23,8 +23,8 @@ notify-debouncer-full = "0.5.0"
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-shadow-terminal = { path = "../shadow_terminal"}
-tattoy-protocol = { path = "../tattoy-protocol"}
+shadow-terminal = { path = "../shadow_terminal", version = "0.1.0" }
+tattoy-protocol = { path = "../tattoy-protocol", version = "0.1.0" }
 tempfile.workspace = true
 termwiz.workspace = true
 tokio.workspace = true
