@@ -178,6 +178,12 @@ impl Shaders<'_> {
                     self.gpu.update_resolution(*width, height * 2)?;
                 }
 
+                if let crate::run::Protocol::Input(input) = &message {
+                    if let termwiz::input::InputEvent::Mouse(mouse) = &input.event {
+                        self.gpu.update_mouse_position(mouse.x, mouse.y);
+                    }
+                }
+
                 let is_screen_changed = Tattoyer::is_screen_output_changed(&message);
                 self.tattoy.handle_common_protocol_messages(message)?;
 
@@ -255,7 +261,7 @@ impl Shaders<'_> {
     async fn render(&mut self) -> Result<()> {
         let cursor = self.tattoy.screen.surface.cursor_position();
         self.gpu
-            .update_mouse_position(cursor.0.try_into()?, cursor.1.try_into()?);
+            .update_cursor_position(cursor.0.try_into()?, cursor.1.try_into()?);
 
         self.tattoy.initialise_surface();
         self.tattoy.opacity = self.tattoy.state.config.read().await.shader.opacity;

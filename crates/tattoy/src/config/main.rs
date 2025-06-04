@@ -8,7 +8,7 @@ use color_eyre::eyre::Result;
 static DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
 
 /// Bundle an example shader with Tattoy.
-static EXAMPLE_SHADER: &str = include_str!("../tattoys/shaders/point_lights.glsl");
+static EXAMPLE_SHADER: &str = include_str!("../tattoys/shaders/soft_shadows.glsl");
 
 /// The name of the directory where shader files are kept.
 const SHADER_DIRECTORY_NAME: &str = "shaders";

@@ -3,7 +3,6 @@
 use color_eyre::eyre::{ContextCompat as _, Result};
 use wgpu::util::DeviceExt as _;
 
-// TODO: See if the struct can be defined such that padding isn't needed.
 /// Common variables used by Shadertoy shaders.
 #[expect(
     non_snake_case,
@@ -12,20 +11,24 @@ use wgpu::util::DeviceExt as _;
         it's just saner to keep as they appear.
     "
 )]
-// We need this for Rust to store our data correctly for the shaders.
+// NOTE: The padding is because the total number of bytes must be a factor of 4.
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Variables {
     /// The dimensions of the TTY.
     pub iResolution: [f32; 3],
-    /// Pad to 4x32 (16 bytes or 128 bits).
-    _padding: u32,
-    /// The coordinates of the mouse or cursor.
+    /// Padding
+    _padding1: u32,
+    /// The coordinates of the mouse.
     pub iMouse: [f32; 2],
+    /// The coordinates of the cursor.
+    pub iCursor: [f32; 2],
     /// The wall time since the shader started.
     iTime: f32,
     /// The number of rendered shader frames.
     iFrame: u32,
+    /// Padding.
+    _padding2: [u32; 2],
 }
 
 /// Code for talking to the GPU.
@@ -337,7 +340,7 @@ impl GPU<'_> {
         Ok(())
     }
 
-    /// Upda the shader variables with the current elapse wall time since the render began.
+    /// Update the shader variables with the current elapsed wall time since the render began.
     #[expect(
         clippy::as_conversions,
         clippy::cast_precision_loss,
@@ -360,6 +363,13 @@ impl GPU<'_> {
         let image_height = self.variables.iResolution[1];
         let y: f32 = (row * 2).into();
         self.variables.iMouse = [col.into(), image_height - y];
+    }
+
+    /// Update the `iCursor` variable for the shaders to consume.
+    pub fn update_cursor_position(&mut self, col: u16, row: u16) {
+        let image_height = self.variables.iResolution[1];
+        let y: f32 = (row * 2).into();
+        self.variables.iCursor = [col.into(), image_height - y];
     }
 
     /// Tick the render
