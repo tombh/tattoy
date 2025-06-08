@@ -29,8 +29,6 @@ pub(crate) enum FrameUpdate {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub(crate) enum Protocol {
-    /// A signal to indicate that a system has successfully started.
-    Initialised(String),
     /// Output from the PTY.
     Output(shadow_terminal::output::Output),
     /// The entire application is exiting.
@@ -133,21 +131,28 @@ pub(crate) async fn run(state_arc: &std::sync::Arc<SharedState>) -> Result<()> {
 }
 
 /// Block until the given system has ommitted its startup message.
-pub(crate) async fn wait_for_system(
-    mut protocol: tokio::sync::broadcast::Receiver<Protocol>,
-    system: &str,
-) {
+pub(crate) async fn wait_for_system(state: &Arc<crate::shared_state::SharedState>, system: &str) {
     tracing::debug!("Waiting for {system} to initialise...");
+    let timeout = 3;
+    let start = tokio::time::Instant::now();
     loop {
-        let Ok(message) = protocol.recv().await else {
-            continue;
-        };
-
-        if let crate::run::Protocol::Initialised(initialised_system) = message {
-            if initialised_system == system {
-                break;
-            }
+        let initialised_systems = state.initialised_systems.read().await;
+        if initialised_systems.contains(&system.to_owned()) {
+            break;
         }
+        drop(initialised_systems);
+        if start.elapsed() > tokio::time::Duration::from_secs(timeout) {
+            state
+                .send_notification(
+                    format!("'{system}' didn't start in {timeout} seconds").as_str(),
+                    crate::tattoys::notifications::message::Level::Warn,
+                    None,
+                    true,
+                )
+                .await;
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
     }
     tracing::debug!("...{system} system initialised.");
 }

@@ -113,7 +113,7 @@ impl Renderer {
             // the `?` syntax.
             match Self::new(Arc::clone(&state)).await {
                 Ok(mut renderer) => {
-                    let result = renderer.run(surfaces_rx, protocol_tx.clone()).await;
+                    let result = renderer.run(surfaces_rx, protocol_tx.clone(), state).await;
 
                     if let Err(error) = result {
                         crate::run::broadcast_protocol_end(&protocol_tx);
@@ -182,6 +182,7 @@ impl Renderer {
         &mut self,
         mut surfaces: tokio::sync::mpsc::Receiver<FrameUpdate>,
         protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+        state: Arc<SharedState>,
     ) -> Result<()> {
         tracing::debug!("Putting user's terminal into raw mode");
         let mut protocol_rx = protocol_tx.subscribe();
@@ -191,7 +192,11 @@ impl Renderer {
 
         tracing::debug!("Starting render loop");
 
-        protocol_tx.send(crate::run::Protocol::Initialised("renderer".into()))?;
+        state
+            .initialised_systems
+            .write()
+            .await
+            .push("renderer".to_owned());
 
         #[expect(
             clippy::integer_division_remainder_used,
