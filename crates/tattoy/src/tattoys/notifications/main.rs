@@ -61,13 +61,11 @@ impl Notifications {
         let mut protocol = state.protocol_tx.subscribe();
         let mut notifications = Self::new(output, std::sync::Arc::clone(&state), palette).await?;
 
-        // We sleep here because of a race condition, where the message can be sent before we start
-        // listening for it. We should probably switch to using oneshot channels for system
-        // initialisation messages.
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         state
-            .protocol_tx
-            .send(crate::run::Protocol::Initialised("notifications".into()))?;
+            .initialised_systems
+            .write()
+            .await
+            .push("notifications".to_owned());
 
         #[expect(
             clippy::integer_division_remainder_used,

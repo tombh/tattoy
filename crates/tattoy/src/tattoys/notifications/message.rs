@@ -47,7 +47,7 @@ impl Message {
     pub const fn colour(&self) -> crate::surface::Colour {
         match self.level {
             Level::Error => (0.3, 0.0, 0.0, 1.0),
-            Level::Warn => (0.0, 0.3, 1.0, 1.0),
+            Level::Warn => (0.3, 0.3, 0.0, 1.0),
             Level::Info => (0.0, 0.3, 0.0, 1.0),
             Level::Debug => (0.0, 0.0, 0.3, 1.0),
             Level::Trace => (0.3, 0.3, 0.3, 1.0),

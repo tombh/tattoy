@@ -16,7 +16,7 @@ pub(crate) fn start_tattoys(
     let tokio_runtime = tokio::runtime::Handle::current();
     std::thread::spawn(move || -> Result<()> {
         tokio_runtime.block_on(async {
-            crate::run::wait_for_system(state.protocol_tx.subscribe(), "renderer").await;
+            crate::run::wait_for_system(&state, "renderer").await;
 
             let palette = crate::config::main::Config::load_palette(Arc::clone(&state)).await?;
             let mut tattoy_futures = tokio::task::JoinSet::new();
@@ -41,7 +41,7 @@ pub(crate) fn start_tattoys(
                     Arc::clone(&state),
                     palette.clone(),
                 ));
-                crate::run::wait_for_system(state.protocol_tx.subscribe(), "notifications").await;
+                crate::run::wait_for_system(&state, "notifications").await;
             }
 
             tracing::info!("Starting 'scrollbar' tattoy...");

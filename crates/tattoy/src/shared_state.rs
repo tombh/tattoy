@@ -26,6 +26,8 @@ pub struct TTYSize {
 pub(crate) struct SharedState {
     /// The channel on which all Tattoy protocol messages are sent.
     pub protocol_tx: tokio::sync::broadcast::Sender<crate::run::Protocol>,
+    /// List of asynchronous systems that have initialsed.
+    pub initialised_systems: tokio::sync::RwLock<Vec<String>>,
     /// Location of the config directory.
     pub config_path: tokio::sync::RwLock<std::path::PathBuf>,
     /// Name of the main config file.
@@ -70,6 +72,7 @@ impl SharedState {
     ) -> Result<Arc<Self>> {
         let state = Self {
             protocol_tx,
+            initialised_systems: RwLock::default(),
             config_path: RwLock::default(),
             main_config_file: RwLock::default(),
             config: RwLock::default(),
