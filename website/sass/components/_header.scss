@@ -1,0 +1,88 @@
+.header {
+  padding-right: 8px;
+
+  @media #{$bp-desktop-up} {
+    padding: 0 16px;
+  }
+
+  &__content {
+    width: 100%;
+    max-width: $max-width;
+    height: var(--layout-header-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 auto;
+  }
+
+  &__hamburger {
+    flex-shrink: 0;
+
+    @media #{$bp-desktop-up} {
+      display: none;
+    }
+  }
+
+  &__left-block {
+    display: flex;
+    align-items: center;
+    margin-right: auto;
+  }
+
+  &__logo {
+    display: flex;
+    align-items: center;
+  }
+
+  &__message {
+    display: none;
+    font-size: 1.28rem;
+    font-weight: 500;
+    color: var(--header-message-color);
+    margin-left: 12px;
+    white-space: nowrap;
+
+    @media (min-width: 550px) {
+      display: block;
+    }
+
+    @media #{$bp-desktop-up} {
+      font-size: 1.3rem;
+    }
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__cta-container {
+    display: flex;
+    align-items: center;
+    margin-left: 16px;
+  }
+
+  &__cta {
+    flex-shrink: 0;
+
+    &:not(:last-child) {
+      margin-right: 8px;
+    }
+
+    &--github {
+      @include flex-center;
+
+      img {
+        height: 30px;
+        width: auto;
+
+        @media #{$bp-tablet-portrait-up} {
+          height: 35px;
+        }
+      }
+
+      &:hover {
+        filter: brightness(80%);
+      }
+    }
+  }
+}

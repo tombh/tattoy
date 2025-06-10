@@ -1,0 +1,27 @@
+{% extends "layouts/base.html" %}
+{% block main_menu_extra_class %}main-menu--with-page-menu{% endblock main_menu_extra_class %}
+{% block mobile_page_menu_state %}
+<input id="page-menu-switch-state" class="hidden" type="checkbox" checked>
+{% endblock mobile_page_menu_state %}
+{% block mobile_page_menu_switch %}
+<div class="main-menu__page-menu-switch">
+  <label class="menu-switch" for="page-menu-switch-state">
+    <div class="menu-switch__option menu-switch__option--main-menu">Main Menu</div>
+    <div class="menu-switch__option menu-switch__option--page-menu">
+      Docs
+    </div>
+  </label>
+</div>
+{% endblock mobile_page_menu_switch %}
+{% block content %}
+<div class="page-with-menu {% block page_with_menu_extra_class %}{% endblock page_with_menu_extra_class %}">
+  <div class="page-with-menu__menu-wrapper print:hidden">
+    <div class="page-with-menu__menu">
+      {% block page_menu %}{% endblock page_menu %}
+    </div>
+  </div>
+  <div class="page-with-menu__content">
+    {% block page_content %}{% endblock page_content %}
+  </div>
+</div>
+{% endblock content %}

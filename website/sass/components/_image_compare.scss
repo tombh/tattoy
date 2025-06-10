@@ -1,0 +1,119 @@
+p.image-compare-instruction {
+  font-weight: bold;
+  margin-bottom: 0;
+}
+div.image-compare-container {
+  max-height: 720px;
+}
+div.image-compare {
+  // default values
+  --slider-min: 7%;
+  --slider-max: 93%;
+  --slider-value: 50%;
+  aspect-ratio: 16 / 9; // fallback; normally overridden by compare_slider shortcode
+  // config
+  --text-padding: 10px;
+  --gap: 3px;
+  --range-thumb-diametre: 16px;
+  background-color: var(--image-compare-gap-color); // gap color;
+
+  position: relative;
+  border-radius: 10px;
+  width: 100%;
+  outline: solid 1px var(--image-compare-outline-color); // fixes border leaking background color
+  outline-offset: -1px;
+
+  // calculated
+  --clip-L-geo: inset(0 calc(100% - var(--slider-value) + var(--gap) / 2) 0 0);
+  --clip-R-geo: inset(0 0 0 calc(var(--slider-value) + var(--gap) / 2));
+
+  @mixin image-title {
+    position: absolute;
+    font-weight: bolder;
+    font-size: 1.8rem;
+    width: calc(100% - var(--text-padding));
+    text-shadow: 0 0 2px var(--image-compare-text-shadow-color);
+  }
+
+  &::before {
+    @include image-title;
+
+    content: attr(data-title-a);
+    padding-left: var(--text-padding);
+    clip-path: var(--clip-L-geo);
+    -webkit-clip-path: var(--clip-L-geo);
+    z-index: 1;
+  }
+
+  &::after {
+    @include image-title;
+
+    content: attr(data-title-b);
+    padding-right: var(--text-padding);
+    clip-path: var(--clip-R-geo);
+    -webkit-clip-path: var(--clip-R-geo);
+    text-align: end;
+  }
+
+  & img {
+    width: inherit;
+
+    &.image-a {
+      position: absolute;
+      -webkit-clip-path: var(--clip-L-geo);
+      clip-path: var(--clip-L-geo);
+    }
+
+    &.image-b {
+      float: right;
+      -webkit-clip-path: var(--clip-R-geo);
+      clip-path: var(--clip-R-geo);
+    }
+  }
+
+  & input[type="range"] {
+    position: absolute;
+    padding: 0;
+    margin: 0;
+    width: inherit;
+    height: 100%;
+    padding-left: var(--slider-min);
+    padding-right: var(--slider-min);
+    background-color: transparent;
+    z-index: 2;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+
+    @mixin thumb {
+      transform: translateX(calc(var(--slider-value) - 50%));
+      width: var(--range-thumb-diametre);
+      height: var(--range-thumb-diametre);
+      border-radius: 50%;
+      outline: solid 3px var(--image-compare-thumb-outline-color);
+      outline-offset: -2.9px;
+      background-color: var(--image-compare-thumb-bg-color);
+
+      &:hover,
+      &:active {
+        background-color: var(--image-compare-thumb-bg-hover-color);
+      }
+    }
+
+    &::-moz-range-thumb {
+      @include thumb;
+    }
+
+    &::-webkit-slider-thumb {
+      @include thumb;
+
+      -webkit-appearance: none;
+      appearance: none;
+      // better than the transform approach, but doesn"t work on firefox
+      transform: none;
+      position: absolute;
+      left: calc(var(--slider-value) - var(--range-thumb-diametre) / 2);
+      margin-top: calc(0px - var(--range-thumb-diametre) / 2);
+    }
+  }
+}

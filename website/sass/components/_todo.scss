@@ -1,0 +1,13 @@
+.todo {
+  background-color: var(--todo-bg-color);
+  border: double var(--todo-border-color) 6px;
+  border-radius: 10px;
+  padding: 4px;
+
+  h2.todo-header {
+    margin: 0px;
+    text-align: center;
+    font-size: 2rem;
+    font-weight: bold;
+  }
+}

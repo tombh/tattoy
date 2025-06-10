@@ -1,0 +1,31 @@
+.layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+
+  &__header {
+    position: fixed;
+    top: 0px;
+    width: 100%;
+    height: var(--layout-header-height);
+    background-color: var(--layout-header-bg-color);
+    z-index: $z-layout-header;
+  }
+
+  &__content {
+    width: 100%;
+    padding-top: var(--layout-header-height);
+    padding-bottom: 64px;
+    flex-grow: 1;
+    background-color: var(--layout-content-bg-color);
+  }
+}
+
+@include state-checked("mobile-menu") {
+
+  // Disable scroll on main content
+  .layout {
+    height: 100%;
+    overflow: hidden;
+  }
+}

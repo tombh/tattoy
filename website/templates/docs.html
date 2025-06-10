@@ -1,0 +1,126 @@
+{% extends "layouts/page-with-menu.html" %}
+{% import "macros/docs.html" as docs_macros %}
+{% import "macros/header.html" as header_macros %}
+
+{% block theme %}light-mode{% endblock theme %}
+
+{% block head_extensions %}
+  {% set_global ancestor_is_public_draft = false %}
+
+  {% for ancestor in section_or_page.ancestors %}
+    {% set ancestor_section = get_section(path=ancestor) %}
+    {% if not ancestor_is_public_draft and ancestor_section.extra and ancestor_section.extra.public_draft %}
+      {% set_global ancestor_is_public_draft = true %}
+    {% endif %}
+  {% endfor %}
+<script src="/optional-helpers.js"></script>
+<script defer src="/highlight-intrapage-link.js"></script>
+{% endblock head_extensions %}
+
+{% block mobile_page_menu %}
+  {{ docs_macros::docs_menu(prefix="mobile-menu", root=root_section) }}
+{% endblock mobile_page_menu %}
+
+{% block page_menu %}
+  {{ docs_macros::docs_menu(prefix="page-menu", root=root_section ) }}
+{% endblock page_menu %}
+
+{% block page_name %}
+  {{ header_macros::header_logo(section_or_page=section_or_page) }}
+{% endblock page_name %}
+
+{% block page_content %}
+<div class="docs-page">
+  <div class="docs-content">
+    {# Create an array of sections and pages in reading order #}
+      {% set all_pages = [] %}
+      {% set sections = [] %}
+      {% for section in root_section.subsections %}
+        {% set_global sections = sections | concat(with=get_section(path=section)) %}
+      {% endfor %}
+      {% set pages_and_sections = root_section.pages | concat(with=sections) | sort(attribute="extra.weight") %}
+      {% for p in pages_and_sections %}
+        {% set_global all_pages = all_pages | concat(with=p) %}
+        {% if sections is containing(p) %}
+          {% set subsections = [] %}
+          {% for subsection in p.subsections %}
+            {% set_global subsections = subsections | concat(with=get_section(path=subsection)) %}
+          {% endfor %}
+          {% set pages_and_subsections = p.pages | concat(with=subsections) | sort(attribute="extra.weight") %}
+          {% for p2 in pages_and_subsections %}
+            {% set_global all_pages = all_pages | concat(with=p2) %}
+            {% if subsections is containing(p2) %}
+              {% set subsections_2 = [] %}
+              {% for subsection_2 in p2.subsections %}
+                {% set_global subsections_2 = subsections_2 | concat(with=get_section(path=subsection_2)) %}
+              {% endfor %}
+              {% set pages_and_subsections_2 = p2.pages | concat(with=subsections_2) | sort(attribute="extra.weight") %}
+              {% for p3 in pages_and_subsections_2 %}
+                {% set_global all_pages = all_pages | concat(with=p3) %}
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+
+      {# Find prev/next pages #}
+      {% set prev_page = false %}
+      {% set next_page = false %}
+      {% set found_current = false %}
+      {% for p in all_pages %}
+        {% set parent_section_path = p.components | slice(end=-1) | concat(with="_index.md") | join(sep="/") %}
+        {% set parent_section = get_section(path=parent_section_path) %}
+        {% if found_current %}
+          {% if p.extra and p.extra.public_draft %}
+            {% continue %}
+          {% endif %}
+          {% set_global next_page = p %}
+          {% break %}
+        {% endif %}
+        {% if current_path == p.path %}
+          {% set_global found_current = true %}
+          {% continue %}
+        {% endif %}
+        {% if p.extra and p.extra.public_draft %}
+          {% continue %}
+        {% endif %}
+        {% set_global prev_page = p %}
+      {% endfor %}
+    <h1>
+      {{ section_or_page.extra.long_title | default(value=section_or_page.title) | safe }}
+    </h1>
+    <div class="media-content">
+      {{ section_or_page.content | safe }}
+        {% block docs_content %}{% endblock docs_content %}
+    </div>
+    <div class="docs-footer print:hidden">
+      <nav class="docs-footer__nav">
+        {% if next_page %}
+        <a class="docs-footer__link docs-footer__link--next" href="{{ next_page.path }}" data-docs-nav-next>
+          <div class="docs-footer__label">
+            <div class="docs-footer__dir">Next</div>
+            {{ next_page.title }}
+          </div>
+          <i class="docs-footer__chevron icon icon--chevron-right"></i>
+        </a>
+        {% endif %}
+          {% if prev_page %}
+        <a class="docs-footer__link docs-footer__link--prev" href="{{ prev_page.path }}" data-docs-nav-previous>
+          <div class="docs-footer__label">
+            <div class="docs-footer__dir">Previous</div>
+            {{ prev_page.title }}
+          </div>
+          <i class="docs-footer__chevron icon icon--chevron-left"></i>
+        </a>
+        {% endif %}
+      </nav>
+      <div class="docs-footer__edit-wrapper">
+        <a class="docs-footer__edit" href="https://github.com/tombh/tattoy-website/edit/main/content/{{ section_or_page.relative_path }}">
+          <i class="icon icon--pencil"></i>
+          Improve this page
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock page_content %}

@@ -1,0 +1,5 @@
+{% import "macros/disallow.html" as disallow_macros %}
+
+User-agent: *
+Sitemap: {{ get_url(path="sitemap.xml") }}
+{{ disallow_macros::generate_disallows(disallow=false, section=get_section(path="_index.md")) }}

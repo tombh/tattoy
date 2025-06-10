@@ -1,0 +1,183 @@
+{% import "macros/header.html" as header_macros %}
+{% import "macros/public_draft.html" as public_draft %}
+
+{# Shortcut to get the section/page. This variable will have a value except in some special pages like `404.html`. #}
+{% set_global section_or_page = false %}
+{% if section or page %}
+  {% set_global section_or_page = section | default(value=page) %}
+{% endif %}
+
+{% if section_or_page %}
+  {% set_global root_section_paths = ["docs"] %}
+  {% for root_section_path in root_section_paths %}
+    {% set components = root_section_path | split(pat="/") %}
+    {% if section_or_page.components | slice(end=components | length) == components %}
+      {% set_global root_section = get_section(path=root_section_path ~ "/_index.md") %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
+{% set current_path = current_path | default(value="/") %}
+
+{% if section and section.title %}
+  {% if section.path is starting_with("/docs/") %}
+    {% set page_title = "Docs: " ~ section.title %}
+  {% else %}
+    {% set page_title = section.title %}
+  {% endif %}
+{% elif page and page.title %}
+  {% set page_title = page.title %}
+{% else %}
+  {% set page_title = "Tattoy" %}
+{% endif %}
+
+{% if section and section.path %}
+  {% set path = "/" ~ section.path %}
+{% elif page and page.path %}
+  {% set path = "/" ~ page.path %}
+{% else %}
+  {% set path = "" %}
+{% endif %}
+
+{% if section %}
+  {% if section.path is starting_with("/docs") %}
+    {% set show_nav_toggle = true %}
+  {% endif %}
+{% elif page %}
+  {% if page.path is starting_with("/docs") %}
+    {% set show_nav_toggle = true %}
+  {% endif %}
+{% endif %}
+
+{% set newline = "
+" %}
+<!DOCTYPE html>
+<html lang="en" class="{% block theme %}{% endblock theme %}">
+  <head>
+    <meta charset="UTF-8">
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    >
+    <meta
+      property="og:title"
+      content="{{ page_title }}"
+    >
+    <meta
+      property="og:type"
+      content="website"
+    >
+    <meta
+      property="og:url"
+      content="https://tattoy.sh{{ path }}"
+    >
+    <meta
+      property="og:image"
+      content="https://tattoy.sh/assets/tattoy_logo.png"
+    >
+    <meta
+      property="og:description"
+      content="Tattoy is a text-based terminal compositor"
+    >
+    <link rel="shortcut icon" type="image/png" href="/assets/favicon.png">
+    <link
+      rel="stylesheet"
+      href="/site.css"
+    >
+    <link
+      href="/atom.xml"
+      rel="alternate"
+      type="application/atom+xml"
+    >
+    {% if ancestor_is_public_draft or section_or_page and section_or_page.extra and section_or_page.extra.public_draft %}
+    <meta name="robots" content="noindex, nofollow, noarchive">
+    {% endif %}
+    <title>{% if page.extra.public_draft or section.extra.public_draft %}[DRAFT] {% endif -%}{{ page_title }}</title>
+    {% block head_extensions %}{% endblock head_extensions %}
+  </head>
+  <body>
+    <div class="layout">
+      <input id="mobile-menu-state" class="hidden" type="checkbox">
+      <header class="layout__header header print:hidden" data-mobile-menu-state-container>
+        <div class="header__content">
+          <label class="main-menu-backdrop" for="mobile-menu-state"></label>
+          <label class="header__hamburger button-square button-square--header" for="mobile-menu-state">
+            <img src="/assets/icon-hamburger.svg" alt="Three horizontal lines stacked on top of eachother" width="20" height="16">
+          </label>
+          <div class="header__left-block">
+            <div class="header__message">
+              {{ header_macros::header_logo(section_or_page=section_or_page) }}
+            </div>
+          </div>
+          {% block mobile_page_menu_state %}{% endblock mobile_page_menu_state %}
+          <nav class="header__menu main-menu {% block main_menu_extra_class %}{% endblock main_menu_extra_class %}" role="navigation" data-page-menu-switch-state-container>
+            <div class="main-menu__header">
+              <a class="header__logo" href="/">
+                {% include "logo_small.html" %}
+              </a>
+              <label class="button-square button-square--header" for="mobile-menu-state">
+                <img src="/assets/icon-times.svg" alt="A saltire or x-cross" width="16" height="16">
+              </label>
+            </div>
+            {% block mobile_page_menu_switch %}{% endblock mobile_page_menu_switch %}
+            <div class="main-menu__content">
+              <div class="main-menu__page-menu">
+                {% block mobile_page_menu %}{% endblock mobile_page_menu %}
+              </div>
+              <ul class="main-menu__menu">
+                {{ header_macros::header_item(name="Docs", path="/docs/getting-started", current_path=current_path) }}
+                {{ header_macros::header_item(name="Download", current_path=current_path) }}
+                {{ header_macros::header_item(name="News", current_path=current_path) }}
+              </ul>
+            </div>
+          </nav>
+          <div class="header__cta-container">
+            <a class="header__cta header__cta--github" href="https://github.com/tombh/tattoy">
+              <img
+                src="/assets/github-mark-white.svg"
+                alt="GitHub repo"
+                width="98"
+                height="96"
+              >
+            </a>
+          </div>
+        </div>
+      </header>
+      <main class="layout__content">
+        <div class="container">
+          {% if section %}
+            {{ public_draft::warning(section=section) }}
+          {% elif page %}
+            {{ public_draft::warning(section=page) }}
+          {% endif %}
+          {% block content %}{% endblock content %}
+        </div>
+      </main>
+      <footer class="print:hidden">
+        {% block footer_extensions %}{% endblock footer_extensions %}
+        <div class="footer__social-container">
+          <a class="footer__social" href="/atom.xml" title="Tattoy news feed">
+            <img
+              src="/assets/feed.svg"
+              alt="Tattoy news feed"
+              width="24"
+              height="24"
+            >
+          </a>
+        </div>
+      </footer>
+    </div>
+    <script>
+      const search_params = new URLSearchParams(window.location.search);
+    if (search_params.has("show_drafts") || document.cookie.indexOf("show_drafts") >= 0) {
+      if (search_params.get("show_drafts") === "0") {
+        document.cookie = "show_drafts=;path=/;expires=Thu, 01 Jan 1970 00:00:00 UTC";
+      } else {
+        document.cookie = "show_drafts=1;path=/"
+        document.body.classList.add('show_drafts');
+      }
+    }
+    </script>
+  </body>
+</html>

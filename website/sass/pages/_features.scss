@@ -1,0 +1,121 @@
+.feature-list {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.feature-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.feature-container-reverse {
+  flex-wrap: wrap-reverse;
+}
+
+.feature-title {
+  font-size: 2.1rem;
+  margin-top: 0;
+  margin-bottom: 0.3rem;
+}
+
+.feature-description {
+  font-size: 1.3rem;
+}
+
+.feature-image {
+  height: 24rem;
+  background-color: var(--feature-image-bg-color);
+  border-radius: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-clip: padding-box;
+}
+
+.feature-text {
+  align-self: center;
+}
+
+.feature-image,
+.feature-text {
+  width: 100%;
+  max-width: 535px;
+  border-width: 1.8rem;
+  border-style: solid;
+  border-color: transparent;
+
+  @media #{$bp-tablet-portrait-up} {
+    width: 50%;
+  }
+
+  @media #{$bp-desktop-up} {
+    min-width: 535px;
+  }
+}
+
+.feature-img.svg-ecs {
+  width: 100%;
+  max-width: 90%;
+  max-height: 90%;
+}
+
+.feature-img.svg-boat {
+  max-width: 95%;
+  max-height: 95%;
+}
+
+.feature-sublist {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  margin-left: 0px;
+  padding-left: 2rem;
+  font-size: 1.22rem;
+}
+
+.feature-img {
+  max-height: 80%;
+  max-width: 80%;
+  width: auto;
+  height: auto;
+}
+
+.features-whats-next {
+  text-align: center;
+  font-size: 1.5rem !important;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  width: 100%;
+}
+
+.bronze-sponsor-image {
+  height: 3.8rem;
+  margin: 1rem;
+}
+
+.silver-sponsor-image {
+  height: 5.4rem;
+  margin: 1rem;
+}
+
+.platinum-sponsor-image {
+  height: 7rem;
+  margin: 1rem;
+}
+
+img.sponsors__logo.sponsors__foresight-spatial-labs {
+  height: 140px;
+}
+
+img.sponsors__logo.sponsors__encultured-ai {
+  max-height: 60px;
+}
+
+img.sponsors__logo.sponsors__roids {
+  max-height: 130px;
+}

@@ -1,0 +1,108 @@
+.docs-footer {
+  --docs-footer-gap: 12px;
+
+  margin: 32px 0;
+
+  @media #{$bp-tablet-portrait-up} {
+    --docs-footer-gap: 20px;
+  }
+
+  &__nav {
+    display: grid;
+    gap: var(--docs-footer-gap);
+    padding: var(--docs-footer-gap) 0;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "next"
+      "prev";
+
+    @media #{$bp-tablet-portrait-up} {
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas: "prev next";
+    }
+  }
+
+  &__link {
+    display: flex;
+    border: 2px solid var(--docs-footer-border-color);
+    border-radius: 8px;
+    padding: 16px 8px;
+
+    @include override-anchor {
+      color: var(--docs-footer-color);
+    }
+
+    &:hover {
+      background-color: var(--docs-footer-hover-bg-color);
+      color: var(--docs-footer-hover-color);
+
+      .docs-footer__dir {
+        color: var(--docs-footer-dir-hover-color);
+      }
+    }
+
+    &--prev {
+      grid-area: prev;
+      flex-direction: row-reverse;
+      padding-left: 16px;
+
+      .docs-footer__label {
+        padding: 0 8px 0 12px;
+      }
+    }
+
+    &--next {
+      grid-area: next;
+      text-align: right;
+      padding-right: 16px;
+
+      .docs-footer__label {
+        padding: 0 12px 0 8px;
+      }
+    }
+  }
+
+  &__label {
+    flex-grow: 1;
+    font-size: 1.125rem;
+    line-height: 1.3;
+  }
+
+  &__dir {
+    margin-bottom: 4px;
+    color: var(--docs-footer-dir-color);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    line-height: 1;
+    letter-spacing: 0.1em;
+  }
+
+  &__chevron {
+    align-self: center;
+  }
+
+  &__edit-wrapper {
+    border-top: 2px solid var(--docs-footer-border-color);
+    text-align: center;
+    padding-top: var(--docs-footer-gap);
+  }
+
+  &__edit {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px;
+    font-size: 0.9rem;
+
+    @include override-anchor {
+      color: var(--docs-footer-edit-color);
+    }
+
+    &:hover {
+      color: var(--docs-footer-edit-hover-color);
+    }
+
+    .icon {
+      margin-right: 4px;
+    }
+  }
+}

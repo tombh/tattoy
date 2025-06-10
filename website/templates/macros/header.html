@@ -1,0 +1,33 @@
+{% macro header_logo(section_or_page) %}
+<a href="/" id="header-logo-link" class="header__logo">
+  <span id="header-logo">
+    {% include "logo_small.html" %}
+  </span>
+  {% if section_or_page %}
+  {% if section_or_page.path != "/" %}
+  <span>Tattoy</span>
+  {% endif %}
+  {% endif %}
+</a>
+{% endmacro header_logo %}
+
+{% macro header_item(name, path="", extra_class="", current_path) %}
+  {% set lower_current_path = current_path | lower %}
+  {% set home = "/" %}
+  {% if path == "" %}
+    {% set route = "/"~name %}
+  {% else %}
+    {% set route = path %}
+  {% endif %}
+  {% set currently_home = path == home and lower_current_path == home %}
+  {% set is_active = lower_current_path is starting_with("/"~name | lower) or currently_home %}
+  {% set class = "main-menu__link" %}
+  {% if is_active %}
+    {% set class = class~" main-menu__link--active" %}
+  {% endif %}
+<li class="main-menu__entry {{ extra_class }}">
+  <a href="{{ route | lower }}/" class="{{ class }}">
+    <span>{{ name }}</span>
+  </a>
+</li>
+{% endmacro %}

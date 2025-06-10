@@ -1,0 +1,181 @@
+.main-menu {
+  &__menu {
+    display: flex;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__entry {
+    list-style: none;
+  }
+
+  &__link {
+    @include flex-center;
+
+    position: relative;
+    height: var(--layout-header-height);
+    font-size: 1.3rem;
+    font-weight: 500;
+    text-decoration: none;
+
+    &,
+    &:visited,
+    &:active {
+      color: var(--main-menu-text-color);
+    }
+
+    &:hover {
+      color: var(--main-menu-active-color);
+    }
+
+    &--active {
+
+      &,
+      &:visited,
+      &:active {
+        color: var(--main-menu-active-color);
+      }
+    }
+
+    // Having the focus outline on the header link directly looks weird,
+    // because it is cut off at the top
+    &:focus-visible {
+      outline: none;
+    }
+
+    // Instead we have the outline on the text inside the link
+    &:focus-visible span {
+      border-radius: 5px;
+      outline: var(--main-menu-link-outline);
+    }
+  }
+}
+
+// MODE: Off-Canvas Mobile Menu
+@media #{$bp-tablet-landscape-down} {
+  .main-menu {
+    $padding: 8px;
+    $bottom-buffer: 60px; // Add extra length to compensate for address-bar
+
+    --main-menu-switch-height: 0px;
+
+    position: fixed;
+    top: 0px;
+    left: -$mobile-menu-width;
+    width: $mobile-menu-width;
+    bottom: -$bottom-buffer;
+    padding-bottom: $bottom-buffer;
+    background-color: var(--main-menu-mobile-bg-color);
+    z-index: $z-main-menu;
+    transform: translateX(0);
+    opacity: 0;
+    transition: transform $duration, opacity $duration;
+    box-shadow: 0px 0px 16px var(--main-menu-mobile-box-shadow-color);
+
+    &--with-page-menu {
+      --main-menu-switch-height: 56px;
+
+      .main-menu__page-menu-switch {
+        display: block;
+      }
+    }
+
+    &__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-left: $padding;
+      height: var(--layout-header-height);
+      background-color: var(--layout-header-bg-color);
+
+      a {
+        display: flex;
+        align-items: center;
+      }
+    }
+
+    &__page-menu-switch {
+      display: none;
+      padding: $padding $padding 0 $padding;
+      height: var(--main-menu-switch-height);
+    }
+
+    &__content {
+      position: relative;
+      height: calc(100% - var(--layout-header-height) - var(--main-menu-switch-height));
+      overflow-x: hidden;
+    }
+
+    &__menu,
+    &__page-menu {
+      overflow-y: auto;
+      height: 100%;
+      position: absolute;
+      top: 0px;
+      bottom: 0px;
+      left: 0px;
+      right: 0px;
+      transition: transform $duration;
+    }
+
+    &__menu {
+      display: flex;
+      flex-direction: column;
+      padding: $padding;
+      transform: translateX(0px);
+    }
+
+    &__page-menu {
+      margin: 0;
+      padding: $padding;
+      transform: translateX(#{$mobile-menu-width});
+    }
+
+    &__link:hover {
+      background-color: var(--main-menu-link-hover-color);
+      border-radius: $border-radius;
+    }
+  }
+
+  @include state-checked("mobile-menu") {
+    .main-menu {
+      transform: translateX($mobile-menu-width);
+      opacity: 1;
+    }
+  }
+
+  @include state-checked("page-menu-switch") {
+    .main-menu {
+      &__menu {
+        transform: translateX(-#{$mobile-menu-width});
+      }
+
+      &__page-menu {
+        transform: translateX(0px);
+      }
+    }
+  }
+}
+
+// MODE: Desktop Menu
+@media #{$bp-desktop-up} {
+  .main-menu {
+
+    &__header,
+    &__page-menu-switch,
+    &__page-menu,
+    &__entry--getting-started {
+      display: none;
+    }
+
+    &__link {
+      @include flex-center;
+
+      padding: 0 8px;
+      height: var(--layout-header-height);
+      font-size: 1.3rem;
+      font-weight: 500;
+      text-decoration: none;
+    }
+  }
+}

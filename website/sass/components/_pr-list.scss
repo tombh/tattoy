@@ -1,0 +1,10 @@
+.pr-list {
+  text-wrap: pretty;
+
+  &__item {
+    p {
+      display: inline;
+      margin: 0;
+    }
+  }
+}

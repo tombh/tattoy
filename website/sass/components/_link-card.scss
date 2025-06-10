@@ -1,0 +1,91 @@
+.link-card {
+  @include card;
+
+  $desktop-height: 12rem;
+
+  overflow: hidden;
+
+  @media #{$bp-phone-landscape-up} {
+    min-height: $desktop-height;
+    position: relative;
+    display: grid;
+    grid-template-columns: 30% 1fr;
+    grid-template-areas: "xxx content";
+    &__content {
+      padding: 0rem !important;
+    }
+  }
+
+  &__img-wrapper {
+    @include flex-center;
+
+    background-color: var(--link-card-img-bg-color);
+
+    @media #{$bp-phone-landscape-up} {
+      position: absolute;
+      top: 0px;
+      bottom: 0px;
+      left: 0px;
+      right: 72%;
+    }
+
+    &--padded {
+      padding: 1rem;
+    }
+  }
+
+  &__img {
+    max-width: 100%;
+    max-height: 150px;
+    object-fit: contain;
+
+    @media #{$bp-phone-landscape-up} {
+      max-height: 100%;
+    }
+
+    &--small {
+      max-width: calc(min(100%, 80px));
+    }
+  }
+
+  &__content {
+    padding: 0.8rem 1.2rem;
+    grid-area: content;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  &__title {
+    margin: 0;
+    line-height: 1.1;
+    font-size: 2rem;
+    font-weight: 500;
+    color: var(--link-card-title-color);
+    font-style: normal;
+    margin-bottom: 4px;
+  }
+
+  &__subtitle {
+    font-size: 1.4rem;
+    font-weight: 200;
+    font-style: italic;
+    color: var(--link-card-subtitle-color);
+  }
+
+  &__description {
+    margin: 0.4rem 0 0;
+    font-size: 1.3rem;
+    font-weight: 300;
+    color: var(--link-card-text-color);
+    text-decoration: none;
+
+    &--ellipsis {
+      @include text-ellipsis(5);
+
+      @media #{$bp-phone-landscape-up} {
+        @include text-ellipsis(3);
+      }
+    }
+  }
+}

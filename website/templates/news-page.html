@@ -1,0 +1,71 @@
+{% extends "layouts/page-with-menu.html" %}
+{% import "macros/news.html" as news_macros %}
+{% block page_with_menu_extra_class %}page-with-menu--news{% endblock page_with_menu_extra_class %}
+{% block page_name %}Post{% endblock page_name %}
+{% block mobile_page_menu %}{{ news_macros::news_menu(toc=page.toc, max_levels=1) }}{% endblock mobile_page_menu %}
+{% block page_menu %}{{ news_macros::news_menu(toc=page.toc, max_levels=2) }}{% endblock page_menu %}
+
+{% block head_extensions %}
+<script defer src="/highlight-intrapage-link.js"></script>
+{% endblock head_extensions %}
+
+{% block page_content %}
+<h1 class="news-title">{{ page.title }}</h1>
+<h2 class="news-subtitle">
+  Posted on {{ page.date | date(format="%B %-d, %Y") }} by {% if page.authors %}{% for author in page.authors %}{{ author }}{% endfor %}{% else %}Tattoy Contributors{% endif %}
+    {% if page.extra.twitter or page.extra.github %}
+  <span class="news-social-links">
+    (
+        {% if page.extra.github %}
+    <img
+      src="/assets/github_grey.svg"
+      class="news-social-icon"
+      alt="A silhouette of a figure with cat ears waving a tentacle, or Octocat: GitHub's mascot and logo"
+      width="496"
+      height="512"
+    >
+    <span class="media-content">
+      <a class="news-social-link" href="https://www.github.com/{{ page.extra.github }}">@{{ page.extra.github }}</a>
+    </span>
+    {% endif %}
+        )
+  </span>
+  {% endif %}
+</h2>
+{% if page.extra.image and page.extra.show_image %}
+<div class="media-content news-content news-content__hero-image">
+  {% if page.extra.image_subtitle %}
+  <img
+    src="{{ page.extra.image }}"
+    alt="{{ page.extra.image_subtitle }}"
+    style="aspect-ratio: auto 16 / 9"
+  >
+  {% else %}
+  <img
+    src="{{ page.extra.image }}"
+    alt="An image representing the article"
+    style="aspect-ratio: auto 16 / 9"
+  >
+  {% endif %}
+      {% if page.extra.image_subtitle %}
+        {% if page.extra.image_subtitle_link %}
+  <div class="news-image-subtitle">
+    <a href="{{ page.extra.image_subtitle_link }}">{{ page.extra.image_subtitle }}</a>
+  </div>
+  {% else %}
+  <div class="news-image-subtitle">{{ page.extra.image_subtitle }}</div>
+  {% endif %}
+      {% endif %}
+</div>
+{% endif %}
+<div class="media-content news-content">
+  {{ page.content | safe }}
+</div>
+<script type="module">
+  import { enable_image_compare } from '/components.js';
+
+  document.addEventListener("DOMContentLoaded", function () {
+    enable_image_compare();
+  });
+</script>
+{% endblock page_content %}

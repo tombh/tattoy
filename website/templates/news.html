@@ -1,0 +1,21 @@
+{% extends "layouts/base.html" %}
+{% import "macros/images.html" as image_macros %}
+{% block content %}
+<div class="padded-content item-grid">
+  {% for page in section.pages %}
+      {% if page and not page.extra.public_draft %}
+  <div class="news-summary_item">
+    <a class="news-summary_title" href="{{ page.path }}">
+      <h2>{{ page.title }}</h2>
+    </a>
+    <div class="news-summary_meta">
+      Written {{ page.date | date(format="%B %d, %Y") }} by {% if page.authors %}{% for author in page.authors %}{{ author }}{% endfor %}{% else %}Tattoy Contributors{% endif %}
+    </div>
+    <p class="news-summary_summary link-card__description--ellipsis">
+      {{ page.summary | striptags | truncate(length=350) | safe }}
+    </p>
+  </div>
+  {% endif %}
+    {% endfor %}
+</div>
+{% endblock content %}

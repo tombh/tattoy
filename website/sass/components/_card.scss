@@ -1,0 +1,91 @@
+.card {
+  @include card;
+
+  flex-direction: left;
+  height: 12rem;
+  font-style: normal;
+  position: relative;
+}
+
+.card-profile-picture {
+  position: absolute;
+  right: 0px;
+  top: 0px;
+  height: 2em;
+  width: 2em;
+  border-radius: 0px $border-radius 0px $border-radius;
+  overflow: hidden;
+  display: flex;
+}
+
+.card-social-icon {
+  position: relative;
+  top: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+}
+
+.card-sponsor-icon {
+  fill: var(--card-sponsor-icon-color);
+}
+
+.card-image {
+  width: 30%;
+  overflow: hidden;
+  object-fit: cover;
+  display: flex;
+  background-color: var(--card-img-bg-color);
+  border-top-left-radius: $border-radius;
+  border-bottom-left-radius: $border-radius;
+  align-content: center;
+  justify-content: center;
+  float: left;
+  height: 100%;
+  margin-right: 0px;
+}
+
+.centered-card-image {
+  display: block;
+  align-self: center;
+  height: 85%;
+  max-width: 85%;
+  border-radius: $border-radius;
+}
+
+.card-text {
+  padding-top: 0.8rem;
+  padding-bottom: 0.8rem;
+  padding-left: 1.2rem;
+  padding-right: 1.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-text-dense {
+  line-height: 1rem;
+}
+
+.card-text-dense {
+  line-height: 1rem;
+}
+
+.card-title {
+  display: block;
+  font-weight: 500;
+  font-size: 2rem;
+  color: var(--card-title-color);
+  font-style: normal;
+  text-decoration: none;
+}
+
+.card-image-default {
+  display: flex;
+  height: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  align-items: center;
+}
+
+.card-dense {
+  padding: 0.8rem;
+}

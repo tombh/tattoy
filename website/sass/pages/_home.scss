@@ -1,0 +1,77 @@
+#home-logo {
+  text-align: center;
+  font-size: 0.5em;
+
+  pre {
+    padding: 0;
+    margin: 0;
+  }
+
+  @media #{$bp-phone-landscape-up} {
+    font-size: 0.8em;
+  }
+
+  @media #{$bp-tablet-portrait-up} {
+    font-size: 1.0em;
+  }
+}
+
+#home-subtitle {
+  text-align: center;
+}
+
+#home-content {
+  margin-top: 2em;
+
+  img {
+    display: block;
+    margin: auto;
+    width: 100%;
+  }
+}
+
+.screenshot-caption {
+  margin-top: 1em;
+  text-align: center;
+}
+
+#home-content {
+  .screenshot-row .window {
+    flex-grow: 2;
+    flex-basis: 250px;
+  }
+
+  .screenshot-row .winhead {
+    height: 25px;
+  }
+
+  .home-feature {
+    margin-bottom: 3em;
+
+    h2 {
+      width: 100%;
+      margin-bottom: 0em;
+    }
+  }
+
+  .home-feature-flex {
+    margin-top: 1em;
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 2em;
+    row-gap: 2em;
+
+    .home-feature__text {
+      justify-content: space-between;
+      flex-grow: 1;
+      flex-basis: 33%;
+    }
+
+    .home-feature__screenshot {
+      flex-grow: 1;
+      justify-content: space-between;
+      display: flex;
+      flex-basis: 400px;
+    }
+  }
+}

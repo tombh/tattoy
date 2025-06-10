@@ -1,0 +1,15 @@
+{% macro window(image) %}
+<div class="window">
+  <div class="winhead">
+    <div class="winbutton">
+      <div class="close"></div>
+      <div class="min"></div>
+      <div class="max"></div>
+    </div>
+    <div class="title"></div>
+  </div>
+  <div class="winbody">
+    <img src="{{ image }}" alt="Screenshot of terminal contents">
+  </div>
+</div>
+{% endmacro %}

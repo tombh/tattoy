@@ -1,0 +1,51 @@
+@use "sass:math";
+
+.page-with-menu {
+  $margin-top: 24px;
+  $sidebar-width: 250px;
+
+  display: grid;
+  grid-gap: 24px;
+  grid-template-columns: 1fr;
+
+  grid-template-areas: "content";
+  margin-top: math.div($margin-top, 2);
+  
+  @media #{$bp-tablet-landscape-up} {
+    margin-top: $margin-top;
+    grid-template-columns: $sidebar-width 1fr;
+    grid-template-areas: "menu content";
+  }
+
+  &__menu-wrapper {
+    grid-area: menu;
+    display: none;
+    position: relative;
+
+    @media #{$bp-tablet-landscape-up} {
+      display: block;
+    }
+  }
+
+  &__menu {
+    @include scrollbar-v;
+
+    position: sticky;
+    top: calc(var(--layout-header-height) + #{$margin-top});
+    height: calc(100vh - var(--layout-header-height) - #{$margin-top * 2});
+    overflow-y: auto;
+    padding-bottom: $margin-top;
+  }
+
+  &__content {
+    grid-area: content;
+    overflow-x: hidden;
+  }
+
+  &--news {
+    @media #{$bp-tablet-landscape-up} {
+      grid-template-columns: 1fr $sidebar-width;
+      grid-template-areas: "content menu";
+    }
+  }
+}

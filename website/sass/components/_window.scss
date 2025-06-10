@@ -1,0 +1,58 @@
+.window {
+  margin: auto;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+  border-radius: 5px;
+}
+
+.winhead {
+  height: 35px;
+  background: #c1c5ff;
+  border-top-left-radius: 5px;
+  border-top-right-radius: 5px;
+  display: flex;
+  align-items: center;
+}
+
+.winhead .winbutton {
+  display: flex;
+  align-items: center;
+  z-index: 9;
+}
+
+.winbutton div {
+  width: 12px;
+  height: 12px;
+  margin-left: 6px;
+  background: rgb(199, 199, 199);
+  border: 0.5px solid rgb(169, 169, 169);
+  border-radius: 50%;
+}
+
+.winbutton .close {
+  background: rgb(231, 69, 70);
+  border: 0.5px solid rgb(208, 67, 67);
+}
+
+.winbutton .min {
+  background: rgb(246, 180, 39);
+  border: 0.5px solid rgb(212, 154, 58);
+}
+
+.winbutton .max {
+  background: rgb(86, 202, 53);
+}
+
+.winhead .title {
+  width: 100%;
+  text-align: center;
+}
+
+.winbody {
+  height: 100%;
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
+  padding: 8px;
+}

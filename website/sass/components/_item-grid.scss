@@ -1,0 +1,15 @@
+.item-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+
+  &--two-cols {
+    @media #{$bp-tablet-portrait-up} {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  &--multi-cols {
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  }
+}
