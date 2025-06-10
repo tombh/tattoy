@@ -1,0 +1,50 @@
+@media print {
+  .print\:hidden {
+    // stolen from tailwind in case we ever switch
+    display: none !important;
+  }
+
+  .callout {
+    border: 4px solid var(--callout-accent-color);
+  }
+
+  .layout,
+  .page-with-menu {
+    // page-break styles don't like flex and grid
+    // the top bar and menu are gone anyway so it doesn't matter
+    display: block !important;
+  }
+
+  .anchor-link {
+    display: none;
+  }
+  
+  main {
+    padding-top: 0 !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+
+  p,
+  pre {
+    page-break-inside: avoid;
+  }
+
+  a {
+    // stolen from https://github.com/h5bp/html5-boilerplate/
+    &[href]::after {
+      content: " (" attr(href) ")";
+    }
+
+    &[href^="#"]::after,
+    &[href^="javascript:"]::after {
+      content: "";
+    }
+  }
+
+}

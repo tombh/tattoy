@@ -1,0 +1,28 @@
+// This BEM component is used as an alternative to the more direct approach of
+// using `media="(prefers-color-scheme: light)"` on a `source` element. The
+// issue is that we're white-listing the pages that allow the light-theme. So we
+// need to obview `.light-mode` class and not `prefers-color-scheme` media
+// query.
+.themed-picture {
+  &__light {
+    display: none !important;
+  }
+
+  &__dark {
+    display: inline-block;
+  }
+}
+
+.light-mode {
+  @media (prefers-color-scheme: light) {
+    .themed-picture {
+      &__light {
+        display: inline-block !important;
+      }
+
+      &__dark {
+        display: none !important;
+      }
+    }
+  }
+}

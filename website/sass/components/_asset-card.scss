@@ -1,0 +1,112 @@
+@use "sass:math";
+$asset-card-padding: 0.4rem;
+
+.asset-card {
+  @include card;
+
+  display: grid;
+  grid-template-areas:
+    "banner"
+    "desc"
+    "tags";
+  color: var(--asset-card-text-color);
+
+  &__banner {
+    grid-area: banner;
+    display: block;
+    position: relative;
+    aspect-ratio: 16 / 9;
+    align-self: start;
+
+    background: linear-gradient(0deg,
+        var(--asset-card-bg-gradient-start-color) 0%,
+        var(--asset-card-bg-gradient-end-color) 100%);
+
+    img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: contain;
+
+      background-color: var(--asset-card-img-bg-color);
+    }
+  }
+
+  &__title {
+    position: absolute;
+    width: 100%;
+    bottom: 0;
+
+    padding: $asset-card-padding;
+    font-weight: bold;
+    font-size: 1.2rem;
+    background-color: var(--asset-card-title-bg-color);
+    color: var(--asset-card-title-color);
+  }
+
+  &__description {
+    @include text-ellipsis(3);
+
+    grid-area: desc;
+
+    padding: $asset-card-padding;
+    font-size: 1rem;
+    overflow: ellipsis;
+    height: 4.2rem;
+  }
+
+  &__small_description {
+    @include text-ellipsis(3);
+
+    grid-area: desc;
+
+    padding: math.div($asset-card-padding, 2);
+    font-size: 0.9rem;
+    overflow: ellipsis;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__tags {
+    grid-area: tags;
+    display: grid;
+    grid-template-areas: "versions licenses";
+    padding: $asset-card-padding;
+    height: 2.2rem;
+  }
+
+  &__tag-icon {
+    display: flex;
+
+    img,
+    svg {
+      height: 1.2rem;
+      width: 1.2rem;
+      fill: var(--asset-card-tag-icon-color);
+    }
+  }
+
+  &__licenses {
+    grid-area: licenses;
+    margin-left: auto;
+    order: 2;
+  }
+
+  &__tag-list {
+    display: flex;
+    align-items: center;
+    gap: 0.2em;
+  }
+
+  &__tag {
+    display: flex;
+    justify-content: center;
+
+    padding: 0.2em 0.4em;
+    border-radius: 0.2em;
+    font-size: 0.85em;
+    color: var(--asset-card-tag-text-color);
+    background: var(--asset-card-tag-bg-color);
+  }
+}

@@ -1,0 +1,21 @@
+.button-square {
+  @include flex-center;
+
+  position: relative;
+  cursor: pointer;
+
+  &:hover {
+    &:before {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      background-color: var(--button-square-bg-color);
+      border-radius: $border-radius;
+    }
+  }
+
+  &--header {
+    width: calc(var(--layout-header-height) - 8px);
+    height: var(--layout-header-height);
+  }
+}

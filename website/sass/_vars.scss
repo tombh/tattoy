@@ -1,0 +1,471 @@
+// Typography
+$size-body: 16px; // Usual browser default size
+$size-body-mobile: 14px; // Size for mobile
+
+// Breakpoints
+$bp-phone-landscape: 480px; // Mobile-landscape (and larger)
+$bp-tablet-portrait: 768px; // Tablet-portrait (and larger)
+$bp-tablet-landscape: 992px; // Tablet-landscape (and larger)
+$bp-desktop: 1200px; // Laptops (and larger)
+
+$bp-phone-portrait-only: "(max-width: #{$bp-phone-landscape - 1})";
+$bp-phone-landscape-up: "(min-width: #{$bp-phone-landscape})";
+$bp-phone-landscape-down: "(max-width: #{$bp-tablet-portrait - 1})";
+$bp-tablet-portrait-up: "(min-width: #{$bp-tablet-portrait})";
+$bp-tablet-portrait-down: "(max-width: #{$bp-tablet-landscape - 1})";
+$bp-tablet-landscape-up: "(min-width: #{$bp-tablet-landscape})";
+$bp-tablet-landscape-down: "(max-width: #{$bp-desktop - 1})";
+$bp-desktop-up: "(min-width: #{$bp-desktop})";
+
+// Animation
+$duration-fast: 100ms;
+$duration: 250ms;
+
+// Z-Index
+$z-layout-header: 800;
+$z-main-menu-backdrop: 900;
+$z-main-menu: 1000;
+
+// General
+$max-width: 1200px;
+$mobile-menu-width: 300px;
+$content-top-margin: 30px;
+$border-radius: 10px;
+
+// Colors
+// See Relative Colors support: https://caniuse.com/css-relative-colors
+$color-tattoy-blue: #0034a1;
+$color-neutral-17: #2c2c2d;
+$color-neutral-93: #ececec;
+$color-black: #000;
+$color-white: #fff;
+
+// CSS Vars
+:root {
+  // Typography
+  --font-family-mono: monospace;
+
+  --color-tattoy-blue: #{$color-tattoy-blue};
+
+  // Neutrals by lightness
+  --color-neutral-11: #1b1b1b;
+  --color-neutral-13: #{$color-tattoy-blue};
+  --color-neutral-14: #000;
+  --color-neutral-17: #{$color-neutral-17};
+  --color-neutral-18: #2b2c2f;
+  --color-neutral-19: #2f3033;
+  --color-neutral-22: #383838;
+  --color-neutral-27: #414247;
+  --color-neutral-33: #555;
+  --color-neutral-33b: #535353;
+  --color-neutral-36: #59595e;
+  --color-neutral-40: #666;
+  --color-neutral-42: #6b6b6b;
+  --color-neutral-45: #737373;
+  --color-neutral-50: #808080;
+  --color-neutral-53: #868686;
+  --color-neutral-55: #8c8c8c;
+  --color-neutral-59: #969696;
+  --color-neutral-60: #95959d;
+  --color-neutral-60b: #999;
+  --color-neutral-60c: #8e9aa4;
+  --color-neutral-61: #9b9b9d;
+  --color-neutral-67: #aaa;
+  --color-neutral-69: #b1b1b1;
+  --color-neutral-72: #b8b8b8;
+  --color-neutral-73: #b9b9b9;
+  --color-neutral-75: #bfbfbf;
+  --color-neutral-78: #c8c8c8;
+  --color-neutral-82: #d2d2d2;
+  --color-neutral-88: #e1e1e1;
+  --color-neutral-93: #{$color-neutral-93};
+  --color-neutral-96: #f0effb;
+  --color-neutral-97: #f7f7f7;
+
+  --color-black: #{$color-black};
+  --color-white: #{$color-white};
+
+  // Blues by lightness
+  --color-blue-21: #2f2745;
+  --color-blue-40: #456687;
+  --color-blue-43: #4a6e91;
+  --color-blue-47: #597899;
+  --color-blue-56: #6a8fb3;
+  --color-blue-57: #5944e0;
+  --color-blue-60: #799bbb;
+  --color-blue-71: #6c82ff;
+  --color-blue-74: #7c90ff;
+  --color-blue-85: #b3daff;
+  --color-blue-85b: #b1d9ff;
+  --color-blue-90: #cee7ff;
+
+  --color-blue-link: var(--color-blue-74);
+
+  // Header
+  --layout-header-height: 60px;
+  --scroll-padding-top: calc(var(--layout-header-height) + 16px);
+
+  @media #{$bp-desktop-up} {
+    --layout-header-height: 72px;
+  }
+
+  // Dark Theme
+  // This eventually should go inside a `@media (prefers-color-scheme: dark) {}`
+  // media query block. But for now it's the default theme for everyone. The
+  // idea is to progressively improve the light theme quality before enabling
+  // "whole site level" light or dark theme. Meanwhile light theme only works in
+  // selected sections.
+  --anchor-link-color: var(--color-neutral-45);
+
+  --asset-card-bg-gradient-start-color: var(--color-neutral-19);
+  --asset-card-bg-gradient-end-color: var(--color-neutral-11);
+  --asset-card-img-bg-color: var(--color-neutral-11);
+  --asset-card-tag-icon-color: var(--color-neutral-60);
+  --asset-card-text-color: var(--color-neutral-93);
+  --asset-card-title-bg-color: #{rgba($color-black, 0.5)};
+  --asset-card-title-color: var(--color-neutral-93);
+  --asset-card-tag-bg-color: var(--color-neutral-36);
+  --asset-card-tag-text-color: var(--color-neutral-93);
+
+  --asset-suggestion-item-text-color: var(--color-neutral-93);
+
+  --asset-version-select-bg-color: var(--color-neutral-19);
+  --asset-version-select-border-color: var(--color-neutral-22);
+  --asset-version-select-border-hover-color: var(--color-neutral-42);
+
+  --button-blue-bg-color: var(--color-blue-43);
+  --button-blue-bg-hover-color: var(--color-blue-40);
+  --button-blue-border-color: var(--color-blue-56);
+  --button-blue-text-color: var(--color-neutral-93);
+  --button-pink-bg-color: #9f517a;
+  --button-pink-bg-hover-color: #954c72;
+  --button-pink-border-color: #ba789b;
+  --button-pink-text-color: var(--color-neutral-93);
+  --button-square-bg-color: #{rgba($color-neutral-93, 0.05)};
+
+  --callout-caution-accent-color: #e82f5a;
+  --callout-caution-bg-color: #591626;
+  --callout-caution-color: #eed5db;
+  --callout-info-accent-color: var(--color-blue-57);
+  --callout-info-bg-color: var(--color-blue-21);
+  --callout-info-color: var(--color-neutral-96);
+  --callout-warning-accent-color: #e4c151;
+  --callout-warning-bg-color: #513903;
+  --callout-warning-color: #fdfdec;
+
+  --card-bg-color: var(--color-neutral-18);
+  --card-bg-hover-color: var(--color-neutral-19);
+  --card-border-color: var(--color-neutral-22);
+  --card-border-hover-color: var(--color-neutral-42);
+  --card-img-bg-color: var(--color-neutral-11);
+  --card-title-color: var(--color-neutral-93);
+  --card-sponsor-icon-color: #b13376;
+
+  --code-bg-color: var(--color-neutral-18);
+  --code-incorrect-bg-color: #481e21;
+  --code-incorrect-border-color: darkred;
+  --code-incorrect-border-hover-color: red;
+  --code-incorrect-img-hover-filter: invert(10%) sepia(85%) saturate(7491%) hue-rotate(5deg) brightness(116%) contrast(114%); // red
+  --code-incorrect-img-filter: invert(11%) sepia(57%) saturate(5143%) hue-rotate(350deg) brightness(118%) contrast(87%); // firebrick red
+  --code-text-dim-color: var(--color-neutral-60c);
+
+  --code-aaa: #c0c5ce;
+  --code-ccc: #c594c5;
+  --code-ddd: #6699cc;
+  --code-eee: #dfc479;
+  --code-fff: #eff1f5;
+  --code-ggg: #e79e6d;
+  --code-hhh: #8fa1b3;
+  --code-iii: #b48ead;
+  --code-jjj: #9fc37f;
+  --code-kkk: #e0858d;
+  --code-lll: #d08770;
+  --code-mmm: #a3be8c;
+  --code-nnn: #bf616a;
+  --code-ooo: #4f5b66;
+  --code-ppp: #96b5b4;
+  --code-qqq: #ab7967;
+  --code-rrr: #2b303b;
+  --code-sss: #f92672;
+  --code-ttt: #a6e22e;
+  --code-uuu: #967efb;
+  --code-vvv: #565656;
+  --code-www: #9fc37f;
+  --code-xxx: #56b6c2;
+  --code-yyy: #d19a66;
+  --code-zzz: #d1af8f;
+
+  --details-bg-color: #{rgba($color-neutral-93, 0.1)};
+  --details-text-shadow-color: var(--color-neutral-93);
+
+  --docs-footer-border-color: var(--color-neutral-19);
+  --docs-footer-color: var(--color-neutral-61);
+  --docs-footer-dir-color: var(--color-neutral-40);
+  --docs-footer-dir-hover-color: var(--color-neutral-60b);
+  --docs-footer-edit-color: var(--color-neutral-55);
+  --docs-footer-edit-hover-color: var(--color-neutral-75);
+  --docs-footer-hover-bg-color: #{rgba($color-neutral-93, 0.01)};
+  --docs-footer-hover-color: var(--color-neutral-93);
+
+  --example-nav-link-color: var(--color-neutral-67);
+  --example-nav-link-hover-color: var(--color-white);
+
+  --feature-image-bg-color: var(--color-neutral-18);
+
+  --focus-outline: solid var(--color-blue-85b) 3px;
+
+  --footer-image-filter: grayscale(1) brightness(800%);
+
+  --header-message-color: var(--color-black);
+
+  --heading-meta-text-color: var(--color-neutral-60b);
+  --heading-meta-item-color: var(--color-neutral-72);
+
+  // --html-bg-color: var(--color-neutral-13);
+  --html-text-color: var(--color-neutral-93);
+
+  --image-compare-text-shadow-color: var(--color-black);
+  --image-compare-gap-color: var(--color-neutral-93);
+  --image-compare-outline-color: var(--color-neutral-13);
+  --image-compare-thumb-bg-color: var(--color-neutral-53);
+  --image-compare-thumb-bg-hover-color: var(--color-neutral-73);
+  --image-compare-thumb-outline-color: var(--color-white);
+
+  --kbd-border-color: var(--color-neutral-50);
+
+  --layout-header-bg-color: var(--color-neutral-13);
+  --layout-content-bg-color: var(--color-neutral-14);
+  --layout-header-border-color: var(--color-neutral-17);
+
+  --link-card-img-bg-color: var(--color-neutral-11);
+  --link-card-title-color: var(--color-neutral-93);
+  --link-card-subtitle-color: var(--color-neutral-60b);
+  --link-card-text-color: var(--color-neutral-93);
+
+  --main-menu-active-color: var(--color-black);
+  --main-menu-backdrop-color: #{rgba($color-black, 0.2)};
+  --main-menu-link-hover-color: #{rgba($color-white, 0.05)};
+  --main-menu-link-outline: var(--focus-outline);
+  --main-menu-mobile-bg-color: var(--color-neutral-13);
+  --main-menu-mobile-box-shadow-color: #{rgba($color-black, 0.3)};
+  --main-menu-text-color: var(--color-neutral-93);
+
+  --media-content-blockquote-bg-color: var(--color-neutral-18);
+  --media-content-blockquote-text-color: var(--color-neutral-69);
+  --media-content-button-text-color: var(--color-white);
+  --media-content-code-bg-color: var(--color-neutral-18);
+  --media-content-code-text-color: var(--color-neutral-78);
+  --media-content-link-code-color: #e4c151;
+  --media-content-link-code-hover-bg-color: var(--color-neutral-27);
+  --media-content-link-color: var(--color-blue-link);
+  --media-content-text-color: var(--color-neutral-82);
+
+  --menu-switch-bg-color: #{rgba($color-white, 0.05)};
+  --menu-switch-option-active-bg-color: var(--color-neutral-13);
+  --menu-switch-option-active-text-color: var(--color-white);
+  --menu-switch-option-text-color: var(--color-neutral-61);
+
+  --migration-guide-hr-color-legacy: var(--color-neutral-33b);
+  --migration-guide-hr-color: #{rgba($color-white, 0.05)};
+  --migration-guide-legacy-area-tags-color: var(--color-neutral-50);
+  --migration-guide-title-color: var(--color-neutral-93);
+
+  --news-feature-authors-color: var(--color-neutral-60b);
+  --news-fun-list-color: #a0c5e7;
+  --news-feature-image-subtitle: var(--color-neutral-60b);
+  --news-social-link-color: var(--color-blue-link);
+  --news-subtitle-color: var(--color-neutral-60b);
+
+  --on-this-page-color: var(--color-neutral-53);
+  --on-this-page-hover-color: var(--color-neutral-73);
+  --on-this-page-active-color: var(--color-neutral-93);
+
+  --people-role-lead-color: rgb(200, 200, 50);
+  --people-role-maintainer-color: rgb(242, 103, 255);
+  --people-role-sme-color: rgb(80, 200, 50);
+
+  --scrollbar-thumb-color: #{rgba($color-white, 0.2)};
+
+  --sponsors-name-color: var(--color-neutral-59);
+  --sponsors-link-color: var(--color-blue-link);
+  --sponsors-amount-color: var(--color-neutral-59);
+  --sponsors-past-donor-color: var(--color-neutral-59);
+
+  --table-border-color: var(--color-neutral-60b);
+  --table-border-radius: 4px;
+  --table-header-bg-color: var(--color-neutral-13);
+  --table-header-color: var(--color-neutral-82);
+
+  --tabs-bg-color: var(--color-white);
+  --tabs-bg-hover-color: #{rgba($color-white, 0.05)};
+  --tabs-bg-active-color: #{rgba($color-white, 0.1)};
+  --tabs-highlight-color: var(--color-blue-link);
+
+  --todo-bg-color: rgba(191, 170, 64, 0.3);
+  --todo-border-color: rgba(223, 191, 32, 0.5);
+
+  --tree-menu-active-color: var(--color-neutral-93);
+  --tree-menu-chevron-filter: brightness(70%);
+  --tree-menu-label-active-bg-color: #{rgba($color-neutral-93, 0.1)};
+  --tree-menu-label-active-color: var(--color-neutral-93);
+  --tree-menu-label-color: var(--color-neutral-61);
+  --tree-menu-toc-bg-color: #{rgba($color-black, 0.25)};
+  --tree-menu-toggle-hover-color: #{rgba($color-neutral-93, 0.1)};
+
+  --warning-color: #c8c864;
+
+  .invertable {}
+}
+
+// Light Theme
+// We default to a dark theme even when the user prefers a light theme, as the
+// light theme quality is not good enough. So, only some selected sections are
+// styled in light mode.
+.light-mode {
+  @media (prefers-color-scheme: light) {
+    --color-blue-link: var(--color-blue-57);
+
+    --callout-caution-accent-color: #ed0c41;
+    --callout-caution-bg-color: #fccad5;
+    --callout-caution-color: #2a0109;
+    --callout-info-accent-color: var(--color-blue-57);
+    --callout-info-bg-color: var(--color-blue-90);
+    --callout-info-color: #040126;
+    --callout-warning-accent-color: #f0d106;
+    --callout-warning-bg-color: #fdedc9;
+    --callout-warning-color: #362a02;
+
+    --code-bg-color: var(--color-neutral-93);
+    --code-incorrect-border-color: red;
+    --code-text-dim-color: var(--color-neutral-61);
+
+    --code-aaa: #5078a4;
+    --code-ccc: #b041a3;
+    --code-ddd: #498bcc;
+    --code-eee: #c58908;
+    --code-fff: #eff1f5;
+    --code-ggg: #d67b3e;
+    --code-hhh: #6e91b5;
+    --code-iii: #ae3698;
+    --code-jjj: #64ae23;
+    --code-kkk: #d1767d;
+    --code-lll: #d08770;
+    --code-mmm: #81ba50;
+    --code-nnn: #bf616a;
+    --code-ooo: #4f5b66;
+    --code-ppp: #68b1af;
+    --code-qqq: #ab7967;
+    --code-rrr: #2b303b;
+    --code-sss: #f92672;
+    --code-ttt: #a6e22e;
+    --code-uuu: #967efb;
+    --code-vvv: #565656;
+    --code-www: #5ea91c;
+    --code-xxx: #2aa5a9;
+    --code-yyy: #cd5d12;
+    --code-zzz: #ce8c4e;
+
+    --details-bg-color: #{rgba($color-neutral-17, 0.1)};
+    --details-text-shadow-color: var(--color-neutral-17);
+
+    --docs-footer-border-color: var(--color-neutral-82);
+    --docs-footer-color: var(--color-neutral-33);
+    --docs-footer-dir-color: var(--color-neutral-53);
+    --docs-footer-dir-hover-color: var(--color-neutral-33);
+    --docs-footer-edit-color: var(--color-neutral-50);
+    --docs-footer-edit-hover-color: var(--color-neutral-33);
+    --docs-footer-hover-bg-color: #{rgba($color-black, 0.01)};
+    --docs-footer-hover-color: var(--color-black);
+
+    --focus-outline: solid var(--color-blue-57) 3px;
+
+    --footer-image-filter: grayscale(1) brightness(10%);
+
+    --heading-meta-text-color: var(--color-neutral-50);
+    --heading-meta-item-color: var(--color-neutral-22);
+
+    --html-bg-color: var(--color-neutral-82);
+    --html-text-color: var(--color-neutral-13);
+
+    --layout-content-bg-color: var(--color-neutral-97);
+    --layout-header-border-color: var(--color-neutral-45);
+
+    @media #{$bp-tablet-landscape-down} {
+      --main-menu-active-color: var(--color-blue-57);
+      --main-menu-link-hover-color: #{rgba($color-black, 0.03)};
+      --main-menu-text-color: var(--color-neutral-33);
+    }
+
+    --main-menu-mobile-bg-color: var(--color-neutral-97);
+
+    --media-content-blockquote-bg-color: var(--color-neutral-93);
+    --media-content-blockquote-text-color: var(--color-neutral-18);
+    --media-content-code-bg-color: var(--color-neutral-93);
+    --media-content-code-text-color: var(--color-neutral-17);
+    --media-content-link-code-color: #d77c08;
+    --media-content-link-code-hover-bg-color: var(--color-neutral-88);
+    --media-content-text-color: var(--color-neutral-27);
+
+    --menu-switch-bg-color: var(--color-neutral-88);
+    --menu-switch-option-active-bg-color: var(--color-white);
+    --menu-switch-option-active-text-color: var(--color-black);
+    --menu-switch-option-text-color: var(--color-neutral-33);
+
+    --migration-guide-hr-color-legacy: var(--color-neutral-50);
+    --migration-guide-hr-color: #{rgba($color-black, 0.05)};
+    --migration-guide-legacy-area-tags-color: var(--color-neutral-50);
+    --migration-guide-title-color: var(--color-neutral-13);
+
+    --on-this-page-color: var(--color-neutral-45);
+    --on-this-page-hover-color: var(--color-black);
+    --on-this-page-active-color: var(--color-black);
+
+    --scrollbar-thumb-color: #{rgba($color-black, 0.2)};
+
+    --table-border-color: var(--color-neutral-75);
+    --table-header-bg-color: var(--color-neutral-82);
+    --table-header-color: var(--color-neutral-22);
+
+    --todo-bg-color: rgba(191, 170, 64, 0.3);
+    --todo-border-color: rgba(223, 191, 32, 0.5);
+
+    --tree-menu-active-color: var(--color-black);
+    --tree-menu-chevron-filter: invert(65%);
+    --tree-menu-label-active-bg-color: var(--color-neutral-88);
+    --tree-menu-label-active-color: var(--color-black);
+    --tree-menu-label-color: var(--color-neutral-33);
+    --tree-menu-toc-bg-color: var(--color-neutral-93);
+    --tree-menu-toggle-hover-color: var(--color-neutral-75);
+
+    --warning-color: rgb(179, 158, 24);
+
+    .invertable {
+      filter: invert(90%) hue-rotate(180deg);
+    }
+
+    // News Hacks
+    .news-content__hero-image,
+    .img-in-card {
+      @media (prefers-color-scheme: light) {
+        padding: 16px;
+        background-color: var(--color-neutral-14);
+        border-radius: $border-radius;
+      }
+    }
+
+    .news-image-subtitle {
+      color: var(--color-white);
+
+      a {
+
+        &,
+        &:focus,
+        &:hover,
+        &:active &:link,
+        &:visited {
+          color: var(--color-blue-71) !important;
+        }
+      }
+    }
+  }
+}

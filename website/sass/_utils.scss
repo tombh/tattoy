@@ -1,0 +1,72 @@
+.hidden {
+  display: none;
+}
+
+// Visual outline on focused elements, for accessibility
+*:focus-visible {
+  border-radius: 5px;
+  outline: var(--focus-outline);
+}
+
+.section {
+  display: block;
+  font-size: 1.4rem;
+  overflow-x: hidden;
+}
+
+.padded-content {
+  padding: 16px 0;
+
+  @media #{$bp-tablet-landscape-up} {
+    padding: 24px 0;
+  }
+}
+
+.warning {
+  color: var(--warning-color);
+}
+
+body:not(.show_drafts) .public_draft:not(.active_draft) {
+  display: none !important;
+}
+
+.public_draft > div > a {
+  color: var(--warning-color) !important;
+}
+
+.draft-header {
+  margin-bottom: 0.5rem;
+}
+
+.anchor-link,
+.anchor-link:focus,
+.anchor-link:hover,
+.anchor-link:active,
+.anchor-link:link,
+.anchor-link:visited {
+  margin-left: 0.3rem;
+  color: var(--anchor-link-color);
+  text-shadow: none;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity $duration;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  &:hover .anchor-link {
+    opacity: 1;
+  }
+}
+
+.public_draft > div > a {
+  color: var(--warning-color) !important;
+}
+
+.draft-header {
+  margin-bottom: 0.5rem;
+}

@@ -1,0 +1,20 @@
+.main-menu-backdrop {
+  visibility: hidden;
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  width: 100%;
+  height: 100%;
+  z-index: $z-main-menu-backdrop;
+  background-color: var(--main-menu-backdrop-color);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity $duration * 2;
+}
+
+@include state-checked("mobile-menu") {
+  .main-menu-backdrop {
+    visibility: visible;
+    opacity: 1;
+  }
+}

@@ -1,0 +1,40 @@
+{% macro news_menu_row(header, max_levels, level) %}
+  {% set id = 'news-menu-' ~ level ~ '-' ~ header.title | slugify %}
+  {% set label_class = "tree-menu__label" %}
+  {% set total_children = header.children | length %}
+  {% set has_children = total_children > 0 %}
+  {% set show_children = has_children and level < max_levels %}
+  {% if show_children %}
+    {% set label_class = label_class
+        ~ " tree-menu__label--with-chevron" %}
+    <input id="{{ id }}" class="tree-menu__state" type="checkbox" checked>
+  {% endif %}
+  <li class="tree-menu__item">
+    <div class="{{ label_class }}">
+      <a class="tree-menu__link" href="{{ header.permalink | safe }}">{{ header.title }}</a>
+      {% if show_children %}
+        <label class="tree-menu__toggle" for="{{ id }}">
+          <img class="tree-menu__chevron"
+                src="/assets/icon-chevron-down.svg"
+                alt="A chevron, or V-shaped symbol"
+                width="15"
+                height="24" />
+        </label>
+      {% endif %}
+    </div>
+    {% if show_children %}
+      <ul class="tree-menu">
+        {% for sub_header in header.children %}
+          {{ self::news_menu_row(header=sub_header, max_levels=max_levels, level=level + 1) }}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+{% macro news_menu(toc, max_levels) %}
+  {% if toc %}
+    <ul class="tree-menu" data-highlight-intrapage-link>
+      {% for header in toc %}{{ self::news_menu_row(header=header, max_levels=max_levels, level=1) }}{% endfor %}
+    </ul>
+  {% endif %}
+{% endmacro %}

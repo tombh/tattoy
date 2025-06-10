@@ -1,0 +1,147 @@
+{% import "macros/window.html" as window_macro %}
+{% extends "layouts/base.html" %} {% block head_extensions %}
+<meta
+  name="description"
+  content="Text-based terminal compositor"
+>
+{% endblock head_extensions %} {% block content %}
+<div id="home-logo">
+  {% include "logo_full.html" %}
+</div>
+<div class="media-content">
+  <h2 id="home-subtitle">A Text-Based Compositor For Modern Terminals</h2>
+  <div id="home-content">
+    <div class="screenshot">
+      {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+      <div class="screenshot-caption">
+        Tattoy with a GPU-rendered bloom shader and live-updating minimap of the TTY scrollback
+      (add audio visualiser too).
+      </div>
+    </div>
+    <div class="home-feature">
+      <h2>
+        About
+      </h2>
+      <p>
+        Tattoy can generally be thought of as a framework for adding eye-candy to your terminal. It is purely
+    text-based so works in any terminal emulator that supports true colour. "Graphics" is rendered with UTF8
+    half-blocks (▀,▄). Whilst most of its effects are for getting you street credibility it also has more
+    powerfull features based around its awareness of terminal contents. For example it can detect and auto
+    adjust text contrast whilst remaining faithful to the terminal's palette.
+      </p>
+      <p>
+        Tattoy works with your existing shell, theme and prompt, etc. It can always and immediately toggle between
+  its effects and your normal terminal state, allowing for easy copy-pasting for example.
+      </p>
+    </div>
+    <div class="home-feature">
+      <h2>
+        Shaders
+      </h2>
+      <p>
+        Perhaps the fanciest feature of Tattoy is its ability to render GPU shaders. It is designed to be able to
+  run most shaders from
+        <a href="https://www.shadertoy.com/">Shader Toy</a>
+        without any editing at all. It also supports
+        <a href="https://github.com/hackr-sh/ghostty-shaders">Ghostty shaders</a>
+        out-of-the-box, though certain 
+    shaders that alter the position of text (such as CRT emulators) don't have a pronounced impact as text
+    renering is always left to the host terminal emulator.
+      </p>
+      <div class="screenshot-row">
+        {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+    {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+    {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+    {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+      </div>
+    </div>
+    <div class="home-feature">
+      <h2>
+        Second Terminal In Background
+      </h2>
+      <div class="home-feature-flex">
+        <span class="home-feature__text">
+          You can run an arbitrary command that is renderd in the background of your normal terminal. Usecases for
+  this might be:
+          <ul>
+            <li>
+              an audio visualiser
+            </li>
+            <li>
+              video background
+            </li>
+            <li>
+              system monitor graphs
+            </li>
+          </ul>
+          The background terminal's opacity can be adjusted so it doesn't visual conflict too much with your
+        actual terminal.
+        </span>
+        <span class="home-feature__screenshot">
+          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+        </span>
+      </div>
+    </div>
+    <div class="home-feature">
+      <h2>
+        Scrollback Minimap
+      </h2>
+      <div class="home-feature-flex">
+        <span class="home-feature__screenshot">
+          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+        </span>
+        <span class="home-feature__text">
+          The minimap is a pixelised version of the contents of the scrollback, including the current contents
+        of the screen. It live updates, even when using the so-called "alternate screen" for apps like `nvim`,
+        `top`, `gitui`, etc.
+          <p>
+            Tattoy manages its own scrollback buffer (like say `tmux` does), and so can therefore also provide
+          its own scrollar.
+          </p>
+        </span>
+      </div>
+    </div>
+    <div class="home-feature">
+      <h2>
+        Auto Text Contrast
+      </h2>
+      <div class="home-feature-flex">
+        <span class="home-feature__text">
+          Have you ever run `ls` in a directory only for certain file types to be completely illegible? This has
+        long been an intractable problem caused by the limited colours of terminal palettes. CLI applications
+        are only ever aware of palette index values, not the underlying RGB value, therefore it is impossible
+        for them to know if any given background colour is sufficient enough to allow its containing text to
+        be readable.
+          <p>Not anymore!</p>
+          <p>
+            Tattoy is aware of the true 24 bit RGBA value of all colours in your terminal. This allows it to use
+        clever algorithms to detect low contrast text and auto adjust the foreground colour within the
+        constraints of your chosen terminal theme to find the nearest colour that meets a minimum contrast 
+        threshold.
+          </p>
+        </span>
+        <span class="home-feature__screenshot">
+          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+        </span>
+      </div>
+    </div>
+    <div class="home-feature">
+      <h2>
+        Plugins
+      </h2>
+      <div class="home-feature-flex">
+        <span class="home-feature__screenshot">
+          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+        </span>
+        <span class="home-feature__text">
+          Plugins can be written in any language. You get full access to your terminal's contents and can render
+        both UTF8 "pixels" and text to a dedicated plugin layer of your choosing. Currently the protocol is 
+        JSON over `STDIN` and `STDOUT`. See the
+          <a href="/docs/plugins">plugin documentation</a>
+          for more info.
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock content %}

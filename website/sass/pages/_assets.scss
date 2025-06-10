@@ -1,0 +1,116 @@
+.assets {
+  .assets-intro {
+    margin-bottom: 20px;
+  }
+
+  .assets-filters {
+    margin-bottom: 20px;
+  }
+
+  .asset-section {
+    font-size: 2.4rem;
+    margin: 0 0 20px;
+  }
+
+  .asset-subsection {
+    font-size: 1.9rem;
+    margin: 0 0 16px;
+  }
+
+  .item-grid {
+    margin-bottom: 52px;
+  }
+
+  .assets-search {
+    margin-bottom: 20px;
+
+    &__input {
+      @include card;
+      font-size: 1.2rem;
+      padding: $asset-card-padding;
+      width: 100%;
+
+      &:focus-visible {
+        outline: none;
+      }
+    }
+  }
+
+  .asset-version-select {
+    border-radius: $border-radius;
+    border: 2px solid var(--asset-version-select-border-color);
+    background-color: var(--asset-version-select-bg-color);
+    font-size: 1rem;
+    padding: 0.4rem;
+    margin-left: 8px;
+
+    &:hover {
+      border: 2px solid var(--asset-version-select-border-hover-color);
+    }
+
+    .item-grid {
+      margin-bottom: 52px;
+    }
+
+    .assets-search {
+      margin-bottom: 20px;
+
+      &__input {
+        @include card;
+        font-size: 1.2rem;
+        padding: $asset-card-padding;
+        width: 100%;
+
+        &:focus-visible {
+          outline: none;
+        }
+      }
+    }
+
+    .asset-version-select {
+      border-radius: $border-radius;
+      border: 2px solid var(--asset-version-select-border-color);
+      background-color: var(--asset-version-select-bg-color);
+      font-size: 1rem;
+      padding: 0.4rem;
+
+      &:hover {
+        border: 2px solid var(--asset-version-select-bg-hover-color);
+      }
+    }
+  }
+
+  #suggestions-footer {
+    .suggestions-list {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 20px;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .suggestion-item {
+      @include card;
+      display: flex;
+      flex-basis: 9rem;
+      flex-grow: 1;
+      padding: 0px;
+      text-align: center;
+      justify-content: center;
+      align-items: center;
+      color: var(--asset-suggestion-item-text-color);
+      height: 48px;
+
+      &__img_wrapper {
+        display: flex;
+        align-items: center;
+        padding: $asset-card-padding 0px $asset-card-padding
+          calc($asset-card-padding * 2);
+      }
+
+      &__text {
+        flex-grow: 1;
+      }
+    }
+  }
+}

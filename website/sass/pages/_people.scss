@@ -1,0 +1,81 @@
+.people-section-description {
+  margin-bottom: 1.5rem;
+}
+
+.people-role-descriptions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.people-role-description {
+  display: block;
+  flex-direction: row;
+}
+
+.people-role-description-text {
+  line-height: 1.75rem;
+}
+
+.people-card {
+  height: 14rem;
+  margin-bottom: 0px;
+}
+
+.people-links {
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.people-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  margin-bottom: 0.4rem;
+}
+
+.people-role {
+  font-weight: 400;
+  font-size: 0.8rem;
+  padding-left: 0.3rem;
+  padding-right: 0.3rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+  line-height: 1;
+  border-radius: 0.3rem;
+  border-style: solid;
+  border-width: 1px;
+}
+
+.people-role-card {
+  display: block;
+}
+
+.people-role-inline {
+  font-size: 1rem;
+  margin-right: 0.2rem;
+}
+
+.people-role-top-level {
+  display: block;
+  float: left;
+  font-size: 1rem;
+  margin-right: 0.2rem;
+}
+
+.people-role-project-lead {
+  border-color: var(--people-role-lead-color);
+  color: var(--people-role-lead-color);
+}
+
+.people-role-maintainer {
+  border-color: var(--people-role-maintainer-color);
+  color: var(--people-role-maintainer-color);
+}
+
+.people-role-sme {
+  border-color: var(--people-role-sme-color);
+  color: var(--people-role-sme-color);
+}

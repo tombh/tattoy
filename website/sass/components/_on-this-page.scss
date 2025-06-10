@@ -1,0 +1,39 @@
+/// internal page navigation
+/// i.e., the "On This Page" section
+
+.on-this-page {
+  $h-padding: 12px;
+  padding-block: calc($h-padding/2);
+
+  ul {
+    list-style-position: outside;
+    list-style-type: none;
+    padding-inline-start: $h-padding;
+  }
+
+  > ul {
+    padding-inline: $h-padding;
+  }
+
+  a {
+    display: block;
+    text-wrap: balance;
+    padding-block: 4px;
+    color: var(--on-this-page-color);
+    text-decoration: none;
+    word-break: break-word;
+
+    @media ($bp-tablet-portrait-down) {
+      // increase hit area for touchscreens
+      padding-block: 6px;
+    }
+
+    &:hover {
+      color: var(--on-this-page-hover-color);
+    }
+
+    &[data-highlight-intrapage-link-active=true] {
+      color: var(--on-this-page-active-color);
+    }
+  }
+}

@@ -1,0 +1,36 @@
+.docs-page {
+  display: flex;
+  width: 100%;
+  min-height: 500px;
+}
+
+.docs-content {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+
+  h1 {
+    font-size: 2.4rem;
+    margin: 0 0 16px;
+  }
+
+  h2 {
+    font-size: 1.8rem;
+    margin-bottom: 15px;
+  }
+
+  h3 {
+    font-size: 1.4rem;
+    font-weight: 500;
+    margin-bottom: 15px;
+  }
+
+  p {
+    margin-top: 5px;
+  }
+}
+
+.tree-menu__toc {
+  margin-left: 1em;
+  opacity: 0.7;
+}

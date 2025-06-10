@@ -1,0 +1,13 @@
+{# This macro generates robots.txt, which should not be indented #}
+{%- macro generate_disallows(disallow, section) -%}
+{%- if disallow or section and section.extra and section.extra.public_draft -%}
+Disallow: {{ section.path }}
+{% for s in section.subsections -%}
+{{ self::generate_disallows(disallow=true, section=get_section(path=s) ) }}
+{%- endfor -%}
+{%- else -%}
+{%- for s in section.subsections -%}
+{{ self::generate_disallows(disallow=false, section=get_section(path=s) ) }}
+{%- endfor -%}
+{%- endif -%}
+{%- endmacro generate_disallows -%}

@@ -1,0 +1,94 @@
+# The terminal emulator environment variable. This is still a grey area to me.
+# Currently "xterm-256color" is the only values that avoids some input bugs.
+# Please play with this and report your findings!
+term = "xterm-256color"
+
+# The command to run in Tattoy. Defaults to your current shell defined in the
+# `SHELL` env var.
+# command = "/usr/bin/zsh"
+
+# The log level, one of: "off", "error", "warn", "info", "debug", "trace"
+log_level = "off"
+# The path to the log file. Defaults to your OS's `XDG_STATE_DIR`.
+# See: https://specifications.freedesktop.org/basedir-spec/latest/
+# log_path = ""
+
+# The target frame rate
+frame_rate = 30
+
+# Whether to show a small blue indicator in the very top-right of the terminal screen.
+# It can be useful to indicate that Tattoy is indeed running.
+show_tattoy_indicator = true
+
+[color]
+saturation = 0.0
+brightness = 0.0
+hue = 0.0
+
+# Automatically increases the foreground colour of alphanumeric text. This includes
+# international language characters, but hopefully not common characters used in UI
+# elements such as borders etc. It uses the WCAG 2.1 algorithm to define the contrast.
+# For normal text on the web they recommend a minimum contrast of 4.5. Note that only
+# the foreground colour is ever changed (as background colours are used for UIs). The
+# target contrast is searched for by lightening, then darkening and if neither reach
+# the target contrast then the larger of the 2 found contrasts is used.
+[text_contrast]
+enabled = true
+target_contrast = 2.0
+# When set to false, all text is automatically adjusted, even non-alphanumeric characters
+# like UI border elements etc. The only characters that aren't adjusted are the UTF8
+# half blocks (eg ▀) that are used to render "graphics", as in the shaders for example.
+apply_to_readable_text_only = true
+
+[minimap]
+enabled = false
+animation_speed = 0.15
+# The maximum width of the minimap. It can be narrower when the scrollback is long
+# in order to maintain a consistent aspect ratio.
+max_width = 10
+
+[shader]
+enabled = false
+opacity = 0.75
+# Whether to render the computed shader from the GPU. The shader pixels can still be
+# used for other purposes such as defining the foreground colour of the terminal's text,
+# see `render_shader_colours_to_text`.
+render = true
+# It can be useful to disable this for certain GUI terminal shaders (such as Ghostty shaders)
+# that also take responsibility for rendering terminal text. Tattoy can only send a crude 
+# representation of terminal text as 2 pixels per character, which is sometimes desirable
+# when the shader uses the terminal to inform the output of the shader, but it can also cause
+# an unnesceray blocky effect when the shader doesn't use the terminal colours.
+upload_tty_as_pixels = true
+# Use each "cell" of the shader to set the corresponding text cell's foreground colour.
+# This is most likely desirable in conjunction with the `render` option, so that the shader
+# is only visible via the terminal's text.
+render_shader_colours_to_text = false
+# Path to a Shadertoy shader on your local filesystem. Is relative to the root of
+# Tattoy's config directory.
+path = "shaders/point_lights.glsl"
+
+[bg_command]
+enabled = false
+opacity = 0.75
+layer = -5
+command = ["echo", "Hello World"]
+
+[keybindings]
+# Whether Tattoy renders anything apart from the TTY. They TTY is always rendered,
+# so toggling this will disable all tattoys, effects, eye-candy, etc.
+toggle_tattoy = { mods = "ALT", key = "t" }
+# Toggle scolling mode whilst in scrollback.
+toggle_scrolling = { mods = "ALT", key = "s" }
+# Show/hide the minimap.
+toggle_minimap = { mods = "ALT", key = "M" }
+# Scroll up in the scrollback 
+scroll_up = { key = "UpArrow" }
+# Scroll down in the scrollback 
+scroll_down = { key = "DownArrow" }
+# Exit scrolling mode
+scroll_exit = { key = "Escape" }
+# Cycle to previous shader in user's shader config directory
+shader_prev = { mods = "ALT", key = "9" }
+# Cycle to next shader in user's shader config directory
+shader_next = { mods = "ALT", key = "0" }

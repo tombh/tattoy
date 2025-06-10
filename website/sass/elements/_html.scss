@@ -1,0 +1,22 @@
+html {
+  color: var(--html-text-color);
+  color-scheme: dark;
+  font-family: var(--font-family-mono);
+  font-size: calc-rem($size-body-mobile);
+  background-color: var(--html-bg-color);
+  scroll-padding-top: var(--scroll-padding-top);
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+  }
+
+  @media #{$bp-tablet-portrait-up} {
+    font-size: calc-rem($size-body);
+  }
+
+  @media #{$bp-tablet-portrait-up} {
+    font-size: calc-rem($size-body);
+  }
+}

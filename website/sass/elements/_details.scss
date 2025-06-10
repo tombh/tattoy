@@ -1,0 +1,54 @@
+details {
+  $h-padding: 10px;
+  border-radius: $border-radius;
+  padding: 0 $h-padding;
+  margin-block: 1em;
+  background-color: var(--details-bg-color);
+  overflow: hidden; // prevent clobbering corner radii
+
+  & h1,
+  & h2,
+  & h3,
+  & h4,
+  & h5,
+  & h6 {
+    margin: 0;
+    display: inline;
+  }
+
+  > summary {
+    cursor: pointer; // this should be the default
+    padding-block: calc($h-padding/2);
+
+    &:hover {
+      text-shadow: 0 0 0.9px var(--details-text-shadow-color), 0 0 0.9px var(--details-text-shadow-color);
+    }
+  }
+
+  // these styles are noncritical so the 2.4% without `:is` will be fine
+  // https://caniuse.com/css-matches-pseudo
+  // also, to avoid these styles, put the block in a <div>
+  $big-blocks: ":is(pre.z-code, .callout)";
+
+  > #{$big-blocks} {
+    // push big blocks to the edge and remove their corners
+    margin-inline: -$h-padding;
+    padding-inline: $h-padding !important;
+    border-radius: 0 !important;
+  }
+
+  > summary + #{$big-blocks} {
+    // remove margin on leading...
+    margin-top: 0;
+  }
+
+  > #{$big-blocks}:last-child {
+    // ...and trailing big blocks
+    margin-bottom: 0;
+  }
+
+  // tighten trailing <p>
+  > p:last-child {
+    margin-bottom: $h-padding;
+  }
+}

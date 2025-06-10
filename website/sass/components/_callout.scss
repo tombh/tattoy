@@ -1,0 +1,39 @@
+.callout {
+  margin-block: 32px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  background-color: var(--callout-bg-color);
+  border-top: 4px solid var(--callout-accent-color);
+  color: var(--callout-color);
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  &--plain {
+    border-top: 0;
+  }
+
+  &,
+  &--info {
+    --callout-accent-color: var(--callout-info-accent-color);
+    --callout-bg-color: var(--callout-info-bg-color);
+    --callout-color: var(--callout-info-color);
+  }
+
+  &--caution {
+    --callout-accent-color: var(--callout-caution-accent-color);
+    --callout-bg-color: var(--callout-caution-bg-color);
+    --callout-color: var(--callout-caution-color);
+  }
+
+  &--warning {
+    --callout-accent-color: var(--callout-warning-accent-color);
+    --callout-bg-color: var(--callout-warning-bg-color);
+    --callout-color: var(--callout-warning-color);
+  }
+}
