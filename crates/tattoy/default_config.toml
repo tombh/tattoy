@@ -78,7 +78,7 @@ upload_tty_as_pixels = true
 render_shader_colours_to_text = false
 # Path to a Shadertoy shader on your local filesystem. Is relative to the root of
 # Tattoy's config directory.
-path = "shaders/point_lights.glsl"
+path = "shaders/soft_shadows.glsl"
 
 [bg_command]
 enabled = false

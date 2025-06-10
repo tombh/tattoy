@@ -2,7 +2,7 @@
 title = "Plugins"
 template = "docs.html"
 [extra]
-weight = 4
+weight = 5
 +++
 
 Plugins can be written in any language, they just need to be executable and support JSON input and output over STDIO. A plugin can be defined with TOML in the standard `tattoy.toml` file. Here is an example:
