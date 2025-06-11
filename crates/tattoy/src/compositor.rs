@@ -111,4 +111,26 @@ impl Compositor {
 
         Ok(())
     }
+
+    // TODO: This doesn't handle the case where there are actual legitimate half-blocks under the
+    // cursor. Consider the case of editing this very function in Tattoy, the "▄"s and "▀"s will
+    // dissapear when the cursor is over them. Perhaps only do this when the cursor shape is a
+    // block?
+    //
+    /// Ensure that the cursor shape doesn't conflict with any pixels below.
+    pub fn clean_cursor_cell(
+        cells: &mut [&mut [termwiz::cell::Cell]],
+        cursor_x: usize,
+        cursor_y: usize,
+    ) {
+        let maybe_cell = Self::get_cell_mut(cells, cursor_x, cursor_y);
+        let Ok(composited_cell) = maybe_cell else {
+            tracing::warn!("Couldn't get cell under cursor at: {cursor_x}x{cursor_y}");
+            return;
+        };
+
+        if composited_cell.str() == "▄" || composited_cell.str() == "▀" {
+            *composited_cell = termwiz::cell::Cell::new(' ', composited_cell.attrs().clone());
+        }
+    }
 }

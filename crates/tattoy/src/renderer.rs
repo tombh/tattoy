@@ -361,17 +361,28 @@ impl Renderer {
         if is_rendering_enabled {
             self.render_tattoys_above().await?;
             self.colour_grade().await?;
-        }
-        if self.state.config.read().await.show_tattoy_indicator {
-            Compositor::add_indicator(
-                &mut self.frame.screen_cells(),
-                &self.indicator_cell,
-                (self.width - 1).into(),
-                0,
-            )?;
+            self.add_indicator().await?;
+            if self.is_cursor_visible {
+                let cursor = self.pty.cursor_position();
+                Compositor::clean_cursor_cell(&mut self.frame.screen_cells(), cursor.0, cursor.1);
+            }
         }
 
         Ok(())
+    }
+
+    /// Add the little blue pixel in the top right.
+    async fn add_indicator(&mut self) -> Result<()> {
+        if !self.state.config.read().await.show_tattoy_indicator {
+            return Ok(());
+        }
+
+        Compositor::add_indicator(
+            &mut self.frame.screen_cells(),
+            &self.indicator_cell,
+            (self.width - 1).into(),
+            0,
+        )
     }
 
     /// Are any of the tattoys replacing the PTY layer?
