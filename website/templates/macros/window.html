@@ -1,4 +1,4 @@
-{% macro window(image) %}
+{% macro window(source, extra="image") %}
 <div class="window">
   <div class="winhead">
     <div class="winbutton">
@@ -9,7 +9,13 @@
     <div class="title"></div>
   </div>
   <div class="winbody">
-    <img src="{{ image }}" alt="Screenshot of terminal contents">
+    {% if extra == "video" %}
+    <video autoplay loop muted>
+      <source src="{{ source }}">
+    </video>
+    {% else %}
+    <img src="{{ source }}" loading="lazy">
+    {% endif%}
   </div>
 </div>
 {% endmacro %}
