@@ -12,10 +12,9 @@
   <h2 id="home-subtitle">A Text-Based Compositor For Modern Terminals</h2>
   <div id="home-content">
     <div class="screenshot">
-      {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+      {{ window_macro::window(source="assets/screenshots/hero.webp") }}
       <div class="screenshot-caption">
-        Tattoy with a GPU-rendered bloom shader and live-updating minimap of the TTY scrollback
-      (add audio visualiser too).
+        Tattoy with a GPU-rendered shader and live-updating minimap of the TTY scrollback.
       </div>
     </div>
     <div class="home-feature">
@@ -26,7 +25,7 @@
         Tattoy can generally be thought of as a framework for adding eye-candy to your terminal. It is purely
     text-based so works in any terminal emulator that supports true colour. "Graphics" is rendered with UTF8
     half-blocks (▀,▄). Whilst most of its effects are for getting you street credibility it also has more
-    powerfull features based around its awareness of terminal contents. For example it can detect and auto
+    powerful features based around its awareness of terminal contents. For example it can detect and auto
     adjust text contrast whilst remaining faithful to the terminal's palette.
       </p>
       <p>
@@ -49,10 +48,10 @@
     renering is always left to the host terminal emulator.
       </p>
       <div class="screenshot-row">
-        {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
-    {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
-    {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
-    {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+        {{ window_macro::window(source="assets/screenshots/shader1.webm", extra="video") }}
+        {{ window_macro::window(source="assets/screenshots/shader2.webm", extra="video") }}
+        {{ window_macro::window(source="assets/screenshots/shader3.webm", extra="video") }}
+        {{ window_macro::window(source="assets/screenshots/shader4.webm", extra="video") }}
       </div>
     </div>
     <div class="home-feature">
@@ -78,7 +77,7 @@
         actual terminal.
         </span>
         <span class="home-feature__screenshot">
-          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+          {{ window_macro::window(source="assets/screenshots/rick.webm", extra="video") }}
         </span>
       </div>
     </div>
@@ -88,7 +87,7 @@
       </h2>
       <div class="home-feature-flex">
         <span class="home-feature__screenshot">
-          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+          {{ window_macro::window(source="assets/screenshots/minimap.webm", extra="video") }}
         </span>
         <span class="home-feature__text">
           The minimap is a pixelised version of the contents of the scrollback, including the current contents
@@ -121,7 +120,7 @@
           </p>
         </span>
         <span class="home-feature__screenshot">
-          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+          {{ window_macro::window(source="assets/screenshots/contrast.webm", extra="video") }}
         </span>
       </div>
     </div>
@@ -131,7 +130,7 @@
       </h2>
       <div class="home-feature-flex">
         <span class="home-feature__screenshot">
-          {{ window_macro::window(image="assets/screenshots/bloom_minimap.webp") }}
+          {{ window_macro::window(source="assets/screenshots/plugins.webm", extra="video") }}
         </span>
         <span class="home-feature__text">
           Plugins can be written in any language. You get full access to your terminal's contents and can render
