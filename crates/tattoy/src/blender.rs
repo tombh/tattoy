@@ -259,6 +259,7 @@ mod test {
         let renderer = crate::renderer::Renderer {
             width: 1,
             height: 1,
+            is_cursor_visible: false,
             ..crate::renderer::Renderer::new(state).await.unwrap()
         };
         *renderer.state.is_rendering_enabled.write().await = true;
