@@ -184,29 +184,54 @@ impl Shaders<'_> {
                     }
                 }
 
-                let is_screen_changed = Tattoyer::is_screen_output_changed(&message);
-                self.tattoy.handle_common_protocol_messages(message)?;
-
-                let is_upload_tty_as_pixels = self
-                    .tattoy
-                    .state
-                    .config
-                    .read()
-                    .await
-                    .shader
-                    .upload_tty_as_pixels;
-                if is_upload_tty_as_pixels && is_screen_changed {
-                    let pty_image = self.tattoy.convert_pty_to_pixel_image(
-                        &shadow_terminal::output::SurfaceKind::Screen,
-                    )?;
-                    let rotated = pty_image.flipv();
-                    self.gpu.update_ichannel_texture_data(&rotated.into());
+                if let crate::run::Protocol::Config(_) = &message {
+                    self.upload_tty_as_pixels().await?;
                 }
+
+                if Tattoyer::is_screen_output_changed(&message) {
+                    self.upload_tty_as_pixels().await?;
+                }
+                self.tattoy.handle_common_protocol_messages(message)?;
             }
             Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
         }
 
         Ok(())
+    }
+
+    /// Upload the TTY content as coloured pixels.
+    async fn upload_tty_as_pixels(&mut self) -> Result<()> {
+        let is_upload_tty_as_pixels = self
+            .tattoy
+            .state
+            .config
+            .read()
+            .await
+            .shader
+            .upload_tty_as_pixels;
+
+        let image = if is_upload_tty_as_pixels {
+            self.tattoy
+                .convert_pty_to_pixel_image(&shadow_terminal::output::SurfaceKind::Screen)?
+                .flipv()
+                .into()
+        } else {
+            self.pure_black_image()
+        };
+
+        self.gpu.update_ichannel_texture_data(&image);
+
+        Ok(())
+    }
+
+    /// A "blank" image for when the user doesn't want to upload the TTY but also wants to support
+    /// shaders that use `iChannel0`.
+    fn pure_black_image(&self) -> image::RgbaImage {
+        image::ImageBuffer::from_fn(
+            self.tattoy.width.into(),
+            u32::from(self.tattoy.height) * 2,
+            |_, _| [0, 0, 0, 255].into(),
+        )
     }
 
     /// Cycle through the shaders in the user's shader directory.
@@ -253,6 +278,7 @@ impl Shaders<'_> {
 
         self.gpu.shader_path = shader_path;
         self.gpu.build_pipeline().await?;
+        self.upload_tty_as_pixels().await?;
 
         Ok(())
     }
