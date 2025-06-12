@@ -235,7 +235,10 @@ impl Tattoyer {
                     }
                 }
                 shadow_terminal::output::Output::Complete(
-                    shadow_terminal::output::CompleteSurface::Screen(_),
+                    shadow_terminal::output::CompleteSurface::Screen(_)
+                    // TODO: We need this to catch all changes to the _screen_, but why?
+                    // Because a complete scrollback is sent at startup? 
+                    | shadow_terminal::output::CompleteSurface::Scrollback(_),
                 ) => {
                     return true;
                 }
