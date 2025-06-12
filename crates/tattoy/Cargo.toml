@@ -4,8 +4,9 @@ description = "Eye-candy for your terminal"
 version = "0.1.0"
 edition = "2021"
 readme = "README.md"
-repository = "TODO"
+repository = "https://github.com/tombh/tattoy"
 license = "MIT"
+authors = ["Tom Buckley-Houston <tattoy@tombh.co.uk>"]
 keywords = ["shell"]
 categories = ["shell"]
 default-run = "tattoy"
@@ -37,3 +38,29 @@ palette.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/tattoy", dest = "/usr/bin/tattoy", mode = "755" },
+  { source = "../../LICENSE-MIT", dest = "/usr/share/doc/tattoy/LICENSE-MIT", mode = "644" },
+  { source = "../../README.md", dest = "/usr/share/doc/tattoy/README.md", mode = "644" }
+]
+
+[package.metadata.deb]
+assets = [
+  [
+    "target/release/tattoy",
+    "usr/bin/",
+    "755",
+  ],
+  [
+    "../../LICENSE-MIT",
+    "/usr/share/doc/tattoy/LICENSE-MIT",
+    "644",
+  ],
+  [
+    "../../README.md",
+    "usr/share/doc/tattoy/README",
+    "644",
+  ]
+]

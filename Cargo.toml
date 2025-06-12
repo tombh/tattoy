@@ -10,6 +10,9 @@ members = [
 		"crates/tattoy-plugins/smokey_cursor",
 ]
 
+[profile.release]
+strip = "symbols"
+
 [workspace.dependencies]
 color-eyre = "0.6.3"
 palette = "0.7.6"
