@@ -2,7 +2,7 @@ name: Deploy website to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "website-etc"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -34,8 +34,7 @@ jobs:
         with:
           tool: zola@0.20.0
       - name: Build website
-        working-directory: website
-        run: ./ctl.sh build
+        run: ./ctl.sh website-build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
