@@ -9,7 +9,7 @@ jobs:
   release-plz-release:
     name: Release-plz release
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'tombh' }}
+    if: ${{ github.repository_owner == 'tattoy-org' }}
     permissions:
       contents: write
     steps:
