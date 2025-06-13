@@ -31,7 +31,7 @@ jobs:
   release-plz-pr:
     name: Release-plz PR
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'tombh' }}
+    if: ${{ github.repository_owner == 'tattoy-org' }}
     permissions:
       pull-requests: write
       contents: write
