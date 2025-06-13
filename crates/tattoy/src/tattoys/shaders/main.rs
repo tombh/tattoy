@@ -39,7 +39,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             enabled: false,
-            path: "shaders/point_lights.glsl".into(),
+            path: format!("shaders/{}", crate::config::main::DEFAULT_SHADER_FILENAME).into(),
             opacity: 0.75,
             layer: -10,
             render: true,
