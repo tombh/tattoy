@@ -136,10 +136,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+      - name: Write release version
+        run: |
+          TATTOY_VERSION=${GITHUB_REF_NAME#v}
+          echo Tattoy version: $TATTOY_VERSION
+          echo "TATTOY_VERSION=$TATTOY_VERSION" >> $GITHUB_ENV
       - name: Update AUR package files
         uses: heyhusen/archlinux-package-action@v2
         with:
-          pkgver: ${GITHUB_REF_NAME#v}
+          pkgver: ${{ env.TATTOY_VERSION }}
           path: scripts/aur
           namcap: true
           srcinfo: true
