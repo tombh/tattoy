@@ -28,6 +28,7 @@ tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 git = "https://github.com/tombh/wezterm.git"
 rev = "ec9005d59f6ab92d9b76d3b9947c8582259cf76e"
 features = ["use_serde"]
+version = "0.23.1"
 # termwiz = { path = "../wezterm/termwiz" }
 
 # Canonical lints for whole crate
