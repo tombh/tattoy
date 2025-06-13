@@ -10,6 +10,9 @@ static DEFAULT_CONFIG: &str = include_str!("../../default_config.toml");
 /// Bundle an example shader with Tattoy.
 static EXAMPLE_SHADER: &str = include_str!("../tattoys/shaders/soft_shadows.glsl");
 
+/// Filename of the default shader
+pub static DEFAULT_SHADER_FILENAME: &str = "soft_shadows.glsl";
+
 /// The name of the directory where shader files are kept.
 const SHADER_DIRECTORY_NAME: &str = "shaders";
 
@@ -209,7 +212,7 @@ impl Config {
             let shader_path = Self::directory(state)
                 .await
                 .join(SHADER_DIRECTORY_NAME)
-                .join("point_lights.glsl");
+                .join(DEFAULT_SHADER_FILENAME);
             std::fs::write(shader_path, EXAMPLE_SHADER)?;
         }
 
