@@ -1,6 +1,7 @@
 +++
 title = "Introducing Tattoy"
 date = 2025-06-13
+authors = ["Tom Buckley-Houston"]
 +++
 
 Today I release Tattoy to the world. Formally, it's a text-based terminal compositor, but I'll let the [homepage](https://tattoy.sh) go into more details about what that actually entails. Here I'd like to 
