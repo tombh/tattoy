@@ -38,3 +38,5 @@ terminal. Tattoy goes to great lengths to ensure that it always cleans up the sc
 * `ALT+s`: Start scrolling.
 * `ALT+9`/`ALT+0`: Cycle back and forth through shaders in the same directory as the current shader.
 
+## Tips
+* If you use `is_vim` in `tmux`, it is better to use a `tmux set-option -p @is_vim yes` approach to detect when a `tmux` pane is running (n)vim. See [this comment](https://github.com/christoomey/vim-tmux-navigator/issues/295#issuecomment-1123455337) for inspiration.
