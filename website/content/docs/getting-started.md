@@ -27,8 +27,6 @@ You can always re-capture your terminal's palette at any time with `tattoy --cap
 Simply run `tattoy` from the CLI.
 
 Tattoy uses your current theme, shell and prompt, so it's not always visually obvious that Tattoy has successfully started. The default configuration has the following notable features:
-* **A Shader**: This should be the most obvious indication that Tattoy has started. However, this depends
-on successfully connecting to a GPU, which isn't always possible.
 * **The Blue Indicator**: This is a small, blue, UTF8 half-block "pixel" located in the very top-right of your
 terminal. Tattoy goes to great lengths to ensure that it always cleans up the screen whether it exits successfully or not. Therefore the presence of the blue indicator should be a reliable cue to show that Tattoy is running. Note that it is possible to disable the indicator in the config file.
 * **Scrollbar**: Tattoy has a transparent scrollbar on the right hand side that appears when you scroll your terminal (`ALT+s` or mouse scrollwheel) whilst it has scrollback contents (therefore it doesn't appear when scrolling a fresh terminal instance).
