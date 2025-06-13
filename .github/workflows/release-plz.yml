@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
 jobs:
   release-plz-release:
     name: Release-plz release

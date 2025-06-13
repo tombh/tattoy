@@ -8,6 +8,7 @@ repository = "TODO"
 license = "MIT"
 keywords = ["shell, testing"]
 categories = ["shell"]
+publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -21,6 +22,7 @@ snafu = "0.8.5"
 [dependencies.wezterm-term]
 git = "https://github.com/tombh/wezterm.git"
 rev = "ec9005d59f6ab92d9b76d3b9947c8582259cf76e"
+version = "0.1.0"
 # wezterm-term = { path = "../../../wezterm/term/" }
 
 [lints]
