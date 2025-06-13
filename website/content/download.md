@@ -10,8 +10,8 @@ Tattoy has prebuilt binaries for both x86 and ARM architectures on all the 3 maj
 ## Distro Packages
 
 ### Arch Linux AUR
-* `yay -S tattoy`
-* `paru -S tattoy`
+* `yay -S tattoy-bin`
+* `paru -S tattoy-bin`
 
 ### Ubuntu, Debian
 ```sh
