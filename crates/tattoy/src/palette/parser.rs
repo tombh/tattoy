@@ -50,20 +50,23 @@ impl Parser {
             },
         };
         let result = super::state_machine::Machine::parse_screenshot(&screenshot);
-        let Ok(palette) = result else {
-            if maybe_user_screenshot.is_none() {
-                let path = crate::config::main::Config::temporary_file("screenshot.png")?;
-                screenshot.save(path.clone())?;
+        let palette = match result {
+            Ok(palette) => palette,
+            Err(error) => {
+                if maybe_user_screenshot.is_none() {
+                    let path = crate::config::main::Config::temporary_file("screenshot.png")?;
+                    screenshot.save(path.clone())?;
 
-                color_eyre::eyre::bail!(
-                    "\
-                    Couldn't parse palette, screenshot saved to: {path:?}. \
-                    You may also make your own screenshot and provide it with \
-                    `tattoy --parse-palette screenshot.png`.
-                    "
-                );
-            } else {
-                color_eyre::eyre::bail!("Palette parsing failed.");
+                    color_eyre::eyre::bail!(
+                        "\
+                        Couldn't parse palette, screenshot saved to: {path:?}. \
+                        You may also make your own screenshot and provide it with \
+                        `tattoy --parse-palette screenshot.png`.
+                        "
+                    );
+                } else {
+                    color_eyre::eyre::bail!("Palette parsing failed: {error:?}");
+                }
             }
         };
         palette.print_true_colour_palette()?;
