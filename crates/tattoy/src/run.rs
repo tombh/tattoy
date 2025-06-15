@@ -48,8 +48,10 @@ pub(crate) enum Protocol {
     Config(crate::config::main::Config),
     /// A known user-defined keybinding event was triggered.
     KeybindEvent(crate::config::input::KeybindingAction),
-    /// User notifications in the the UI
+    /// User notifications in the the UI.
     Notification(crate::tattoys::notifications::message::Message),
+    /// Force a repaint.
+    Repaint,
 }
 
 /// Main entrypoint
