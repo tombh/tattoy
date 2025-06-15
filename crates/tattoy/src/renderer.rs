@@ -9,7 +9,7 @@ use termwiz::cell::{Cell, CellAttributes};
 use termwiz::surface::Surface as TermwizSurface;
 use termwiz::surface::{Change as TermwizChange, Position as TermwizPosition};
 use termwiz::terminal::buffered::BufferedTerminal;
-use termwiz::terminal::{ScreenSize, Terminal as TermwizTerminal};
+use termwiz::terminal::Terminal as _;
 
 use crate::compositor::Compositor;
 use crate::run::FrameUpdate;
@@ -55,6 +55,8 @@ pub(crate) struct Renderer {
     pub tattoys: std::collections::HashMap<String, crate::surface::Surface>,
     /// A shadow version of the user's conventional terminal
     pub pty: TermwizSurface,
+    /// A buffered wrapper around the user's actual terminal.
+    pub users_terminal: Option<BufferedTerminal<termwiz::terminal::SystemTerminal>>,
     /// The base composited frame onto which all tattoys are rendered.
     pub frame: termwiz::surface::Surface,
     /// A little indicator to show that Tattoy is running.
@@ -65,17 +67,26 @@ pub(crate) struct Renderer {
 
 impl Renderer {
     /// Create a renderer to render to a user's terminal
-    pub async fn new(state: Arc<SharedState>) -> Result<Self> {
+    pub async fn new(state: Arc<SharedState>, with_user_terminal: bool) -> Result<Self> {
         let size = *state.tty_size.read().await;
         let width = size.width;
         let height = size.height;
+
+        let users_terminal = if with_user_terminal {
+            let mut termwiz_terminal = Self::get_termwiz_terminal()?;
+            termwiz_terminal.set_raw_mode()?;
+            Some(BufferedTerminal::new(termwiz_terminal)?)
+        } else {
+            None
+        };
 
         let renderer = Self {
             state,
             width: size.width,
             height: size.height,
-            tattoys: std::collections::HashMap::default(),
+            users_terminal,
             pty: TermwizSurface::new(width.into(), height.into()),
+            tattoys: std::collections::HashMap::default(),
             frame: TermwizSurface::new(width.into(), height.into()),
             indicator_cell: Self::indicator_cell()?,
             is_cursor_visible: true,
@@ -111,7 +122,7 @@ impl Renderer {
         let handle = tokio::spawn(async move {
             // This would be much simpler if async closures where stable, because then we could use
             // the `?` syntax.
-            match Self::new(Arc::clone(&state)).await {
+            match Self::new(Arc::clone(&state), true).await {
                 Ok(mut renderer) => {
                     let result = renderer.run(surfaces_rx, protocol_tx.clone(), state).await;
 
@@ -132,33 +143,35 @@ impl Renderer {
         (handle, surfaces_tx)
     }
 
-    /// We need this just because I can't figure out how to pass `Box<dyn Terminal>` to
-    /// `BufferedTerminal::new()`
-    fn get_termwiz_terminal() -> Result<impl TermwizTerminal> {
+    /// The Termwiz terminal is a wrapper around the user's actual terminal.
+    fn get_termwiz_terminal() -> Result<termwiz::terminal::SystemTerminal> {
         let capabilities = termwiz::caps::Capabilities::new_from_env()?;
-        Ok(termwiz::terminal::new_terminal(capabilities)?)
+        Ok(termwiz::terminal::SystemTerminal::new(capabilities)?)
     }
 
-    /// Just for initialisation
-    pub fn get_users_tty_size() -> Result<ScreenSize> {
+    /// Just for initialisation.
+    pub fn get_users_tty_size() -> Result<termwiz::terminal::ScreenSize> {
         let mut terminal = Self::get_termwiz_terminal()?;
         Ok(terminal.get_screen_size()?)
     }
 
-    /// Get the user's current terminal size and propogate it
-    pub async fn check_for_user_resize<T: TermwizTerminal + Send>(
+    /// Get the user's current terminal size and propogate it.
+    pub async fn check_for_user_resize(
         &mut self,
-        composited_terminal: &mut BufferedTerminal<T>,
         protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
-        let is_resized = composited_terminal.check_for_resize()?;
+        let Some(users_terminal) = self.users_terminal.as_mut() else {
+            return Ok(());
+        };
+
+        let is_resized = users_terminal.check_for_resize()?;
         if !is_resized {
             return Ok(());
         }
 
-        composited_terminal.repaint()?;
+        users_terminal.repaint()?;
 
-        let (width, height) = composited_terminal.dimensions();
+        let (width, height) = users_terminal.dimensions();
         self.width = width.try_into()?;
         self.height = height.try_into()?;
         self.state.set_tty_size(self.width, self.height).await;
@@ -186,9 +199,6 @@ impl Renderer {
     ) -> Result<()> {
         tracing::debug!("Putting user's terminal into raw mode");
         let mut protocol_rx = protocol_tx.subscribe();
-        let mut copy_of_users_terminal = Self::get_termwiz_terminal()?;
-        copy_of_users_terminal.set_raw_mode()?;
-        let mut composited_terminal = BufferedTerminal::new(copy_of_users_terminal)?;
 
         tracing::debug!("Starting render loop");
 
@@ -206,8 +216,8 @@ impl Renderer {
             tokio::select! {
                 Some(update) = surfaces.recv() => {
                     self.handle_frame_update(
-                        update, surfaces.len(),
-                        &mut composited_terminal,
+                        update,
+                        surfaces.len(),
                         &protocol_tx
                     ).await?;
                 }
@@ -218,7 +228,7 @@ impl Renderer {
                 // select branch triggers, so we shouldn't have an over-abundance of resize
                 // checks.
                 () = tokio::time::sleep(tokio::time::Duration::from_millis(CHECK_FOR_RESIZE_RATE)) => {
-                    self.check_for_user_resize(&mut composited_terminal, &protocol_tx).await?;
+                    self.check_for_user_resize(&protocol_tx).await?;
                 },
 
                 Ok(message) = protocol_rx.recv() => {
@@ -232,7 +242,9 @@ impl Renderer {
         tracing::debug!("Exited render loop");
 
         tracing::debug!("Setting user's terminal to cooked mode");
-        composited_terminal.terminal().set_cooked_mode()?;
+        if let Some(users_terminal) = self.users_terminal.as_mut() {
+            users_terminal.terminal().set_cooked_mode()?;
+        }
 
         Ok(())
     }
@@ -242,12 +254,10 @@ impl Renderer {
         &mut self,
         update: FrameUpdate,
         backlog: usize,
-        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
         protocol_tx: &tokio::sync::broadcast::Sender<crate::run::Protocol>,
     ) -> Result<()> {
-        self.check_for_user_resize(composited_terminal, protocol_tx)
-            .await?;
-        self.render(backlog, update, composited_terminal).await?;
+        self.check_for_user_resize(protocol_tx).await?;
+        self.render(backlog, update).await?;
 
         Ok(())
     }
@@ -266,12 +276,7 @@ impl Renderer {
 
     /// Do a single render to the user's actual terminal. It uses a diffing algorithm to make
     /// the minimum number of changes.
-    async fn render(
-        &mut self,
-        backlog: usize,
-        update: FrameUpdate,
-        composited_terminal: &mut BufferedTerminal<impl TermwizTerminal + Send>,
-    ) -> Result<()> {
+    async fn render(&mut self, backlog: usize, update: FrameUpdate) -> Result<()> {
         match update {
             FrameUpdate::TattoySurface(surface) => {
                 let surface_id = surface.id.clone();
@@ -303,41 +308,45 @@ impl Renderer {
 
         self.composite().await?;
 
+        let Some(users_terminal) = self.users_terminal.as_mut() else {
+            return Ok(());
+        };
+
         // Hide the cursor without flushing.
-        composited_terminal.add_change(TermwizChange::CursorVisibility(
+        users_terminal.add_change(TermwizChange::CursorVisibility(
             termwiz::surface::CursorVisibility::Hidden,
         ));
 
-        let changes = composited_terminal.diff_screens(&self.frame);
-        composited_terminal.add_changes(changes);
+        let changes = users_terminal.diff_screens(&self.frame);
+        users_terminal.add_changes(changes);
 
         let (cursor_x, cursor_y) = self.pty.cursor_position();
-        composited_terminal.add_change(TermwizChange::CursorPosition {
+        users_terminal.add_change(TermwizChange::CursorPosition {
             x: TermwizPosition::Absolute(cursor_x),
             y: TermwizPosition::Absolute(cursor_y),
         });
 
         if let Some(cursor_shape) = self.pty.cursor_shape() {
-            composited_terminal.add_change(TermwizChange::CursorShape(cursor_shape));
+            users_terminal.add_change(TermwizChange::CursorShape(cursor_shape));
         }
 
         // This avoids flickering at the cost of slower rendering for complex frame updates.
-        composited_terminal.ignore_high_repaint_cost(true);
+        users_terminal.ignore_high_repaint_cost(true);
 
         // Set the user's cursor visibility to the current PTY's cursor visibility.
-        composited_terminal.add_change(TermwizChange::CursorVisibility(
+        users_terminal.add_change(TermwizChange::CursorVisibility(
             self.pty.cursor_visibility(),
         ));
 
         // Tattoy can override the PTY's cursor visibility for example when Tattoy is scrolling.
         if !self.is_cursor_visible {
-            composited_terminal.add_change(TermwizChange::CursorVisibility(
+            users_terminal.add_change(TermwizChange::CursorVisibility(
                 termwiz::surface::CursorVisibility::Hidden,
             ));
         }
 
         // This is where we actually render to the user's real terminal.
-        composited_terminal.flush()?;
+        users_terminal.flush()?;
 
         Ok(())
     }
