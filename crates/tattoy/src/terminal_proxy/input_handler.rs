@@ -78,6 +78,7 @@ impl crate::terminal_proxy::proxy::Proxy {
                 let existing = *self.state.is_rendering_enabled.read().await;
                 tracing::debug!("Toggling Tattoy renderer to: {}", !existing);
                 *self.state.is_rendering_enabled.write().await = !existing;
+                self.tattoy_protocol.send(crate::run::Protocol::Repaint)?;
                 Ok(true)
             }
             crate::config::input::KeybindingAction::ToggleScrolling => {

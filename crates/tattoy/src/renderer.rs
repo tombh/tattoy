@@ -232,7 +232,7 @@ impl Renderer {
                 },
 
                 Ok(message) = protocol_rx.recv() => {
-                    self.handle_protocol_message(&message);
+                    self.handle_protocol_message(&message).await?;
                     if matches!(message, crate::run::Protocol::End) {
                         break;
                     }
@@ -263,10 +263,22 @@ impl Renderer {
     }
 
     /// Handle messages from the global Tattoy protocol.
-    const fn handle_protocol_message(&mut self, message: &crate::run::Protocol) {
-        if let crate::run::Protocol::CursorVisibility(is_visible) = message {
-            self.is_cursor_visible = *is_visible;
+    async fn handle_protocol_message(&mut self, message: &crate::run::Protocol) -> Result<()> {
+        match message {
+            crate::run::Protocol::Output(_)
+            | crate::run::Protocol::End
+            | crate::run::Protocol::Resize { .. }
+            | crate::run::Protocol::Input(_)
+            | crate::run::Protocol::Config(_)
+            | crate::run::Protocol::KeybindEvent(_)
+            | crate::run::Protocol::Notification(_) => (),
+            crate::run::Protocol::CursorVisibility(is_visible) => {
+                self.is_cursor_visible = *is_visible;
+            }
+            crate::run::Protocol::Repaint => self.paint().await?,
         }
+
+        Ok(())
     }
 
     /// Reset the frame for every render.
@@ -306,6 +318,13 @@ impl Renderer {
             return Ok(());
         }
 
+        self.paint().await?;
+
+        Ok(())
+    }
+
+    /// Apply the changes to the user's terminal.
+    async fn paint(&mut self) -> Result<()> {
         self.composite().await?;
 
         let Some(users_terminal) = self.users_terminal.as_mut() else {
@@ -472,6 +491,10 @@ impl Renderer {
         for (y, (frame_line, pty_line)) in frame_cells.iter_mut().zip(pty_cells).enumerate() {
             for (x, (frame_cell, pty_cell)) in frame_line.iter_mut().zip(pty_line).enumerate() {
                 Compositor::composite_cells(frame_cell, pty_cell, 1.0);
+
+                if !*self.state.is_rendering_enabled.read().await {
+                    continue;
+                }
 
                 if let Some(shader_cells) = maybe_shader_cells.as_ref() {
                     let shader_cell = Compositor::get_cell(shader_cells, x, y)?;
