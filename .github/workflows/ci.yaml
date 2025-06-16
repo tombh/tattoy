@@ -41,11 +41,6 @@ jobs:
       - if: matrix.os == 'macos-latest'
         name: Install MacOS dependencies
         run: brew install bash nano watch
-      - if: matrix.os == 'windows-latest'
-        name: Install Windows package manager
-        uses: crazy-max/ghaction-chocolatey@v3
-        with:
-          args: install -y nano
       - uses: actions/checkout@v4
       - run: rustup toolchain install $RUST_VERSION --profile minimal
       - name: Install nextest
@@ -53,7 +48,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-
       - name: Build
         run: cargo build --verbose --all
       - name: Run tests
@@ -77,7 +71,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-
       - name: Lint
         run: cargo clippy -- --deny warnings
       - name: Formatting
