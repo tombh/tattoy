@@ -165,32 +165,37 @@ impl Shaders<'_> {
     ) -> Result<()> {
         match protocol_result {
             Ok(message) => {
-                if let crate::run::Protocol::KeybindEvent(event) = &message {
-                    if matches!(event, crate::config::input::KeybindingAction::ShaderPrev) {
-                        self.cycle_shader(false).await?;
+                match &message {
+                    crate::run::Protocol::Output(_) => {
+                        self.upload_tty_as_pixels().await?;
                     }
-                    if matches!(event, crate::config::input::KeybindingAction::ShaderNext) {
-                        self.cycle_shader(true).await?;
+                    crate::run::Protocol::Resize { width, height } => {
+                        self.gpu.update_resolution(*width, height * 2)?;
                     }
-                }
-
-                if let crate::run::Protocol::Resize { width, height } = &message {
-                    self.gpu.update_resolution(*width, height * 2)?;
-                }
-
-                if let crate::run::Protocol::Input(input) = &message {
-                    if let termwiz::input::InputEvent::Mouse(mouse) = &input.event {
-                        self.gpu.update_mouse_position(mouse.x, mouse.y);
+                    crate::run::Protocol::Input(input) => {
+                        if let termwiz::input::InputEvent::Mouse(mouse) = &input.event {
+                            self.gpu.update_mouse_position(mouse.x, mouse.y);
+                        }
                     }
+                    crate::run::Protocol::Config(_) => {
+                        self.upload_tty_as_pixels().await?;
+                    }
+                    crate::run::Protocol::KeybindEvent(event) => {
+                        if matches!(event, crate::config::input::KeybindingAction::ShaderPrev) {
+                            self.cycle_shader(false).await?;
+                        }
+                        if matches!(event, crate::config::input::KeybindingAction::ShaderNext) {
+                            self.cycle_shader(true).await?;
+                        }
+                    }
+                    crate::run::Protocol::Repaint => {
+                        self.upload_tty_as_pixels().await?;
+                    }
+                    crate::run::Protocol::End
+                    | crate::run::Protocol::CursorVisibility(_)
+                    | crate::run::Protocol::Notification(_) => (),
                 }
 
-                if let crate::run::Protocol::Config(_) = &message {
-                    self.upload_tty_as_pixels().await?;
-                }
-
-                if Tattoyer::is_screen_output_changed(&message) {
-                    self.upload_tty_as_pixels().await?;
-                }
                 self.tattoy.handle_common_protocol_messages(message)?;
             }
             Err(error) => tracing::error!("Receiving protocol message: {error:?}"),
